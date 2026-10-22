@@ -112,9 +112,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     let tileChecked = false;
     const stop = watchChannels(sid, (list) => {
       setChannels(list);
-      // the home server's Living tile, added once for servers made before tiles
+      // The home server's built-in tiles, added once for servers made before
+      // them. The home server is the one with the Living Room tile (its name
+      // can be changed), or a "Digital House" without tiles yet.
       const s = servers().find((x) => x.id === sid);
-      if (!tileChecked && s?.name === "Digital House" && s.ownerUid === props.uid) {
+      const isHome =
+        list.some((c) => c.kind === "room" && c.roomKey === "gestr-living") || s?.name.startsWith("Digital House");
+      if (!tileChecked && isHome && s?.ownerUid === props.uid) {
         tileChecked = true;
         void ensureHomeTiles(sid, list).catch(() => {});
         // made before servers could be open: the home server is open to all
