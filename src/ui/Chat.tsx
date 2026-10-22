@@ -47,6 +47,8 @@ export function Chat(props: {
   uid: string;
   profiles: Map<string, Profile>;
   canModerate: boolean;
+  /** the narrow sidebar version beside a room tile */
+  compact?: boolean;
 }) {
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -70,7 +72,8 @@ export function Chat(props: {
           setLoaded(true);
         });
         onCleanup(stop);
-        queueMicrotask(() => input?.focus());
+        // the sidebar chat must not pull focus away from the call or the room
+        if (!props.compact) queueMicrotask(() => input?.focus());
       },
     ),
   );
@@ -118,7 +121,7 @@ export function Chat(props: {
   }
 
   return (
-    <div class="chat">
+    <div class="chat" classList={{ compact: props.compact }}>
       <div class="chat-scroll" ref={scroller} onScroll={onScroll}>
         <Show when={loaded() && !messages().length}>
           <div class="chat-start">

@@ -7,7 +7,9 @@ import {
   type Server,
   addServerMembers,
   createChannel,
+  createRoomTile,
   createServer,
+  deleteRoomTile,
   deleteChannel,
   ensureHomeServer,
   ensureLivingTile,
@@ -65,6 +67,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [channelId, setChannelId] = createSignal<string | undefined>();
   const [navOpen, setNavOpen] = createSignal(false);
+  const [sideChatOpen, setSideChatOpen] = createSignal(false);
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
 
   onMount(() => {
@@ -132,11 +135,18 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
 
   const roomTiles = () => channels().filter((c) => c.kind === "room");
-  const textChannels = () => channels().filter((c) => c.kind === "text");
+  // a tile's own chat is listed under its picture, not with the other text channels
+  const textChannels = () => channels().filter((c) => c.kind === "text" && !c.parentId);
   const voiceChannels = () => channels().filter((c) => c.kind === "voice");
+  const chatsOf = (tileId: string) => channels().filter((c) => c.kind === "text" && c.parentId === tileId);
+  // With a tile open, its chat sits in the right sidebar.
+  const tileChat = createMemo(() => {
+    const ch = channel();
+    return ch?.kind === "room" ? chatsOf(ch.id)[0] : undefined;
+  });
 
   return (
-    <div class="shell" classList={{ "nav-open": navOpen() }}>
+    <div class="shell" classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen() }}>
       {/* ---- servers ---- */}
       <nav class="rail" aria-label="Servers">
         <For each={servers()}>
@@ -192,11 +202,18 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                       type="button"
                       title={`Delete ${c.name}`}
                       aria-label={`Delete ${c.name}`}
-                      onClick={() => void deleteChannel(serverId()!, c.id)}
+                      onClick={() => void deleteRoomTile(serverId()!, c.id, channels())}
                     >
                       ✕
                     </button>
                   </Show>
+                  <ChannelGroup
+                    channels={chatsOf(c.id)}
+                    activeId={channelId()}
+                    onPick={pickChannel}
+                    canEdit={false}
+                    onDelete={() => {}}
+                  />
                 </div>
               )}
             </For>
@@ -255,6 +272,18 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
             {channel()?.name ?? ""}
           </span>
+          <Show when={tileChat()}>
+            {(chat) => (
+              <button
+                class="btn side-chat-btn"
+                type="button"
+                aria-pressed={sideChatOpen()}
+                onClick={() => setSideChatOpen(!sideChatOpen())}
+              >
+                # {chat().name}
+              </button>
+            )}
+          </Show>
         </header>
         <Switch fallback={<div class="main-empty">Pick a channel.</div>}>
           <Match when={server() && channel()?.kind === "text" && channel()}>
@@ -277,8 +306,35 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         </Switch>
       </main>
 
-      {/* ---- people ---- */}
-      <aside class="members" aria-label="Members">
+      {/* ---- right: the open tile's chat, otherwise the people ---- */}
+      <Show when={server() && tileChat()}>
+        {(chat) => (
+          <aside class="side-chat" aria-label={`# ${chat().name}`}>
+            <header class="side-chat-head">
+              <span>
+                <span class="hash">#</span> {chat().name}
+              </span>
+              <button
+                class="icon-btn side-chat-close"
+                type="button"
+                aria-label="Close chat"
+                onClick={() => setSideChatOpen(false)}
+              >
+                ✕
+              </button>
+            </header>
+            <Chat
+              serverId={server()!.id}
+              channel={chat()}
+              uid={props.uid}
+              profiles={profiles()}
+              canModerate={runsServer()}
+              compact
+            />
+          </aside>
+        )}
+      </Show>
+      <aside class="members" aria-label="Members" classList={{ hidden: Boolean(tileChat()) }}>
         <Show when={server()}>
           {(s) => {
             const online = () => s().memberUids.filter(isOnline);
@@ -317,7 +373,11 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       <NewChannelDialog
         open={modal() === "new-channel"}
         onClose={() => setModal("")}
-        onSubmit={(name, kind, extra) => createChannel(serverId()!, name, kind, channels().length, extra)}
+        onSubmit={(name, kind, extra) =>
+          kind === "room"
+            ? createRoomTile(serverId()!, name, channels().length, { image: extra.image!, url: extra.url! })
+            : createChannel(serverId()!, name, kind, channels().length)
+        }
       />
       <PeopleDialog
         open={modal() === "people"}
@@ -341,7 +401,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 }
 
 function ChannelGroup(props: {
-  label: string;
+  label?: string;
   channels: Channel[];
   activeId?: string;
   canEdit: boolean;
@@ -350,7 +410,9 @@ function ChannelGroup(props: {
 }) {
   return (
     <Show when={props.channels.length}>
-      <div class="group-label">{props.label}</div>
+      <Show when={props.label}>
+        <div class="group-label">{props.label}</div>
+      </Show>
       <For each={props.channels}>
         {(c) => (
           <div class="chan-row" classList={{ active: c.id === props.activeId }}>

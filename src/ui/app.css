@@ -288,6 +288,128 @@
   font-size: 11px;
 }
 
+/* ---- a tile's chat in the right sidebar --------------------------------- */
+
+.shell.with-side-chat {
+  grid-template-columns: 72px 248px minmax(0, 1fr) 340px;
+}
+
+.members.hidden {
+  display: none;
+}
+
+.side-chat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.side-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  height: 52px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 650;
+}
+
+.side-chat-head .hash {
+  color: var(--green);
+}
+
+/* the header button and close only matter when the sidebar slides in */
+.side-chat-btn,
+.side-chat-close {
+  display: none !important;
+}
+
+.chat.compact .msg {
+  gap: 10px;
+  padding: 6px 12px 2px;
+}
+
+.chat.compact .msg.grouped {
+  padding-left: 58px;
+}
+
+.chat.compact .avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+
+.chat.compact .msg-tools {
+  right: 8px;
+}
+
+.chat.compact .chat-start {
+  padding: 16px 12px 10px;
+}
+
+.chat.compact .chat-start h2 {
+  font-size: 1.1rem;
+}
+
+.chat.compact .composer {
+  padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
+}
+
+.chat.compact .send {
+  min-width: 0;
+  padding: 0 12px;
+}
+
+/* narrower screens: the tile's chat slides in from the right on demand */
+@media (max-width: 1100px) {
+  .shell.with-side-chat {
+    grid-template-columns: 72px 248px minmax(0, 1fr);
+  }
+  .side-chat {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 25;
+    width: min(360px, 100vw);
+    transform: translateX(105%);
+    transition: transform 200ms ease;
+    box-shadow: -20px 0 60px rgba(0, 0, 0, 0.6);
+  }
+  .side-chat-open .side-chat {
+    transform: none;
+  }
+  .side-chat-btn,
+  .side-chat-close {
+    display: inline-grid !important;
+  }
+  .side-chat-btn {
+    margin-left: auto;
+    height: 32px;
+    font-size: 12px;
+    place-items: center;
+  }
+  .side-chat-btn[aria-pressed="true"] {
+    border-color: var(--green);
+    color: var(--green);
+  }
+}
+
+@media (max-width: 760px) {
+  .shell.with-side-chat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* a tile's chat row sits tight under its picture */
+.tile-row .chan-row {
+  margin-top: 4px;
+}
+
 /* ---- room tiles (a picture: video chat + the room) --------------------- */
 
 .tile-row {

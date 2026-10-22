@@ -28,6 +28,7 @@ import { db } from "../firebase";
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
  *     channels/{cid}     name, kind "text"|"voice"|"room", position
  *                        room: image, and roomKey (a Gestr room) or url
+ *                        text: parentId = the room tile it is the chat of
  *       messages/{mid}   authorUid, text, createdAt, editedAt?
  */
 
@@ -36,6 +37,8 @@ export type Server = { id: string; name: string; ownerUid: string; memberUids: s
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle
  * flips the same pane to the room page itself (a Gestr 3D room or any link).
+ * A tile has its own text channel (parentId = the tile): listed under the
+ * picture, and shown in the right sidebar while the tile is open.
  */
 export type Channel = {
   id: string;
@@ -45,7 +48,12 @@ export type Channel = {
   image?: string;
   roomKey?: string;
   url?: string;
+  parentId?: string;
 };
+
+/** The chat channel name for a tile: "Living Room" -> "livingroom-chat". */
+export const tileChatName = (tileName: string) =>
+  `${tileName.toLowerCase().replace(/[^a-z0-9]+/g, "") || "room"}-chat`;
 
 // Gestr rooms a tile can point at: the local dev server on this PC, the
 // live page everywhere else.
@@ -61,7 +69,7 @@ export function roomUrlOf(channel: Channel) {
 }
 
 export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
-  name: "Living",
+  name: "Living Room",
   kind: "room",
   image: "/living.png",
   roomKey: "gestr-living",
@@ -154,18 +162,49 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
 export async function ensureHomeServer(uid: string) {
   const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
   if (!mine.empty) return;
+  // The Living Room tile and its chat are added by the app once it watches
+  // this server's channels (ensureLivingTile), so it is made exactly once.
   await createServer(uid, "Digital House", [
-    { ...LIVING_TILE, position: 0 },
     { name: "general", kind: "text", position: 1 },
     { name: "Lounge", kind: "voice", position: 2 },
   ]);
 }
 
-/** A Digital House made before tiles existed gets its Living tile once. */
+/**
+ * The home server's Living Room tile and its #livingroom-chat, made once.
+ * Also renames an older "Living" tile and gives it its chat.
+ */
 export async function ensureLivingTile(sid: string, channels: Channel[]) {
-  if (channels.some((c) => c.kind === "room" && c.roomKey === LIVING_TILE.roomKey)) return;
-  const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
-  await addDoc(collection(db, "servers", sid, "channels"), { ...LIVING_TILE, position: first - 1 });
+  const channelsRef = collection(db, "servers", sid, "channels");
+  let tile = channels.find((c) => c.kind === "room" && c.roomKey === LIVING_TILE.roomKey);
+  if (!tile) {
+    const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
+    const ref = await addDoc(channelsRef, { ...LIVING_TILE, position: first - 1 });
+    tile = { id: ref.id, ...LIVING_TILE, position: first - 1 };
+  } else if (tile.name !== LIVING_TILE.name) {
+    await updateDoc(doc(channelsRef, tile.id), { name: LIVING_TILE.name });
+  }
+  if (!channels.some((c) => c.parentId === tile!.id)) {
+    await addDoc(channelsRef, {
+      name: tileChatName(LIVING_TILE.name),
+      kind: "text",
+      position: tile.position,
+      parentId: tile.id,
+    });
+  }
+}
+
+/** A new room tile and its own chat channel. */
+export async function createRoomTile(
+  sid: string,
+  name: string,
+  position: number,
+  extra: { image: string; url: string },
+) {
+  const channelsRef = collection(db, "servers", sid, "channels");
+  const tile = await addDoc(channelsRef, { name, kind: "room", position, ...extra });
+  await addDoc(channelsRef, { name: tileChatName(name), kind: "text", position, parentId: tile.id });
+  return tile.id;
 }
 
 export const renameServer = (sid: string, name: string) => updateDoc(doc(db, "servers", sid), { name });
@@ -216,6 +255,12 @@ export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
 export const renameChannel = (sid: string, cid: string, name: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid), { name });
 export const deleteChannel = (sid: string, cid: string) => deleteDoc(doc(db, "servers", sid, "channels", cid));
+
+/** A room tile goes with its own chat channel(s). */
+export async function deleteRoomTile(sid: string, tileId: string, channels: Channel[]) {
+  for (const c of channels) if (c.parentId === tileId) await deleteChannel(sid, c.id);
+  await deleteChannel(sid, tileId);
+}
 
 // ---- messages ---------------------------------------------------------------
 
