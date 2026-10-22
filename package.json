@@ -1,0 +1,24 @@
+{
+  "name": "digital-house-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Digital House: chat, voice and the Living House on Firebase + LiveKit + Vercel",
+  "scripts": {
+    "dev": "vite --port 5186 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "sync-access": "node scripts/sync-access.mjs"
+  },
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "livekit-client": "^2.23.0",
+    "solid-js": "^1.9.17"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.4.5",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}

@@ -1,0 +1,112 @@
+import { createHmac } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+/**
+ * LiveKit pass for a Digital House voice channel.
+ *
+ *   POST /api/livekit-token   Authorization: Bearer <Firebase ID token>
+ *   body { serverId, channelId }
+ *
+ * The check is done by Firestore itself: we read servers/{serverId} with the
+ * caller's own ID token, so the security rules decide (approved member AND
+ * in that server's memberUids). A forged or expired token is refused there,
+ * which also makes the uid we read from the token trustworthy.
+ *
+ * Env: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET.
+ */
+
+const PROJECT_ID = "gestr-lab";
+const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const PASS_SECONDS = 6 * 60 * 60;
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+function base64url(input: Buffer | string) {
+  return Buffer.from(input).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+export function signPass(apiKey: string, apiSecret: string, identity: string, name: string, room: string) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = base64url(
+    JSON.stringify({
+      iss: apiKey,
+      sub: identity,
+      name,
+      nbf: now - 10,
+      exp: now + PASS_SECONDS,
+      video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+    }),
+  );
+  const signature = base64url(createHmac("sha256", apiSecret).update(`${header}.${payload}`).digest());
+  return `${header}.${payload}.${signature}`;
+}
+
+function send(res: ServerResponse, status: number, body: unknown) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(JSON.stringify(body));
+}
+
+async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const pre = (req as IncomingMessage & { body?: unknown }).body;
+  if (pre && typeof pre === "object") return pre as Record<string, unknown>;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.from(chunk));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+/** The claims of a Firebase ID token. Only trusted after Firestore accepts it. */
+function claimsOf(idToken: string): { sub?: string; name?: string; email?: string } {
+  try {
+    return JSON.parse(Buffer.from(idToken.split(".")[1], "base64url").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== "POST") return send(res, 405, { error: "Use POST" });
+
+  const { LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET } = process.env;
+  if (!LIVEKIT_URL || !LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    return send(res, 500, { error: "LiveKit is not set up on this server" });
+  }
+
+  const auth = req.headers.authorization ?? "";
+  const idToken = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!idToken) return send(res, 401, { error: "Log in first" });
+
+  const body = await readBody(req);
+  const serverId = String(body.serverId ?? "");
+  const channelId = String(body.channelId ?? "");
+  if (!ID_RE.test(serverId) || !ID_RE.test(channelId)) return send(res, 400, { error: "Bad channel" });
+
+  const headers = { Authorization: `Bearer ${idToken}` };
+  const serverRes = await fetch(`${FIRESTORE}/servers/${serverId}`, { headers });
+  if (serverRes.status === 401) return send(res, 401, { error: "Your login has expired. Log in again." });
+  if (!serverRes.ok) return send(res, 403, { error: "You are not in this server" });
+
+  const claims = claimsOf(idToken);
+  const uid = claims.sub ?? "";
+  const server = (await serverRes.json()) as {
+    fields?: { memberUids?: { arrayValue?: { values?: { stringValue?: string }[] } } };
+  };
+  const members = server.fields?.memberUids?.arrayValue?.values?.map((v) => v.stringValue) ?? [];
+  if (!uid || !members.includes(uid)) return send(res, 403, { error: "You are not in this server" });
+
+  const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
+  if (!channelRes.ok) return send(res, 404, { error: "That channel is gone" });
+
+  const room = `dh-${serverId}-${channelId}`;
+  const name = claims.name || (claims.email ?? "").split("@")[0] || "Member";
+  send(res, 200, {
+    url: LIVEKIT_URL,
+    token: signPass(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, uid, name, room),
+    room,
+  });
+}

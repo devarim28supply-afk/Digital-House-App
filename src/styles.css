@@ -1,0 +1,144 @@
+/* Digital House: black and greys, green only where code would be coloured. */
+
+:root {
+  --bg: #000;
+  --panel: #0a0a0a;
+  --panel-2: #111;
+  --panel-3: #171717;
+  --line: #1f1f1f;
+  --line-2: #2a2a2a;
+  --text: #e5e5e5;
+  --muted: #8a8a8a;
+  --dim: #5c5c5c;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ---- a plain centred notice (waiting for approval, errors) ----------- */
+
+.notice {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px 16px;
+}
+
+.notice-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 28px;
+  border: 1px solid #262626;
+  border-radius: 14px;
+  background: #050505;
+  font-family: var(--mono);
+}
+
+.notice-card h1 {
+  margin: 0 0 12px;
+  font-size: 1.3rem;
+}
+
+.notice-card h1::before {
+  content: "› ";
+  color: var(--green);
+}
+
+.notice-card p {
+  margin: 0 0 18px;
+  color: #a3a3a3;
+  line-height: 1.6;
+  font-size: 0.9rem;
+}
+
+/* ---- shared small buttons ---------------------------------------------- */
+
+.btn {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-3);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: #404040;
+}
+
+.btn.primary {
+  border-color: transparent;
+  background: #fafafa;
+  color: #000;
+}
+
+.btn.primary:hover {
+  background: #d4d4d4;
+}
+
+.btn.danger {
+  color: var(--red);
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
