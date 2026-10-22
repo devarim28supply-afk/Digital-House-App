@@ -5,6 +5,7 @@ import {
   arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDocs,
   limit,
@@ -26,6 +27,7 @@ import { db } from "../firebase";
  *   profiles/{uid}       name, username, color          everyone approved reads
  *   presence/{uid}       lastSeen                         heartbeat, self-written
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
+ *                        banner? (a JPEG data URL across the top of the channels)
  *     channels/{cid}     name, kind "text"|"voice"|"room", position
  *                        room: image, and roomKey (a Gestr room) or url
  *                        text: parentId = the room tile it is the chat of
@@ -33,7 +35,7 @@ import { db } from "../firebase";
  */
 
 export type Profile = { uid: string; name: string; username: string; color: string };
-export type Server = { id: string; name: string; ownerUid: string; memberUids: string[] };
+export type Server = { id: string; name: string; ownerUid: string; memberUids: string[]; banner?: string };
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle
  * flips the same pane to the room page itself (a Gestr 3D room or any link).
@@ -220,6 +222,13 @@ export async function createRoomTile(
 }
 
 export const renameServer = (sid: string, name: string) => updateDoc(doc(db, "servers", sid), { name });
+
+/** Name and banner together (Server settings). banner null removes it. */
+export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined) =>
+  updateDoc(doc(db, "servers", sid), {
+    name,
+    ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
+  });
 export const addServerMembers = (sid: string, uids: string[]) =>
   updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) });
 export const removeServerMember = (sid: string, uid: string) =>

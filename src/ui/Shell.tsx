@@ -14,7 +14,7 @@ import {
   ensureHomeServer,
   ensureLivingTile,
   removeServerMember,
-  renameServer,
+  saveServerSettings,
   saveProfile,
   shrinkImage,
   startPresence,
@@ -171,11 +171,20 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 
       {/* ---- channels ---- */}
       <aside class="side">
-        <header class="side-head">
+        <header class="side-head" classList={{ "has-banner": Boolean(server()?.banner) }}>
+          <Show when={server()?.banner}>
+            {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
+          </Show>
           <span class="side-title">{server()?.name ?? "Darkwood Node"}</span>
           <Show when={runsServer()}>
-            <button class="icon-btn" type="button" title="Rename server" aria-label="Rename server" onClick={() => setModal("rename")}>
-              ✎
+            <button
+              class="icon-btn"
+              type="button"
+              title="Server settings"
+              aria-label="Server settings"
+              onClick={() => setModal("rename")}
+            >
+              ⚙
             </button>
           </Show>
         </header>
@@ -361,15 +370,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           setServerId(id);
         }}
       />
-      <NameDialog
-        open={modal() === "rename"}
-        title="Rename server"
-        label="Server name"
-        action="Save"
-        initial={server()?.name}
-        onClose={() => setModal("")}
-        onSubmit={(name) => renameServer(serverId()!, name)}
-      />
+      <ServerSettingsDialog open={modal() === "rename"} server={server()} onClose={() => setModal("")} />
       <NewChannelDialog
         open={modal() === "new-channel"}
         onClose={() => setModal("")}
@@ -608,6 +609,90 @@ function NewChannelDialog(props: {
           </button>
           <button class="btn primary" type="submit">
             Create
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** The server's name and banner (the picture across the top of its channels). */
+function ServerSettingsDialog(props: { open: boolean; server?: Server; onClose: () => void }) {
+  // undefined = banner untouched, null = remove it, string = the new picture
+  const [banner, setBanner] = createSignal<string | null | undefined>();
+  const [error, setError] = createSignal("");
+  const [saving, setSaving] = createSignal(false);
+  const shown = () => (banner() === undefined ? props.server?.banner : banner() ?? undefined);
+
+  const close = () => {
+    setBanner(undefined);
+    setError("");
+    props.onClose();
+  };
+
+  async function pick(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      setError("");
+      setBanner(await shrinkImage(file, 960));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read that image");
+    }
+  }
+
+  return (
+    <Modal title="Server settings" open={props.open} onClose={close}>
+      <form
+        class="modal-form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const name = String(new FormData(e.currentTarget).get("name") ?? "").trim().slice(0, 60);
+          if (!name || !props.server) return;
+          setSaving(true);
+          try {
+            await saveServerSettings(props.server.id, name, banner());
+            close();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not save that.");
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <label class="field">
+          <span>Server name</span>
+          <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
+        </label>
+        <div class="field">
+          <span>Banner</span>
+          <div class="banner-preview">
+            <Show when={shown()} fallback={<div class="banner-empty">No banner</div>}>
+              {(src) => <img src={src()} alt="" />}
+            </Show>
+          </div>
+          <div class="banner-actions">
+            <label class="btn banner-upload">
+              {shown() ? "Change picture" : "Upload picture"}
+              <input type="file" accept="image/*" onChange={pick} />
+            </label>
+            <Show when={shown()}>
+              <button class="btn danger" type="button" onClick={() => setBanner(null)}>
+                Remove
+              </button>
+            </Show>
+          </div>
+          <small class="field-hint">Wide pictures work best (about 3 : 1).</small>
+        </div>
+        <Show when={error()}>
+          <p class="form-error">{error()}</p>
+        </Show>
+        <div class="modal-actions">
+          <button class="btn" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button class="btn primary" type="submit" disabled={saving()}>
+            {saving() ? "Saving…" : "Save"}
           </button>
         </div>
       </form>
