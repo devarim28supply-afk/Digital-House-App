@@ -54,7 +54,7 @@ export function initials(name: string) {
 }
 
 /**
- * Digital House once you are in: servers on the far left, the chosen
+ * Darkwood Node once you are in: servers on the far left, the chosen
  * server's channels next to them, the channel in the middle, and who is in
  * the server on the right. On a phone the two left columns slide in.
  */
@@ -172,7 +172,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       {/* ---- channels ---- */}
       <aside class="side">
         <header class="side-head">
-          <span class="side-title">{server()?.name ?? "Digital House"}</span>
+          <span class="side-title">{server()?.name ?? "Darkwood Node"}</span>
           <Show when={runsServer()}>
             <button class="icon-btn" type="button" title="Rename server" aria-label="Rename server" onClick={() => setModal("rename")}>
               ✎

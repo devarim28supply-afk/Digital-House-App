@@ -15,7 +15,7 @@ const PHONE = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: 
 
 /**
  * Who you are decides what you see: the login card, the waiting room
- * (registered but not approved yet), or Digital House itself.
+ * (registered but not approved yet), or Darkwood Node itself.
  *
  * The front door: on a computer, someone not logged in is sent to the
  * M2A-access bunker (/m2a-access/), logs in at its terminal, and walks
@@ -64,7 +64,7 @@ export function App() {
       </Match>
       <Match when={state().status === "pending"}>
         <Notice title="Waiting for approval" onLogout={logout}>
-          Your account is registered. The operator approves new members; this page opens Digital House on its own
+          Your account is registered. The operator approves new members; this page opens Darkwood Node on its own
           the moment you are approved.
         </Notice>
       </Match>
