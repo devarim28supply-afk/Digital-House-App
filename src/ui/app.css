@@ -599,6 +599,7 @@
 
 .room-pane {
   position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -657,6 +658,18 @@
 
 .room-layer {
   padding: 10px 14px 14px;
+}
+
+/* Behind the Videochat the room keeps running, invisible: a display:none
+   page is paused by the browser, and then the room camera it streams for
+   the Room view goes black. */
+.room-layer.hidden {
+  display: flex;
+  position: absolute;
+  inset: 52px 0 0 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .room-layer iframe {
