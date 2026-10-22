@@ -1031,6 +1031,20 @@
   place-items: center;
 }
 
+.tile.room-view {
+  border-color: #1f3b2a;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: #f87171;
+  vertical-align: 1px;
+}
+
 .tile-name {
   position: absolute;
   left: 10px;

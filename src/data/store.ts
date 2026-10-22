@@ -67,13 +67,38 @@ export const tileChatName = (tileName: string) =>
 
 // Gestr rooms a tile can point at: the local dev server on this PC, the
 // live page everywhere else.
-const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
+// cam: where the room's live camera ("roomcam") is watched from, for the
+// Room view in the tile's videochat: the room's own token server (a hidden,
+// watch-only pass) and its LiveKit media room. A new Gestr room adds a line.
+type GestrRoom = {
+  local: string;
+  live: string;
+  cam: { localToken: string; liveToken: string; room: string };
+};
+const GESTR_ROOMS: Record<string, GestrRoom> = {
   // the room's dev server listens on localhost ([::1]), not 127.0.0.1
   // live it is /living/ on this same address, so the Firebase login is shared
-  "gestr-living": { local: "http://localhost:5176/", live: "/living/" },
+  "gestr-living": {
+    local: "http://localhost:5176/",
+    live: "/living/",
+    cam: { localToken: "http://localhost:5176/api/livekit-token", liveToken: "/living/api/livekit-token", room: "gestr-living" },
+  },
   // the booth behind the bunker's one-way glass (M2A-access is / live)
-  "m2a-operation": { local: "http://localhost:5179/?spawn=operation", live: "/?spawn=operation" },
+  "m2a-operation": {
+    local: "http://localhost:5179/?spawn=operation",
+    live: "/?spawn=operation",
+    cam: { localToken: "http://localhost:5179/api/livekit-token", liveToken: "/api/livekit-token", room: "m2a-access" },
+  },
 };
+
+const ON_THIS_PC = () => /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+
+/** Where this tile's room camera is watched from, or null for other tiles. */
+export function roomCamOf(channel: Channel) {
+  const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
+  if (!room) return null;
+  return { tokenUrl: ON_THIS_PC() ? room.cam.localToken : room.cam.liveToken, room: room.cam.room };
+}
 
 /**
  * A tile picture: uploads are data URLs; the built-in ones ("/living.png")
@@ -87,7 +112,7 @@ export function imageSrc(image?: string) {
 
 export function roomUrlOf(channel: Channel) {
   const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
-  if (room) return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? room.local : room.live;
+  if (room) return ON_THIS_PC() ? room.local : room.live;
   return channel.url ?? "";
 }
 

@@ -325,7 +325,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             {(ch) => <VoiceRoom serverId={server()!.id} channel={ch()} uid={props.uid} name={props.name} profiles={profiles()} />}
           </Match>
           <Match when={server() && channel()?.kind === "room" && channel()}>
-            {(ch) => <RoomPane serverId={server()!.id} channel={ch()} uid={props.uid} name={props.name} profiles={profiles()} />}
+            {(ch) => <RoomPane
+                serverId={server()!.id}
+                channel={ch()}
+                uid={props.uid}
+                name={props.name}
+                username={props.username}
+                profiles={profiles()}
+              />}
           </Match>
         </Switch>
       </main>

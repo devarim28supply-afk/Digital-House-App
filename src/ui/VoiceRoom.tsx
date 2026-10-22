@@ -34,6 +34,52 @@ type TileInfo = {
   screen: boolean;
 };
 
+/** Where a Gestr room's live camera is watched from (store.roomCamOf). */
+export type RoomViewSource = { tokenUrl: string; room: string; username: string };
+
+// The same shape the rooms give a name (their token servers check it).
+const roomName = (raw: string) => raw.trim().replace(/\s+/g, "-").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 32);
+
+/**
+ * Watch the 3D room's camera: a hidden, watch-only connection to the room's
+ * own LiveKit media room, picking up its "roomcam" track. Someone standing in
+ * the room streams it; with nobody there, there is no track and no Room view.
+ */
+// One watcher name per screen: two screens (or a quick rejoin) under the same
+// name would knock each other out of the call.
+const WATCH_TAG = Math.random().toString(36).slice(2, 8);
+
+async function watchRoomCam(
+  source: RoomViewSource,
+  onTrack: (track: RemoteTrack | undefined) => void,
+  onDropped: () => void,
+) {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) return undefined;
+  const params = new URLSearchParams({
+    identity: `${roomName(source.username)}~peek-${WATCH_TAG}`,
+    room: source.room,
+    peek: "1",
+  });
+  const res = await fetch(`${source.tokenUrl}?${params}`, { headers: { Authorization: `Bearer ${idToken}` } });
+  const body = (await res.json().catch(() => ({}))) as { url?: string; token?: string };
+  if (!res.ok || !body.url || !body.token) return undefined;
+  const watcher = new Room({ adaptiveStream: true });
+  watcher
+    .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub) => {
+      if (pub.trackName === "roomcam") onTrack(track);
+    })
+    .on(RoomEvent.TrackUnsubscribed, (_track: RemoteTrack, pub) => {
+      if (pub.trackName === "roomcam") onTrack(undefined);
+    })
+    .on(RoomEvent.Disconnected, () => {
+      onTrack(undefined);
+      onDropped();
+    });
+  await watcher.connect(body.url, body.token);
+  return watcher;
+}
+
 /**
  * A voice/video channel. Nothing turns on by itself: Join connects, and the
  * mic and camera start off until you switch them on.
@@ -50,8 +96,15 @@ export function VoiceRoom(props: {
   onRoom?: (room: Room | undefined) => void;
   /** replaces the Camera button (the wall asks the room for its camera) */
   camera?: { on: boolean; toggle: () => void };
+  /**
+   * The 3D room's live camera as a "Room view" screen in this call. Only the
+   * tile's videochat in Darkwood Node passes it, never the wall in the room.
+   */
+  roomView?: RoomViewSource;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
+  const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
+  let roomCamWatcher: Room | undefined;
   const [joining, setJoining] = createSignal(false);
   const [error, setError] = createSignal("");
   const [version, setVersion] = createSignal(0);
@@ -69,6 +122,10 @@ export function VoiceRoom(props: {
     current?.disconnect();
     audioHost.replaceChildren();
     setSpeaking(new Set<string>());
+    const watcher = roomCamWatcher;
+    roomCamWatcher = undefined;
+    watcher?.disconnect();
+    setRoomCamTrack(undefined);
   }
 
   // Leaving the channel (or switching away) hangs up.
@@ -78,7 +135,32 @@ export function VoiceRoom(props: {
     audioHost.remove();
   });
 
+  // The Room view watcher for this call; reconnects while the call lasts.
+  function startRoomView(call: Room) {
+    const source = props.roomView;
+    if (!source || room() !== call) return;
+    const retry = () => window.setTimeout(() => startRoomView(call), 3000);
+    watchRoomCam(source, setRoomCamTrack, () => {
+      if (room() === call) retry();
+    })
+      .then((watcher) => {
+        if (room() !== call) {
+          void watcher?.disconnect();
+          return;
+        }
+        if (!watcher) {
+          retry();
+          return;
+        }
+        roomCamWatcher = watcher;
+      })
+      .catch(() => {
+        if (room() === call) retry();
+      });
+  }
+
   async function join() {
+    if (joining() || room()) return;
     setError("");
     setJoining(true);
     try {
@@ -112,6 +194,8 @@ export function VoiceRoom(props: {
       await next.connect(pass.url, pass.token);
       setRoom(next);
       bump();
+      // In the call: also watch the 3D room's camera (the Room view).
+      if (props.roomView) startRoomView(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not join the call.");
     } finally {
@@ -178,7 +262,10 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" data-count={Math.min(tiles().length, 9)}>
+        <div class="tiles" data-count={Math.min(tiles().length + (roomCamTrack() ? 1 : 0), 9)}>
+          <Show when={roomCamTrack()}>
+            {(track) => <RoomViewTile track={track()} name={`${props.channel.name} · Room view`} />}
+          </Show>
           <For each={tiles()}>
             {(tile) => (
               <Tile
@@ -221,6 +308,25 @@ export function VoiceRoom(props: {
         </div>
       </Show>
     </div>
+  );
+}
+
+/** The 3D room's live camera, shown wide like a shared screen. */
+function RoomViewTile(props: { track: RemoteTrack; name: string }) {
+  let video: HTMLVideoElement | undefined;
+  createEffect(() => {
+    const t = props.track;
+    if (!video) return;
+    t.attach(video);
+    onCleanup(() => t.detach(video!));
+  });
+  return (
+    <article class="tile screen room-view">
+      <video ref={video} autoplay playsinline muted />
+      <span class="tile-name">
+        <span class="live-dot" aria-hidden="true" /> {props.name}
+      </span>
+    </article>
   );
 }
 

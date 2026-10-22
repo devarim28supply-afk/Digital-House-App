@@ -1,6 +1,6 @@
 import { Show, createEffect, createSignal, on } from "solid-js";
 
-import { type Channel, type Profile, roomUrlOf } from "../data/store";
+import { type Channel, type Profile, roomCamOf, roomUrlOf } from "../data/store";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -24,6 +24,7 @@ export function RoomPane(props: {
   channel: Channel;
   uid: string;
   name: string;
+  username: string;
   profiles: Map<string, Profile>;
 }) {
   const [pane, setPane] = createSignal<Pane>(recallPane(props.channel.id));
@@ -53,6 +54,11 @@ export function RoomPane(props: {
   }
 
   const url = () => roomUrlOf(props.channel);
+  // the 3D room's live camera, as the Room view in this videochat
+  const roomView = () => {
+    const cam = roomCamOf(props.channel);
+    return cam ? { ...cam, username: props.username } : undefined;
+  };
 
   return (
     <div class="room-pane">
@@ -74,6 +80,7 @@ export function RoomPane(props: {
           uid={props.uid}
           name={props.name}
           profiles={props.profiles}
+          roomView={roomView()}
         />
       </div>
 
