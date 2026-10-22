@@ -106,11 +106,14 @@ export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
   roomKey: "m2a-operation",
 };
 
-/** The home server's built-in tiles, in order, each with its own chat. */
+/** The home server's built-in tiles, top to bottom, each with its own chat. */
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
-  { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #livingroom-chat
   { tile: OPERATION_TILE, chat: "operation-room" },
+  { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #livingroom-chat
 ];
+
+/** A built-in tile (it is re-made if removed, so it has no delete button). */
+export const isBuiltInTile = (c: Channel) => HOME_TILES.some((h) => h.tile.roomKey === c.roomKey);
 export type Message = {
   id: string;
   authorUid: string;
@@ -233,20 +236,21 @@ export async function joinOpenServers(uid: string) {
  */
 export async function ensureHomeTiles(sid: string, channels: Channel[]) {
   const channelsRef = collection(db, "servers", sid, "channels");
-  const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
-  let position = first - HOME_TILES.length;
-  for (const { tile: spec, chat } of HOME_TILES) {
+  // The built-in tiles sit above everything else, in HOME_TILES order.
+  const others = channels.filter((c) => !isBuiltInTile(c) && !c.parentId);
+  const top = others.reduce((min, c) => Math.min(min, c.position), 0) - HOME_TILES.length;
+  for (const [i, { tile: spec, chat }] of HOME_TILES.entries()) {
+    const position = top + i;
     let tile = channels.find((c) => c.kind === "room" && c.roomKey === spec.roomKey);
     if (!tile) {
       const ref = await addDoc(channelsRef, { ...spec, position });
       tile = { id: ref.id, ...spec, position };
-    } else if (tile.name !== spec.name) {
-      await updateDoc(doc(channelsRef, tile.id), { name: spec.name });
+    } else if (tile.name !== spec.name || tile.position !== position) {
+      await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position });
     }
     if (!channels.some((c) => c.parentId === tile!.id)) {
-      await addDoc(channelsRef, { name: chat, kind: "text", position: tile.position, parentId: tile.id });
+      await addDoc(channelsRef, { name: chat, kind: "text", position, parentId: tile.id });
     }
-    position = tile.position + 0.5;
   }
 }
 

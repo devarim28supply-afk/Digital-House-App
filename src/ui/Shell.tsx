@@ -16,6 +16,7 @@ import {
   joinOpenServers,
   setServerOpen,
   imageSrc,
+  isBuiltInTile,
   removeServerMember,
   saveServerSettings,
   saveProfile,
@@ -218,7 +219,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                     <img src={imageSrc(c.image)} alt="" draggable={false} />
                     <span class="room-tile-name">{c.name}</span>
                   </button>
-                  <Show when={runsServer()}>
+                  {/* built-in tiles (Operation Room, Living Room) cannot be deleted */}
+                  <Show when={runsServer() && !isBuiltInTile(c)}>
                     <button
                       class="icon-btn tile-del"
                       type="button"
