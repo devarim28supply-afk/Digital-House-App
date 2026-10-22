@@ -73,7 +73,9 @@ export const tileChatName = (tileName: string) =>
 type GestrRoom = {
   local: string;
   live: string;
-  cam: { localToken: string; liveToken: string; room: string };
+  // wide: the Room view spans the call like a shared screen; otherwise it is
+  // a normal tile, the same size as the people
+  cam: { localToken: string; liveToken: string; room: string; wide: boolean };
 };
 const GESTR_ROOMS: Record<string, GestrRoom> = {
   // the room's dev server listens on localhost ([::1]), not 127.0.0.1
@@ -81,13 +83,13 @@ const GESTR_ROOMS: Record<string, GestrRoom> = {
   "gestr-living": {
     local: "http://localhost:5176/",
     live: "/living/",
-    cam: { localToken: "http://localhost:5176/api/livekit-token", liveToken: "/living/api/livekit-token", room: "gestr-living" },
+    cam: { localToken: "http://localhost:5176/api/livekit-token", liveToken: "/living/api/livekit-token", room: "gestr-living", wide: false },
   },
   // the booth behind the bunker's one-way glass (M2A-access is / live)
   "m2a-operation": {
     local: "http://localhost:5179/?spawn=operation",
     live: "/?spawn=operation",
-    cam: { localToken: "http://localhost:5179/api/livekit-token", liveToken: "/api/livekit-token", room: "m2a-access" },
+    cam: { localToken: "http://localhost:5179/api/livekit-token", liveToken: "/api/livekit-token", room: "m2a-access", wide: true },
   },
 };
 
@@ -97,7 +99,7 @@ const ON_THIS_PC = () => /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 export function roomCamOf(channel: Channel) {
   const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
   if (!room) return null;
-  return { tokenUrl: ON_THIS_PC() ? room.cam.localToken : room.cam.liveToken, room: room.cam.room };
+  return { tokenUrl: ON_THIS_PC() ? room.cam.localToken : room.cam.liveToken, room: room.cam.room, wide: room.cam.wide };
 }
 
 /**

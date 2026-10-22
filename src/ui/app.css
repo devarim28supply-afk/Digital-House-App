@@ -1048,6 +1048,32 @@
   border-color: #1f3b2a;
 }
 
+/* the Room view's own Hide button (top-right); the dock brings it back */
+.room-view-hide {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.room-view-hide:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.tile.room-view video {
+  object-fit: cover;
+}
+
 .live-dot {
   display: inline-block;
   width: 7px;

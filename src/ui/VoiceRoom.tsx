@@ -35,7 +35,8 @@ type TileInfo = {
 };
 
 /** Where a Gestr room's live camera is watched from (store.roomCamOf). */
-export type RoomViewSource = { tokenUrl: string; room: string; username: string };
+/** wide: spans the call like a shared screen; otherwise a normal tile. */
+export type RoomViewSource = { tokenUrl: string; room: string; username: string; wide: boolean };
 
 // The same shape the rooms give a name (their token servers check it).
 const roomName = (raw: string) => raw.trim().replace(/\s+/g, "-").replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 32);
@@ -104,6 +105,26 @@ export function VoiceRoom(props: {
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
+  // Hide / show the Room view, remembered per tile.
+  const hiddenKey = () => `dh_roomview_hidden_${props.channel.id}`;
+  const readHidden = () => {
+    try {
+      return localStorage.getItem(hiddenKey()) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const [roomViewHidden, setRoomViewHidden] = createSignal(readHidden());
+  createEffect(on(() => props.channel.id, () => setRoomViewHidden(readHidden()), { defer: true }));
+  function hideRoomView(hide: boolean) {
+    setRoomViewHidden(hide);
+    try {
+      localStorage.setItem(hiddenKey(), hide ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+  }
+  const showingRoomView = () => Boolean(roomCamTrack()) && !roomViewHidden();
   let roomCamWatcher: Room | undefined;
   const [joining, setJoining] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -262,9 +283,16 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" data-count={Math.min(tiles().length + (roomCamTrack() ? 1 : 0), 9)}>
-          <Show when={roomCamTrack()}>
-            {(track) => <RoomViewTile track={track()} name={`${props.channel.name} · Room view`} />}
+        <div class="tiles" data-count={Math.min(tiles().length + (showingRoomView() ? 1 : 0), 9)}>
+          <Show when={showingRoomView() && roomCamTrack()}>
+            {(track) => (
+              <RoomViewTile
+                track={track()}
+                name={`${props.channel.name} · Room view`}
+                wide={Boolean(props.roomView?.wide)}
+                onHide={() => hideRoomView(true)}
+              />
+            )}
           </Show>
           <For each={tiles()}>
             {(tile) => (
@@ -302,6 +330,11 @@ export function VoiceRoom(props: {
           <button type="button" class="dock-btn" aria-pressed={screenOn()} onClick={() => void toggle("screen")}>
             {screenOn() ? "Sharing" : "Share screen"}
           </button>
+          <Show when={roomCamTrack() && roomViewHidden()}>
+            <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
+              Room view
+            </button>
+          </Show>
           <button type="button" class="dock-btn leave" onClick={leave}>
             Leave
           </button>
@@ -311,8 +344,8 @@ export function VoiceRoom(props: {
   );
 }
 
-/** The 3D room's live camera, shown wide like a shared screen. */
-function RoomViewTile(props: { track: RemoteTrack; name: string }) {
+/** The 3D room's live camera: wide like a shared screen, or a normal tile. */
+function RoomViewTile(props: { track: RemoteTrack; name: string; wide: boolean; onHide: () => void }) {
   let video: HTMLVideoElement | undefined;
   createEffect(() => {
     const t = props.track;
@@ -321,8 +354,11 @@ function RoomViewTile(props: { track: RemoteTrack; name: string }) {
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile screen room-view">
+    <article class="tile room-view" classList={{ screen: props.wide }}>
       <video ref={video} autoplay playsinline muted />
+      <button class="room-view-hide" type="button" title="Hide the room view" onClick={props.onHide}>
+        Hide
+      </button>
       <span class="tile-name">
         <span class="live-dot" aria-hidden="true" /> {props.name}
       </span>
