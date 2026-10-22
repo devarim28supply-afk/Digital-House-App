@@ -13,6 +13,8 @@ import {
   deleteChannel,
   ensureHomeServer,
   ensureLivingTile,
+  joinOpenServers,
+  setServerOpen,
   imageSrc,
   removeServerMember,
   saveServerSettings,
@@ -75,6 +77,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     void saveProfile(props.uid, props.name, props.username);
     // the operator gets the home server made on first sign-in
     if (props.admin) void ensureHomeServer(props.uid).catch(() => {});
+    // everyone who got in through M2A-access is in every open server
+    void joinOpenServers(props.uid).catch(() => {});
     const stops = [
       startPresence(props.uid),
       watchServers(props.uid, setServers),
@@ -113,6 +117,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       if (!tileChecked && s?.name === "Digital House" && s.ownerUid === props.uid) {
         tileChecked = true;
         void ensureLivingTile(sid, list).catch(() => {});
+        // made before servers could be open: the home server is open to all
+        // who get in (an explicit "closed" in Server settings is respected)
+        if (s.open === undefined) void setServerOpen(sid, true).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
@@ -649,11 +656,12 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; onClose: 
         class="modal-form"
         onSubmit={async (e) => {
           e.preventDefault();
-          const name = String(new FormData(e.currentTarget).get("name") ?? "").trim().slice(0, 60);
+          const form = new FormData(e.currentTarget);
+          const name = String(form.get("name") ?? "").trim().slice(0, 60);
           if (!name || !props.server) return;
           setSaving(true);
           try {
-            await saveServerSettings(props.server.id, name, banner());
+            await saveServerSettings(props.server.id, name, banner(), form.get("open") === "on");
             close();
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not save that.");
@@ -665,6 +673,13 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; onClose: 
         <label class="field">
           <span>Server name</span>
           <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
+        </label>
+        <label class="check-row">
+          <input type="checkbox" name="open" checked={Boolean(props.server?.open)} />
+          <span>
+            <b>Open to everyone who gets in</b>
+            <small>Every approved member (past the M2A-access door) joins this server on their own.</small>
+          </span>
         </label>
         <div class="field">
           <span>Banner</span>

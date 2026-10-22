@@ -147,6 +147,31 @@
   border-bottom: 1px solid var(--line);
 }
 
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.check-row input {
+  margin-top: 3px;
+  accent-color: var(--green);
+}
+
+.check-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.check-row small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .banner-preview {
   height: 120px;
   border: 1px solid var(--line-2);

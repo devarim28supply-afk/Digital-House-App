@@ -35,7 +35,15 @@ import { db } from "../firebase";
  */
 
 export type Profile = { uid: string; name: string; username: string; color: string };
-export type Server = { id: string; name: string; ownerUid: string; memberUids: string[]; banner?: string };
+export type Server = {
+  id: string;
+  name: string;
+  ownerUid: string;
+  memberUids: string[];
+  banner?: string;
+  /** everyone who gets in through M2A-access joins it on their own */
+  open?: boolean;
+};
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle
  * flips the same pane to the room page itself (a Gestr 3D room or any link).
@@ -156,11 +164,11 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
 }
 
 /** A new server with a text and a voice channel to start. */
-export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[]) {
+export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
   // The server first: the channel rules look the server up, and a write in
   // the same batch is not visible to that lookup yet.
-  await setDoc(ref, { name, ownerUid: uid, memberUids: [uid], createdAt: serverTimestamp() });
+  await setDoc(ref, { name, ownerUid: uid, memberUids: [uid], open, createdAt: serverTimestamp() });
   const batch = writeBatch(db);
   const start = channels ?? [
     { name: "general", kind: "text", position: 0 },
@@ -177,10 +185,28 @@ export async function ensureHomeServer(uid: string) {
   if (!mine.empty) return;
   // The Living Room tile and its chat are added by the app once it watches
   // this server's channels (ensureLivingTile), so it is made exactly once.
-  await createServer(uid, "Digital House", [
-    { name: "general", kind: "text", position: 1 },
-    { name: "Lounge", kind: "voice", position: 2 },
-  ]);
+  await createServer(
+    uid,
+    "Digital House",
+    [
+      { name: "general", kind: "text", position: 1 },
+      { name: "Lounge", kind: "voice", position: 2 },
+    ],
+    true, // open: everyone who gets in through M2A-access is in it
+  );
+}
+
+/**
+ * Everyone who gets in (an approved member, past the M2A-access door) is in
+ * every open server: add yourself to any you are not in yet. The rules let
+ * you add exactly yourself to an open server and nothing else.
+ */
+export async function joinOpenServers(uid: string) {
+  const open = await getDocs(query(collection(db, "servers"), where("open", "==", true)));
+  for (const s of open.docs) {
+    const members = (s.data().memberUids as string[] | undefined) ?? [];
+    if (!members.includes(uid)) await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
+  }
 }
 
 /**
@@ -234,11 +260,14 @@ export async function createRoomTile(
 export const renameServer = (sid: string, name: string) => updateDoc(doc(db, "servers", sid), { name });
 
 /** Name and banner together (Server settings). banner null removes it. */
-export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined) =>
+export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) =>
   updateDoc(doc(db, "servers", sid), {
     name,
+    open,
     ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
   });
+
+export const setServerOpen = (sid: string, open: boolean) => updateDoc(doc(db, "servers", sid), { open });
 export const addServerMembers = (sid: string, uids: string[]) =>
   updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) });
 export const removeServerMember = (sid: string, uid: string) =>
