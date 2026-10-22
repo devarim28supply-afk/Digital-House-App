@@ -24,7 +24,11 @@ function apiDev(): Plugin {
   };
 }
 
-export default defineConfig({
+// Live, the app is /app/ on darkwood-node.vercel.app: the M2A-access bunker
+// is the front page at /. Built into dist/app so the files sit under /app/.
+// The dev server stays at / (localhost:5186).
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? "/app/" : "/",
   plugins: [apiDev(), solid()],
-  build: { target: "es2022" },
-});
+  build: { target: "es2022", outDir: "dist/app", emptyOutDir: true },
+}));

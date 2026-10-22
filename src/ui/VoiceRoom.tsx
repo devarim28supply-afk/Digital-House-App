@@ -17,7 +17,7 @@ import { initials } from "./Shell";
 async function fetchPass(serverId: string, channelId: string) {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error("Log in first.");
-  const res = await fetch("/api/livekit-token", {
+  const res = await fetch("/api/dh-token", {
     method: "POST",
     headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({ serverId, channelId }),

@@ -1,16 +1,18 @@
 {
   "framework": "vite",
-  "buildCommand": "vite build",
+  "buildCommand": "rm -rf dist && vite build",
   "outputDirectory": "dist",
   "redirects": [
-    { "source": "/m2a-access", "destination": "/m2a-access/", "permanent": false },
-    { "source": "/living", "destination": "/living/", "permanent": false }
+    { "source": "/app", "destination": "/app/", "permanent": false },
+    { "source": "/living", "destination": "/living/", "permanent": false },
+    { "source": "/m2a-access", "destination": "/", "permanent": false },
+    { "source": "/m2a-access/:path*", "destination": "/:path*", "permanent": false }
   ],
   "rewrites": [
-    { "source": "/m2a-access/", "destination": "https://gestr-m2a-access.vercel.app/" },
+    { "source": "/app/:path*", "destination": "/app/index.html" },
     { "source": "/living/", "destination": "https://gestr-living.vercel.app/" },
-    { "source": "/m2a-access/:path*", "destination": "https://gestr-m2a-access.vercel.app/:path*" },
     { "source": "/living/:path*", "destination": "https://gestr-living.vercel.app/:path*" },
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+    { "source": "/", "destination": "https://gestr-m2a-access.vercel.app/" },
+    { "source": "/:path*", "destination": "https://gestr-m2a-access.vercel.app/:path*" }
   ]
 }

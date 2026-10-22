@@ -18,7 +18,7 @@ const PHONE = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: 
  * (registered but not approved yet), or Darkwood Node itself.
  *
  * The front door: on a computer, someone not logged in is sent to the
- * M2A-access bunker (/m2a-access/), logs in at its terminal, and walks
+ * M2A-access bunker (the front page, /), logs in at its terminal, and walks
  * through the blast door back here. Phones get the login card right here.
  * ?login shows the card on a computer too.
  */
@@ -38,7 +38,7 @@ export function App() {
   const toBunker = () =>
     settled() && state().status === "guest" && !LOCAL && !PHONE && !wallRoom && !params.has("login") && window.top === window;
   createEffect(() => {
-    if (toBunker()) location.replace("/m2a-access/");
+    if (toBunker()) location.replace("/");
   });
 
   const logout = () => void access.logout();

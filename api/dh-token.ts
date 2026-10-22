@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 /**
  * LiveKit pass for a Digital House voice channel.
  *
- *   POST /api/livekit-token   Authorization: Bearer <Firebase ID token>
+ *   POST /api/dh-token   Authorization: Bearer <Firebase ID token>
  *   body { serverId, channelId }
  *
  * The check is done by Firestore itself: we read servers/{serverId} with the

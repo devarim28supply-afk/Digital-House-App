@@ -65,6 +65,16 @@ const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
   "gestr-living": { local: "http://localhost:5176/", live: "/living/" },
 };
 
+/**
+ * A tile picture: uploads are data URLs; the built-in ones ("/living.png")
+ * are this app's own files, which live under /app/ on the live site.
+ */
+export function imageSrc(image?: string) {
+  if (!image) return "";
+  if (image.startsWith("/") && !image.startsWith("//")) return import.meta.env.BASE_URL + image.slice(1);
+  return image;
+}
+
 export function roomUrlOf(channel: Channel) {
   const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
   if (room) return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? room.local : room.live;

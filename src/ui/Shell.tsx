@@ -13,6 +13,7 @@ import {
   deleteChannel,
   ensureHomeServer,
   ensureLivingTile,
+  imageSrc,
   removeServerMember,
   saveServerSettings,
   saveProfile,
@@ -203,7 +204,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                     aria-current={c.id === channelId() ? "true" : undefined}
                     onClick={() => pickChannel(c.id)}
                   >
-                    <img src={c.image} alt="" draggable={false} />
+                    <img src={imageSrc(c.image)} alt="" draggable={false} />
                     <span class="room-tile-name">{c.name}</span>
                   </button>
                   <Show when={runsServer()}>
