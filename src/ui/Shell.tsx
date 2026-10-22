@@ -171,10 +171,11 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 
       {/* ---- channels ---- */}
       <aside class="side">
-        <header class="side-head" classList={{ "has-banner": Boolean(server()?.banner) }}>
-          <Show when={server()?.banner}>
-            {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
-          </Show>
+        {/* the banner on its own, the name in the row under it */}
+        <Show when={server()?.banner}>
+          {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
+        </Show>
+        <header class="side-head">
           <span class="side-title">{server()?.name ?? "Darkwood Node"}</span>
           <Show when={runsServer()}>
             <button
