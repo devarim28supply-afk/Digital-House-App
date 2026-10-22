@@ -7,6 +7,8 @@
     { "source": "/living", "destination": "/living/", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/m2a-access/", "destination": "https://gestr-m2a-access.vercel.app/" },
+    { "source": "/living/", "destination": "https://gestr-living.vercel.app/" },
     { "source": "/m2a-access/:path*", "destination": "https://gestr-m2a-access.vercel.app/:path*" },
     { "source": "/living/:path*", "destination": "https://gestr-living.vercel.app/:path*" },
     { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
