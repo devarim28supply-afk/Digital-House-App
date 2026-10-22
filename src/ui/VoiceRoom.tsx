@@ -44,6 +44,12 @@ export function VoiceRoom(props: {
   uid: string;
   name: string;
   profiles: Map<string, Profile>;
+  /** join straight away (the room wall) instead of waiting for Join */
+  autoJoin?: boolean;
+  /** told about the live call, so the wall can publish the room's camera */
+  onRoom?: (room: Room | undefined) => void;
+  /** replaces the Camera button (the wall asks the room for its camera) */
+  camera?: { on: boolean; toggle: () => void };
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [joining, setJoining] = createSignal(false);
@@ -54,6 +60,8 @@ export function VoiceRoom(props: {
   const audioHost = document.createElement("div");
   audioHost.hidden = true;
   document.body.appendChild(audioHost);
+
+  createEffect(() => props.onRoom?.(room()));
 
   function leave() {
     const current = room();
@@ -110,6 +118,8 @@ export function VoiceRoom(props: {
       setJoining(false);
     }
   }
+
+  if (props.autoJoin) queueMicrotask(() => void join());
 
   const local = () => {
     version();
@@ -188,9 +198,20 @@ export function VoiceRoom(props: {
           <button type="button" class="dock-btn" aria-pressed={micOn()} onClick={() => void toggle("mic")}>
             {micOn() ? "Mic on" : "Mic off"}
           </button>
-          <button type="button" class="dock-btn" aria-pressed={camOn()} onClick={() => void toggle("cam")}>
-            {camOn() ? "Camera on" : "Camera off"}
-          </button>
+          <Show
+            when={props.camera}
+            fallback={
+              <button type="button" class="dock-btn" aria-pressed={camOn()} onClick={() => void toggle("cam")}>
+                {camOn() ? "Camera on" : "Camera off"}
+              </button>
+            }
+          >
+            {(cam) => (
+              <button type="button" class="dock-btn" aria-pressed={cam().on} onClick={() => cam().toggle()}>
+                {cam().on ? "Camera on" : "Camera off"}
+              </button>
+            )}
+          </Show>
           <button type="button" class="dock-btn" aria-pressed={screenOn()} onClick={() => void toggle("screen")}>
             {screenOn() ? "Sharing" : "Share screen"}
           </button>

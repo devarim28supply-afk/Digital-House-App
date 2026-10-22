@@ -288,6 +288,29 @@
   font-size: 11px;
 }
 
+/* ---- the 3D room's wall (?wall=living): just the call ------------------- */
+
+.wall {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+}
+
+.wall .voice {
+  padding: 10px;
+}
+
+.wall .voice-lobby h2 {
+  display: none;
+}
+
+.wall-note {
+  margin: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
 /* ---- a tile's chat in the right sidebar --------------------------------- */
 
 .shell.with-side-chat {

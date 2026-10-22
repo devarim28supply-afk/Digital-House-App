@@ -1,0 +1,14 @@
+{
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/m2a-access", "destination": "/m2a-access/", "permanent": false },
+    { "source": "/living", "destination": "/living/", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/m2a-access/:path*", "destination": "https://gestr-m2a-access.vercel.app/:path*" },
+    { "source": "/living/:path*", "destination": "https://gestr-living.vercel.app/:path*" },
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ]
+}

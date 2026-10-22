@@ -1,12 +1,26 @@
-import { Match, Switch, createSignal, onCleanup } from "solid-js";
+import { Match, Switch, createEffect, createSignal, onCleanup } from "solid-js";
 
 import { Login } from "./auth/Login";
 import { type AccessState, access } from "./firebase";
 import { Shell } from "./ui/Shell";
+import { WallView } from "./ui/WallView";
+
+const params = new URLSearchParams(location.search);
+// ?wall=living: the Living Room tile's video chat on the 3D room's wall
+const WALL_ROOMS: Record<string, string> = { living: "gestr-living" };
+const wallRoom = WALL_ROOMS[params.get("wall") ?? ""];
+
+const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+const PHONE = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches;
 
 /**
  * Who you are decides what you see: the login card, the waiting room
  * (registered but not approved yet), or Digital House itself.
+ *
+ * The front door: on a computer, someone not logged in is sent to the
+ * M2A-access bunker (/m2a-access/), logs in at its terminal, and walks
+ * through the blast door back here. Phones get the login card right here.
+ * ?login shows the card on a computer too.
  */
 export function App() {
   const [state, setState] = createSignal<AccessState>(access.getState() as AccessState);
@@ -19,11 +33,24 @@ export function App() {
   void access.auth.authStateReady().then(() => setAuthReady(true));
   const settled = () => state().status !== "guest" || (authReady() && !access.auth.currentUser);
 
+  // Computers go to the bunker to log in (live site; this PC's dev servers
+  // are separate addresses, so the shared login would not carry over).
+  const toBunker = () =>
+    settled() && state().status === "guest" && !LOCAL && !PHONE && !wallRoom && !params.has("login") && window.top === window;
+  createEffect(() => {
+    if (toBunker()) location.replace("/m2a-access/");
+  });
+
   const logout = () => void access.logout();
 
   return (
     <Switch>
-      <Match when={!settled()}>{null}</Match>
+      <Match when={!settled() || toBunker()}>{null}</Match>
+      <Match when={Boolean(wallRoom) && state().status === "approved" && state().user}>
+        {(user) => (
+          <WallView uid={user().uid} name={state().member?.name || user().displayName || "Member"} roomKey={wallRoom} />
+        )}
+      </Match>
       <Match when={state().status === "approved" && state().user}>
         {(user) => (
           <Shell

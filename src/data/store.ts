@@ -59,7 +59,8 @@ export const tileChatName = (tileName: string) =>
 // live page everywhere else.
 const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
   // the room's dev server listens on localhost ([::1]), not 127.0.0.1
-  "gestr-living": { local: "http://localhost:5176/", live: "https://gestr-lab.vercel.app/living/" },
+  // live it is /living/ on this same address, so the Firebase login is shared
+  "gestr-living": { local: "http://localhost:5176/", live: "/living/" },
 };
 
 export function roomUrlOf(channel: Channel) {
@@ -192,6 +193,17 @@ export async function ensureLivingTile(sid: string, channels: Channel[]) {
       parentId: tile.id,
     });
   }
+}
+
+/** The first server of yours that has a tile for this Gestr room (the wall). */
+export async function findRoomTile(uid: string, roomKey: string) {
+  const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
+  for (const s of mine.docs) {
+    const tiles = await getDocs(query(collection(db, "servers", s.id, "channels"), where("roomKey", "==", roomKey)));
+    const tile = tiles.docs[0];
+    if (tile) return { serverId: s.id, channel: { id: tile.id, ...(tile.data() as Omit<Channel, "id">) } };
+  }
+  return null;
 }
 
 /** A new room tile and its own chat channel. */
