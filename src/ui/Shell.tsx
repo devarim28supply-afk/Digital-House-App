@@ -12,7 +12,7 @@ import {
   deleteRoomTile,
   deleteChannel,
   ensureHomeServer,
-  ensureLivingTile,
+  ensureHomeTiles,
   joinOpenServers,
   setServerOpen,
   imageSrc,
@@ -116,7 +116,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       const s = servers().find((x) => x.id === sid);
       if (!tileChecked && s?.name === "Digital House" && s.ownerUid === props.uid) {
         tileChecked = true;
-        void ensureLivingTile(sid, list).catch(() => {});
+        void ensureHomeTiles(sid, list).catch(() => {});
         // made before servers could be open: the home server is open to all
         // who get in (an explicit "closed" in Server settings is respected)
         if (s.open === undefined) void setServerOpen(sid, true).catch(() => {});

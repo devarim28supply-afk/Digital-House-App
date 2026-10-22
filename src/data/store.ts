@@ -71,6 +71,8 @@ const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
   // the room's dev server listens on localhost ([::1]), not 127.0.0.1
   // live it is /living/ on this same address, so the Firebase login is shared
   "gestr-living": { local: "http://localhost:5176/", live: "/living/" },
+  // the booth behind the bunker's one-way glass (M2A-access is / live)
+  "m2a-operation": { local: "http://localhost:5179/?spawn=operation", live: "/?spawn=operation" },
 };
 
 /**
@@ -95,6 +97,20 @@ export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
   image: "/living.png",
   roomKey: "gestr-living",
 };
+
+/** The booth behind the window in M2A-access: you spawn inside it. */
+export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
+  name: "M2A ACCESS Operation Room",
+  kind: "room",
+  image: "/operation-room.jpg",
+  roomKey: "m2a-operation",
+};
+
+/** The home server's built-in tiles, in order, each with its own chat. */
+const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
+  { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #livingroom-chat
+  { tile: OPERATION_TILE, chat: "operation-room" },
+];
 export type Message = {
   id: string;
   authorUid: string;
@@ -184,7 +200,7 @@ export async function ensureHomeServer(uid: string) {
   const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
   if (!mine.empty) return;
   // The Living Room tile and its chat are added by the app once it watches
-  // this server's channels (ensureLivingTile), so it is made exactly once.
+  // this server's channels (ensureHomeTiles), so they are made exactly once.
   await createServer(
     uid,
     "Digital House",
@@ -210,26 +226,27 @@ export async function joinOpenServers(uid: string) {
 }
 
 /**
- * The home server's Living Room tile and its #livingroom-chat, made once.
- * Also renames an older "Living" tile and gives it its chat.
+ * The home server's built-in tiles, each with its chat, made once: the
+ * Living Room (#livingroom-chat) and the M2A ACCESS Operation Room
+ * (#operation-room), in that order above the other channels. Also renames
+ * an older "Living" tile and gives a tile without one its chat.
  */
-export async function ensureLivingTile(sid: string, channels: Channel[]) {
+export async function ensureHomeTiles(sid: string, channels: Channel[]) {
   const channelsRef = collection(db, "servers", sid, "channels");
-  let tile = channels.find((c) => c.kind === "room" && c.roomKey === LIVING_TILE.roomKey);
-  if (!tile) {
-    const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
-    const ref = await addDoc(channelsRef, { ...LIVING_TILE, position: first - 1 });
-    tile = { id: ref.id, ...LIVING_TILE, position: first - 1 };
-  } else if (tile.name !== LIVING_TILE.name) {
-    await updateDoc(doc(channelsRef, tile.id), { name: LIVING_TILE.name });
-  }
-  if (!channels.some((c) => c.parentId === tile!.id)) {
-    await addDoc(channelsRef, {
-      name: tileChatName(LIVING_TILE.name),
-      kind: "text",
-      position: tile.position,
-      parentId: tile.id,
-    });
+  const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
+  let position = first - HOME_TILES.length;
+  for (const { tile: spec, chat } of HOME_TILES) {
+    let tile = channels.find((c) => c.kind === "room" && c.roomKey === spec.roomKey);
+    if (!tile) {
+      const ref = await addDoc(channelsRef, { ...spec, position });
+      tile = { id: ref.id, ...spec, position };
+    } else if (tile.name !== spec.name) {
+      await updateDoc(doc(channelsRef, tile.id), { name: spec.name });
+    }
+    if (!channels.some((c) => c.parentId === tile!.id)) {
+      await addDoc(channelsRef, { name: chat, kind: "text", position: tile.position, parentId: tile.id });
+    }
+    position = tile.position + 0.5;
   }
 }
 
