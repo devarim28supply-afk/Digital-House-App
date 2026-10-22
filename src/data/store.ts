@@ -50,7 +50,8 @@ export type Channel = {
 // Gestr rooms a tile can point at: the local dev server on this PC, the
 // live page everywhere else.
 const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
-  "gestr-living": { local: "http://127.0.0.1:5176/", live: "https://gestr-lab.vercel.app/living/" },
+  // the room's dev server listens on localhost ([::1]), not 127.0.0.1
+  "gestr-living": { local: "http://localhost:5176/", live: "https://gestr-lab.vercel.app/living/" },
 };
 
 export function roomUrlOf(channel: Channel) {
