@@ -10,9 +10,11 @@ import {
   createServer,
   deleteChannel,
   ensureHomeServer,
+  ensureLivingTile,
   removeServerMember,
   renameServer,
   saveProfile,
+  shrinkImage,
   startPresence,
   watchChannels,
   watchPresence,
@@ -21,6 +23,7 @@ import {
 } from "../data/store";
 import { Chat } from "./Chat";
 import { Modal } from "./Modal";
+import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 
 import "./app.css";
@@ -98,8 +101,15 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     setChannelId(undefined);
     if (!sid) return;
     remember(LAST_SERVER_KEY, sid);
+    let tileChecked = false;
     const stop = watchChannels(sid, (list) => {
       setChannels(list);
+      // the home server's Living tile, added once for servers made before tiles
+      const s = servers().find((x) => x.id === sid);
+      if (!tileChecked && s?.name === "Digital House" && s.ownerUid === props.uid) {
+        tileChecked = true;
+        void ensureLivingTile(sid, list).catch(() => {});
+      }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
       const saved = recall(lastChannelKey(sid));
@@ -121,6 +131,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const isOnline = (uid: string) => now() - (lastSeen().get(uid) ?? 0) < ONLINE_WINDOW_MS;
   const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
 
+  const roomTiles = () => channels().filter((c) => c.kind === "room");
   const textChannels = () => channels().filter((c) => c.kind === "text");
   const voiceChannels = () => channels().filter((c) => c.kind === "voice");
 
@@ -161,6 +172,34 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 
         <div class="side-scroll">
           <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
+            <For each={roomTiles()}>
+              {(c) => (
+                <div class="tile-row" classList={{ active: c.id === channelId() }}>
+                  <button
+                    type="button"
+                    class="room-tile"
+                    title={c.name}
+                    aria-label={`${c.name}: video chat and room`}
+                    aria-current={c.id === channelId() ? "true" : undefined}
+                    onClick={() => pickChannel(c.id)}
+                  >
+                    <img src={c.image} alt="" draggable={false} />
+                    <span class="room-tile-name">{c.name}</span>
+                  </button>
+                  <Show when={runsServer()}>
+                    <button
+                      class="icon-btn tile-del"
+                      type="button"
+                      title={`Delete ${c.name}`}
+                      aria-label={`Delete ${c.name}`}
+                      onClick={() => void deleteChannel(serverId()!, c.id)}
+                    >
+                      ✕
+                    </button>
+                  </Show>
+                </div>
+              )}
+            </For>
             <ChannelGroup
               label="Text"
               channels={textChannels()}
@@ -213,7 +252,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             ☰
           </button>
           <span class="main-title">
-            <span class="hash">{channel()?.kind === "voice" ? "◉" : "#"}</span> {channel()?.name ?? ""}
+            <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
+            {channel()?.name ?? ""}
           </span>
         </header>
         <Switch fallback={<div class="main-empty">Pick a channel.</div>}>
@@ -230,6 +270,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           </Match>
           <Match when={server() && channel()?.kind === "voice" && channel()}>
             {(ch) => <VoiceRoom serverId={server()!.id} channel={ch()} uid={props.uid} name={props.name} profiles={profiles()} />}
+          </Match>
+          <Match when={server() && channel()?.kind === "room" && channel()}>
+            {(ch) => <RoomPane serverId={server()!.id} channel={ch()} uid={props.uid} name={props.name} profiles={profiles()} />}
           </Match>
         </Switch>
       </main>
@@ -274,7 +317,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       <NewChannelDialog
         open={modal() === "new-channel"}
         onClose={() => setModal("")}
-        onSubmit={(name, kind) => createChannel(serverId()!, name, kind, channels().length)}
+        onSubmit={(name, kind, extra) => createChannel(serverId()!, name, kind, channels().length, extra)}
       />
       <PeopleDialog
         open={modal() === "people"}
@@ -410,10 +453,33 @@ function NameDialog(props: {
 function NewChannelDialog(props: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (name: string, kind: Channel["kind"]) => Promise<unknown>;
+  onSubmit: (name: string, kind: Channel["kind"], extra: { image?: string; url?: string }) => Promise<unknown>;
 }) {
+  const [kind, setKind] = createSignal<Channel["kind"]>("text");
+  const [image, setImage] = createSignal("");
+  const [error, setError] = createSignal("");
+
+  async function pickImage(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      setError("");
+      setImage(await shrinkImage(file));
+    } catch (err) {
+      setImage("");
+      setError(err instanceof Error ? err.message : "Could not read that image");
+    }
+  }
+
+  const close = () => {
+    setKind("text");
+    setImage("");
+    setError("");
+    props.onClose();
+  };
+
   return (
-    <Modal title="New channel" open={props.open} onClose={props.onClose}>
+    <Modal title="New channel" open={props.open} onClose={close}>
       <form
         class="modal-form"
         onSubmit={async (e) => {
@@ -421,8 +487,20 @@ function NewChannelDialog(props: {
           const form = new FormData(e.currentTarget);
           const name = String(form.get("name") ?? "").trim().slice(0, 40);
           if (!name) return;
-          await props.onSubmit(name, form.get("kind") === "voice" ? "voice" : "text");
-          props.onClose();
+          const extra: { image?: string; url?: string } = {};
+          if (kind() === "room") {
+            const url = String(form.get("url") ?? "").trim();
+            if (!/^https?:\/\//i.test(url)) return setError("Use a full link, starting with https://");
+            if (!image()) return setError("Choose a picture for the tile");
+            extra.url = url;
+            extra.image = image();
+          }
+          try {
+            await props.onSubmit(name, kind(), extra);
+            close();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not create that.");
+          }
         }}
       >
         <label class="field">
@@ -431,14 +509,39 @@ function NewChannelDialog(props: {
         </label>
         <div class="kind-pick">
           <label>
-            <input type="radio" name="kind" value="text" checked /> # Text
+            <input type="radio" name="kind" value="text" checked={kind() === "text"} onChange={() => setKind("text")} /> #
+            Text
           </label>
           <label>
-            <input type="radio" name="kind" value="voice" /> ◉ Voice / video
+            <input type="radio" name="kind" value="voice" checked={kind() === "voice"} onChange={() => setKind("voice")} />{" "}
+            ◉ Voice / video
+          </label>
+          <label>
+            <input type="radio" name="kind" value="room" checked={kind() === "room"} onChange={() => setKind("room")} /> ▣
+            Room tile
           </label>
         </div>
+        <Show when={kind() === "room"}>
+          <p class="modal-text">
+            A picture in the channel list. Clicking it opens a video chat, with a toggle to the room page at this link.
+          </p>
+          <label class="field">
+            <span>Room link</span>
+            <input name="url" type="url" placeholder="https://" />
+          </label>
+          <label class="field">
+            <span>Picture</span>
+            <input type="file" accept="image/*" onChange={pickImage} />
+          </label>
+          <Show when={image()}>
+            <img class="tile-preview" src={image()} alt="" />
+          </Show>
+        </Show>
+        <Show when={error()}>
+          <p class="form-error">{error()}</p>
+        </Show>
         <div class="modal-actions">
-          <button class="btn" type="button" onClick={props.onClose}>
+          <button class="btn" type="button" onClick={close}>
             Cancel
           </button>
           <button class="btn primary" type="submit">

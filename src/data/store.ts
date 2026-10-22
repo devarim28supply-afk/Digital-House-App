@@ -26,13 +26,45 @@ import { db } from "../firebase";
  *   profiles/{uid}       name, username, color          everyone approved reads
  *   presence/{uid}       lastSeen                         heartbeat, self-written
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
- *     channels/{cid}     name, kind "text"|"voice", position
+ *     channels/{cid}     name, kind "text"|"voice"|"room", position
+ *                        room: image, and roomKey (a Gestr room) or url
  *       messages/{mid}   authorUid, text, createdAt, editedAt?
  */
 
 export type Profile = { uid: string; name: string; username: string; color: string };
 export type Server = { id: string; name: string; ownerUid: string; memberUids: string[] };
-export type Channel = { id: string; name: string; kind: "text" | "voice"; position: number };
+/**
+ * "room" is a picture tile: click it for the room's video chat, and a toggle
+ * flips the same pane to the room page itself (a Gestr 3D room or any link).
+ */
+export type Channel = {
+  id: string;
+  name: string;
+  kind: "text" | "voice" | "room";
+  position: number;
+  image?: string;
+  roomKey?: string;
+  url?: string;
+};
+
+// Gestr rooms a tile can point at: the local dev server on this PC, the
+// live page everywhere else.
+const GESTR_ROOMS: Record<string, { local: string; live: string }> = {
+  "gestr-living": { local: "http://127.0.0.1:5176/", live: "https://gestr-lab.vercel.app/living/" },
+};
+
+export function roomUrlOf(channel: Channel) {
+  const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
+  if (room) return /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? room.local : room.live;
+  return channel.url ?? "";
+}
+
+export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
+  name: "Living",
+  kind: "room",
+  image: "/living.png",
+  roomKey: "gestr-living",
+};
 export type Message = {
   id: string;
   authorUid: string;
@@ -122,10 +154,17 @@ export async function ensureHomeServer(uid: string) {
   const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
   if (!mine.empty) return;
   await createServer(uid, "Digital House", [
-    { name: "general", kind: "text", position: 0 },
-    { name: "Living Room", kind: "voice", position: 1 },
+    { ...LIVING_TILE, position: 0 },
+    { name: "general", kind: "text", position: 1 },
     { name: "Lounge", kind: "voice", position: 2 },
   ]);
+}
+
+/** A Digital House made before tiles existed gets its Living tile once. */
+export async function ensureLivingTile(sid: string, channels: Channel[]) {
+  if (channels.some((c) => c.kind === "room" && c.roomKey === LIVING_TILE.roomKey)) return;
+  const first = channels.reduce((min, c) => Math.min(min, c.position), 0);
+  await addDoc(collection(db, "servers", sid, "channels"), { ...LIVING_TILE, position: first - 1 });
 }
 
 export const renameServer = (sid: string, name: string) => updateDoc(doc(db, "servers", sid), { name });
@@ -142,8 +181,37 @@ export function watchChannels(sid: string, cb: (channels: Channel[]) => void): U
   });
 }
 
-export const createChannel = (sid: string, name: string, kind: Channel["kind"], position: number) =>
-  addDoc(collection(db, "servers", sid, "channels"), { name, kind, position });
+export const createChannel = (
+  sid: string,
+  name: string,
+  kind: Channel["kind"],
+  position: number,
+  extra: { image?: string; url?: string } = {},
+) => addDoc(collection(db, "servers", sid, "channels"), { name, kind, position, ...extra });
+
+/** A picked image, shrunk to a tile-sized JPEG so it fits in the channel record. */
+export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const src = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      URL.revokeObjectURL(src);
+      if (!ctx) return reject(new Error("Could not read that image"));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(src);
+      reject(new Error("Could not read that image"));
+    };
+    img.src = src;
+  });
+}
 export const renameChannel = (sid: string, cid: string, name: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid), { name });
 export const deleteChannel = (sid: string, cid: string) => deleteDoc(doc(db, "servers", sid, "channels", cid));
