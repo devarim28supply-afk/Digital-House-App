@@ -324,6 +324,17 @@ export function VoiceRoom(props: {
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
   let secondScreen: LocalTrackPublication | undefined;
   const [secondOn, setSecondOn] = createSignal(false);
+  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0);
+  const [shareMenu, setShareMenu] = createSignal(false);
+  // a click anywhere else closes the share menu
+  createEffect(() => {
+    if (!shareMenu()) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".share-wrap")) setShareMenu(false);
+    };
+    window.addEventListener("pointerdown", close);
+    onCleanup(() => window.removeEventListener("pointerdown", close));
+  });
 
   /** Share (or stop) a 2nd screen, next to the first. */
   async function toggleSecondScreen() {
@@ -536,12 +547,42 @@ export function VoiceRoom(props: {
               </button>
             )}
           </Show>
-          <button type="button" class="dock-btn" aria-pressed={screenOn()} onClick={() => void toggle("screen")}>
-            {screenOn() ? "Sharing" : "Share screen"}
-          </button>
-          <button type="button" class="dock-btn" aria-pressed={secondOn()} onClick={() => void toggleSecondScreen()}>
-            {secondOn() ? "Sharing 2nd" : "Share 2nd screen"}
-          </button>
+          {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
+          <div class="share-wrap">
+            <button
+              type="button"
+              class="dock-btn"
+              aria-pressed={sharedCount() > 0}
+              aria-expanded={shareMenu()}
+              onClick={() => setShareMenu(!shareMenu())}
+            >
+              {sharedCount() === 0 ? "Share screen" : `Sharing ${sharedCount()}`} ▴
+            </button>
+            <Show when={shareMenu()}>
+              <div class="share-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenu(false);
+                    void toggle("screen");
+                  }}
+                >
+                  {screenOn() ? "Stop screen 1" : "Share screen 1"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenu(false);
+                    void toggleSecondScreen();
+                  }}
+                >
+                  {secondOn() ? "Stop screen 2" : "Share screen 2"}
+                </button>
+              </div>
+            </Show>
+          </div>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
