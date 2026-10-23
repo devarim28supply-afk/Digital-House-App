@@ -50,6 +50,9 @@ const SECOND_SCREEN = "screen-2";
 // own tile as a small picture instead of a tile of its own.
 const STREAM = "stream";
 const STREAM_AUDIO = "stream-audio";
+// Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
+const ATTENTION_TOPIC = "attention";
+const ATTENTION_MS = 3000;
 type InsetCorner = "tl" | "tr" | "bl" | "br";
 // the small picture's width, in % of its tile: from this big down to this small
 const INSET_MAX = 30;
@@ -305,6 +308,9 @@ export function VoiceRoom(props: {
           bump();
         })
         .on(RoomEvent.ActiveSpeakersChanged, (who: Participant[]) => setSpeaking(new Set(who.map((p) => p.identity))))
+        .on(RoomEvent.DataReceived, (_payload, participant, _kind, topic) => {
+          if (topic === ATTENTION_TOPIC && participant) flashTile(participant.identity);
+        })
         .on(RoomEvent.Disconnected, () => {
           if (room() === next) leave();
         });
@@ -423,6 +429,37 @@ export function VoiceRoom(props: {
     }
     bump();
   }
+  // ---- attention: a white strobe around someone's tile ---------------------
+  const [flashing, setFlashing] = createSignal(new Set<string>());
+  const flashTimers = new Map<string, number>();
+  function flashTile(identity: string) {
+    window.clearTimeout(flashTimers.get(identity));
+    setFlashing((prev) => new Set(prev).add(identity));
+    flashTimers.set(
+      identity,
+      window.setTimeout(() => {
+        flashTimers.delete(identity);
+        setFlashing((prev) => {
+          const next = new Set(prev);
+          next.delete(identity);
+          return next;
+        });
+      }, ATTENTION_MS),
+    );
+  }
+  onCleanup(() => flashTimers.forEach((t) => window.clearTimeout(t)));
+  /** Ask for attention: your tile strobes on everyone's screen (yours too). */
+  async function callAttention() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    flashTile(me.identity);
+    try {
+      await me.publishData(new TextEncoder().encode("1"), { reliable: true, topic: ATTENTION_TOPIC });
+    } catch {
+      setError("Could not send that. Check your connection.");
+    }
+  }
+
   async function stopStream() {
     const pubs = streamPubs;
     streamPubs = [];
@@ -808,6 +845,7 @@ export function VoiceRoom(props: {
                 name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
+                flashing={!tile.screen && flashing().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
                 stream={tile.screen ? undefined : streamOf(tile.participant)}
@@ -900,6 +938,9 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
+          <button type="button" class="dock-btn attention-btn" title="Make your tile flash white for everyone (3 s)" onClick={() => void callAttention()}>
+            ✦ Attention
+          </button>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
@@ -978,6 +1019,8 @@ function Tile(props: {
   roomFace?: RemoteTrack;
   /** your own camera, already switched off (it is still stopping) */
   forceOff?: boolean;
+  /** they asked for attention: a white strobe around the tile */
+  flashing?: boolean;
   /** their stream (stream mode): a small picture on their tile */
   stream?: Track;
   /** the stream big and the webcam small (double-click the small one) */
@@ -1077,7 +1120,12 @@ function Tile(props: {
   }
 
   return (
-    <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }} style={props.style} onDblClick={props.onDblClick}>
+    <article
+      class="tile"
+      classList={{ speaking: props.speaking, screen: props.tile.screen, attention: Boolean(props.flashing) }}
+      style={props.style}
+      onDblClick={props.onDblClick}
+    >
       <video ref={video} autoplay playsinline muted classList={{ hidden: !big(), mirror: mirrored() }} />
       <Show when={!big()}>
         <div class="tile-empty">

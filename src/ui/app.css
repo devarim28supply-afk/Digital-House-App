@@ -2330,3 +2330,28 @@ img.live-tile-still {
   border-radius: 5px;
   object-fit: cover;
 }
+
+/* ---- attention: a white strobe around someone's tile (3 s) ----------------- */
+/* About 2.5 flashes a second, under the rate that bothers people sensitive to
+   flashing light. */
+.tile.attention {
+  animation: attention-strobe 0.4s steps(1, end) infinite;
+}
+
+@keyframes attention-strobe {
+  0% {
+    border-color: #fff;
+    box-shadow:
+      0 0 0 3px #fff,
+      0 0 28px 8px rgba(255, 255, 255, 0.9);
+  }
+  50% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.attention-btn:active {
+  border-color: #fff;
+  color: #fff;
+}
