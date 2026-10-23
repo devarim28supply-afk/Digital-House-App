@@ -316,6 +316,21 @@ export const saveServerSettings = (sid: string, name: string, banner: string | n
   });
 
 export const setServerOpen = (sid: string, open: boolean) => updateDoc(doc(db, "servers", sid), { open });
+
+/**
+ * Remove a whole server: every channel's messages, the channels, then the
+ * server. Only its owner may (rules); the app never offers it for the home
+ * server.
+ */
+export async function deleteServer(sid: string) {
+  const channels = await getDocs(collection(db, "servers", sid, "channels"));
+  for (const c of channels.docs) {
+    const messages = await getDocs(collection(c.ref, "messages"));
+    for (const m of messages.docs) await deleteDoc(m.ref);
+    await deleteDoc(c.ref);
+  }
+  await deleteDoc(doc(db, "servers", sid));
+}
 export const addServerMembers = (sid: string, uids: string[]) =>
   updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) });
 export const removeServerMember = (sid: string, uid: string) =>

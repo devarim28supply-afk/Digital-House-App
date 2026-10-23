@@ -19,6 +19,7 @@ import {
   isBuiltInTile,
   removeServerMember,
   saveServerSettings,
+  deleteServer,
   saveProfile,
   shrinkImage,
   startPresence,
@@ -392,7 +393,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           setServerId(id);
         }}
       />
-      <ServerSettingsDialog open={modal() === "rename"} server={server()} onClose={() => setModal("")} />
+      <ServerSettingsDialog
+        open={modal() === "rename"}
+        server={server()}
+        // the owner may delete a server, never the home server (Living Room tile)
+        canDelete={Boolean(server() && server()!.ownerUid === props.uid && !roomTiles().some((c) => c.roomKey === "gestr-living"))}
+        onClose={() => setModal("")}
+      />
       <NewChannelDialog
         open={modal() === "new-channel"}
         onClose={() => setModal("")}
@@ -639,18 +646,39 @@ function NewChannelDialog(props: {
 }
 
 /** The server's name and banner (the picture across the top of its channels). */
-function ServerSettingsDialog(props: { open: boolean; server?: Server; onClose: () => void }) {
+function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete: boolean; onClose: () => void }) {
   // undefined = banner untouched, null = remove it, string = the new picture
   const [banner, setBanner] = createSignal<string | null | undefined>();
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
+  // Delete takes two clicks: the first arms it, the second deletes.
+  const [deleteArmed, setDeleteArmed] = createSignal(false);
+  const [deleting, setDeleting] = createSignal(false);
   const shown = () => (banner() === undefined ? props.server?.banner : banner() ?? undefined);
 
   const close = () => {
     setBanner(undefined);
     setError("");
+    setDeleteArmed(false);
     props.onClose();
   };
+
+  async function removeServer() {
+    if (!props.server) return;
+    if (!deleteArmed()) {
+      setDeleteArmed(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteServer(props.server.id);
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete the server.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function pick(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -714,6 +742,17 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; onClose: 
           </div>
           <small class="field-hint">Wide pictures work best (about 3 : 1).</small>
         </div>
+        <Show when={props.canDelete}>
+          <div class="field">
+            <span>Delete</span>
+            <div class="banner-actions">
+              <button class="btn danger" type="button" disabled={deleting()} onClick={() => void removeServer()}>
+                {deleting() ? "Deleting…" : deleteArmed() ? "Click again to delete for good" : "Delete server"}
+              </button>
+            </div>
+            <small class="field-hint">Removes this server, its channels and all their messages.</small>
+          </div>
+        </Show>
         <Show when={error()}>
           <p class="form-error">{error()}</p>
         </Show>
