@@ -50,6 +50,9 @@ const SECOND_SCREEN = "screen-2";
 const STREAM = "stream";
 const STREAM_AUDIO = "stream-audio";
 type InsetCorner = "tl" | "tr" | "bl" | "br";
+// the small picture's width, in % of its tile: from this big down to this small
+const INSET_MAX = 30;
+const INSET_MIN = 12;
 
 // the call grid: gap between tiles, and the small Room view's width (of a tile)
 const GAP = 10;
@@ -448,6 +451,10 @@ export function VoiceRoom(props: {
   const [corners, setCorners] = createSignal(new Map<string, InsetCorner>());
   const setCorner = (identity: string, corner: InsetCorner) =>
     setCorners((prev) => new Map(prev).set(identity, corner));
+  // and how big it is (dragging its inner corner), also only on your screen
+  const [insetSizes, setInsetSizes] = createSignal(new Map<string, number>());
+  const setInsetSize = (identity: string, size: number) =>
+    setInsetSizes((prev) => new Map(prev).set(identity, size));
 
   async function stopSecondScreen() {
     const pub = secondScreen;
@@ -789,6 +796,8 @@ export function VoiceRoom(props: {
                 onSwap={() => swap(tile.participant.identity)}
                 corner={corners().get(tile.participant.identity) ?? "tl"}
                 onCorner={(corner) => setCorner(tile.participant.identity, corner)}
+                insetSize={insetSizes().get(tile.participant.identity) ?? INSET_MAX}
+                onInsetSize={(size) => setInsetSize(tile.participant.identity, size)}
               />
             )}
           </For>
@@ -958,6 +967,9 @@ function Tile(props: {
   /** the corner the small picture sits in; dragging it picks another */
   corner?: InsetCorner;
   onCorner?: (corner: InsetCorner) => void;
+  /** the small picture's width in % of the tile (INSET_MIN to INSET_MAX) */
+  insetSize?: number;
+  onInsetSize?: (size: number) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let inset: HTMLVideoElement | undefined;
@@ -1008,6 +1020,31 @@ function Tile(props: {
     dragFrom.moved = true;
     setDrag({ x: dx, y: dy });
   }
+  // Resize: drag the small picture's inner corner (the one toward the middle
+  // of the tile). Toward the middle = bigger, toward its own corner = smaller.
+  let resizeFrom: { x: number; width: number; tile: number } | undefined;
+  function resizeStart(e: PointerEvent) {
+    e.stopPropagation();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    const inset = handle.parentElement?.getBoundingClientRect();
+    const tile = handle.closest(".tile")?.getBoundingClientRect();
+    if (!inset || !tile) return;
+    resizeFrom = { x: e.clientX, width: inset.width, tile: tile.width };
+  }
+  function resizeMove(e: PointerEvent) {
+    if (!resizeFrom) return;
+    e.stopPropagation();
+    const onLeft = (props.corner ?? "tl").endsWith("l");
+    const dx = (e.clientX - resizeFrom.x) * (onLeft ? 1 : -1);
+    const size = ((resizeFrom.width + dx) / resizeFrom.tile) * 100;
+    props.onInsetSize?.(Math.max(INSET_MIN, Math.min(INSET_MAX, size)));
+  }
+  function resizeEnd(e: PointerEvent) {
+    if (resizeFrom) e.stopPropagation();
+    resizeFrom = undefined;
+  }
+
   function dragEnd(e: PointerEvent) {
     const from = dragFrom;
     dragFrom = undefined;
@@ -1034,7 +1071,10 @@ function Tile(props: {
         <div
           class={`tile-inset corner-${props.corner ?? "tl"}`}
           classList={{ dragging: Boolean(drag()) }}
-          style={drag() ? { transform: `translate(${drag()!.x}px, ${drag()!.y}px)` } : {}}
+          style={{
+            width: `${props.insetSize ?? INSET_MAX}%`,
+            ...(drag() ? { transform: `translate(${drag()!.x}px, ${drag()!.y}px)` } : {}),
+          }}
           title="Double-click to swap · drag to another corner"
           onPointerDown={dragStart}
           onPointerMove={dragMove}
@@ -1058,6 +1098,15 @@ function Tile(props: {
               {faceText(props.profile, props.name)}
             </span>
           </Show>
+          <span
+            class="inset-resize"
+            title="Drag to resize"
+            onPointerDown={resizeStart}
+            onPointerMove={resizeMove}
+            onPointerUp={resizeEnd}
+            onPointerCancel={resizeEnd}
+            onDblClick={(e) => e.stopPropagation()}
+          />
         </div>
       </Show>
       <span class="tile-name">

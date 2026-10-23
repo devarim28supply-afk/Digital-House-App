@@ -2191,3 +2191,50 @@ img.msg-sticker {
   bottom: 38px;
   right: 10px;
 }
+
+/* the resize handle: the small picture's inner corner (toward the tile's middle) */
+.inset-resize {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  z-index: 1;
+  border: 0 solid rgba(255, 255, 255, 0.9);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tile-inset:hover .inset-resize {
+  opacity: 1;
+}
+
+.corner-tl .inset-resize {
+  right: 2px;
+  bottom: 2px;
+  border-right-width: 3px;
+  border-bottom-width: 3px;
+  cursor: nwse-resize;
+}
+
+.corner-tr .inset-resize {
+  left: 2px;
+  bottom: 2px;
+  border-left-width: 3px;
+  border-bottom-width: 3px;
+  cursor: nesw-resize;
+}
+
+.corner-bl .inset-resize {
+  right: 2px;
+  top: 2px;
+  border-right-width: 3px;
+  border-top-width: 3px;
+  cursor: nesw-resize;
+}
+
+.corner-br .inset-resize {
+  left: 2px;
+  top: 2px;
+  border-left-width: 3px;
+  border-top-width: 3px;
+  cursor: nwse-resize;
+}
