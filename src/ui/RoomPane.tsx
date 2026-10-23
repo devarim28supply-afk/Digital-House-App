@@ -1,6 +1,7 @@
-import { Show, createEffect, createSignal, on } from "solid-js";
+import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 
 import { type Channel, type Profile, roomCamOf, roomUrlOf } from "../data/store";
+import { setInRoom } from "../data/where";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -30,6 +31,13 @@ export function RoomPane(props: {
   const [pane, setPane] = createSignal<Pane>(recallPane(props.channel.id));
   // The room page loads the first time it is shown, then stays loaded.
   const [roomLoaded, setRoomLoaded] = createSignal(pane() === "room");
+
+  // Looking at the room: the Online list says "In <room>".
+  createEffect(() => {
+    if (pane() !== "room") return;
+    setInRoom(props.channel.name);
+    onCleanup(() => setInRoom(undefined));
+  });
 
   createEffect(
     on(

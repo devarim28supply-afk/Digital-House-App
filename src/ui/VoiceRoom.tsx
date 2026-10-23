@@ -10,6 +10,7 @@ import {
 } from "livekit-client";
 
 import { type Channel, type Profile } from "../data/store";
+import { setInCall } from "../data/where";
 import { auth } from "../firebase";
 import { initials } from "./Shell";
 
@@ -136,6 +137,13 @@ export function VoiceRoom(props: {
   document.body.appendChild(audioHost);
 
   createEffect(() => props.onRoom?.(room()));
+
+  // In a call: the Online list says so ("Videochat · <channel>").
+  createEffect(() => {
+    if (!room()) return;
+    setInCall(props.channel.name);
+    onCleanup(() => setInCall(undefined));
+  });
 
   function leave() {
     const current = room();

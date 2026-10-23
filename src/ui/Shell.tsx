@@ -3,6 +3,7 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCle
 import {
   type Channel,
   ONLINE_WINDOW_MS,
+  type Presence,
   type Profile,
   type Server,
   addServerMembers,
@@ -32,6 +33,7 @@ import { Chat } from "./Chat";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
+import { whereNow } from "../data/where";
 
 import "./app.css";
 
@@ -66,7 +68,7 @@ export function initials(name: string) {
 export function Shell(props: { uid: string; admin: boolean; name: string; username: string; onLogout: () => void }) {
   const [servers, setServers] = createSignal<Server[]>([]);
   const [profiles, setProfiles] = createSignal(new Map<string, Profile>());
-  const [lastSeen, setLastSeen] = createSignal(new Map<string, number>());
+  const [presence, setPresence] = createSignal(new Map<string, Presence>());
   const [now, setNow] = createSignal(Date.now());
   const [serverId, setServerId] = createSignal<string | undefined>(recall(LAST_SERVER_KEY));
   const [channels, setChannels] = createSignal<Channel[]>([]);
@@ -81,11 +83,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     if (props.admin) void ensureHomeServer(props.uid).catch(() => {});
     // everyone who got in through M2A-access is in every open server
     void joinOpenServers(props.uid).catch(() => {});
+    const me = startPresence(props.uid);
+    // tell everyone where you are: a call or a room's Room view
+    createEffect(() => me.setWhere(whereNow()));
     const stops = [
-      startPresence(props.uid),
+      me.stop,
       watchServers(props.uid, setServers),
       watchProfiles(setProfiles),
-      watchPresence(setLastSeen),
+      watchPresence(setPresence),
     ];
     const tick = window.setInterval(() => setNow(Date.now()), 30_000);
     onCleanup(() => {
@@ -145,7 +150,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     setNavOpen(false);
   }
 
-  const isOnline = (uid: string) => now() - (lastSeen().get(uid) ?? 0) < ONLINE_WINDOW_MS;
+  const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
+  // where an online person is; a place older than the window has expired
+  const whereOf = (uid: string) => {
+    const p = presence().get(uid);
+    return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
+  };
+  const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
   const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
 
   const roomTiles = () => channels().filter((c) => c.kind === "room");
@@ -355,6 +366,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                 ✕
               </button>
             </header>
+            {/* who is online stays visible with a tile open, above its chat */}
+            <div class="side-online">
+              <MemberGroup
+                label={`Online — ${onlineHere().length}`}
+                uids={onlineHere()}
+                profiles={profiles()}
+                nameOf={nameOf}
+                whereOf={whereOf}
+                online
+              />
+            </div>
             <Chat
               serverId={server()!.id}
               channel={chat()}
@@ -373,7 +395,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             const offline = () => s().memberUids.filter((u) => !isOnline(u));
             return (
               <>
-                <MemberGroup label={`Online — ${online().length}`} uids={online()} profiles={profiles()} nameOf={nameOf} online />
+                <MemberGroup
+                  label={`Online — ${online().length}`}
+                  uids={online()}
+                  profiles={profiles()}
+                  nameOf={nameOf}
+                  whereOf={whereOf}
+                  online
+                />
                 <MemberGroup label={`Offline — ${offline().length}`} uids={offline()} profiles={profiles()} nameOf={nameOf} />
               </>
             );
@@ -474,6 +503,8 @@ function MemberGroup(props: {
   profiles: Map<string, Profile>;
   nameOf: (uid: string) => string;
   online?: boolean;
+  /** where an online person is ("In Living Room", "Videochat · …") */
+  whereOf?: (uid: string) => string;
 }) {
   return (
     <Show when={props.uids.length}>
@@ -487,7 +518,12 @@ function MemberGroup(props: {
                 <i class="dot" />
               </Show>
             </span>
-            <span class="member-name">{props.nameOf(uid)}</span>
+            <span class="member-text">
+              <span class="member-name">{props.nameOf(uid)}</span>
+              <Show when={props.online && props.whereOf?.(uid)}>
+                {(where) => <small class="member-where">{where()}</small>}
+              </Show>
+            </span>
           </div>
         )}
       </For>

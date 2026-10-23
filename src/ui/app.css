@@ -936,6 +936,32 @@
   opacity: 0.45;
 }
 
+.member-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.member-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* the Online list above a tile's chat: short, scrolls if many are on */
+.side-online {
+  flex: none;
+  max-height: 34%;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
 .member-name {
   flex: 1;
   min-width: 0;

@@ -180,21 +180,58 @@ const HEARTBEAT_MS = 45_000;
 export const ONLINE_WINDOW_MS = 2 * 60_000;
 
 /** Write a heartbeat now and every 45 s while the page is open. */
-export function startPresence(uid: string): Unsubscribe {
-  const beat = () => setDoc(doc(db, "presence", uid), { lastSeen: serverTimestamp() }).catch(() => {});
+/**
+ * Who is online and where. presence/{uid}: lastSeen (heartbeat), and where
+ * ("In Living Room", "Videochat · Living Room") with whereAt; the 3D rooms
+ * write "In <room>" for whoever stands in them (room-presence.js). A where
+ * older than ONLINE_WINDOW_MS has expired (they left that place).
+ */
+export type Presence = { lastSeen: number; where: string; whereAt: number };
+
+/** Heartbeat for this app; setWhere("") when you are not in a call or room. */
+export function startPresence(uid: string) {
+  let where = "";
+  const ref = doc(db, "presence", uid);
+  // With a place, say where; without one, only the heartbeat (merge), so a
+  // 3D room tab of yours can still report that you stand in it.
+  const beat = () =>
+    setDoc(ref, where ? { lastSeen: serverTimestamp(), where, whereAt: serverTimestamp() } : { lastSeen: serverTimestamp() }, {
+      merge: true,
+    }).catch(() => {});
   beat();
   const timer = window.setInterval(beat, HEARTBEAT_MS);
   const onVisible = () => document.visibilityState === "visible" && beat();
   document.addEventListener("visibilitychange", onVisible);
-  return () => {
-    window.clearInterval(timer);
-    document.removeEventListener("visibilitychange", onVisible);
+  return {
+    setWhere(next: string) {
+      if (next === where) return;
+      where = next;
+      beat();
+    },
+    stop() {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    },
   };
 }
 
-export function watchPresence(cb: (lastSeen: Map<string, number>) => void): Unsubscribe {
+export function watchPresence(cb: (presence: Map<string, Presence>) => void): Unsubscribe {
   return onSnapshot(collection(db, "presence"), (snap) => {
-    cb(new Map(snap.docs.map((d) => [d.id, toDate(d.data().lastSeen)?.getTime() ?? Date.now()])));
+    cb(
+      new Map(
+        snap.docs.map((d) => {
+          const data = d.data();
+          return [
+            d.id,
+            {
+              lastSeen: toDate(data.lastSeen)?.getTime() ?? Date.now(),
+              where: typeof data.where === "string" ? data.where : "",
+              whereAt: toDate(data.whereAt)?.getTime() ?? 0,
+            },
+          ];
+        }),
+      ),
+    );
   });
 }
 
