@@ -2293,3 +2293,21 @@ img.msg-sticker {
       0 0 22px rgba(244, 63, 94, 0.7);
   }
 }
+
+/* the streamer's webcam, small in the LIVE tile's top-left corner */
+.live-tile video.live-tile-face {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 34%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
+  object-fit: cover;
+  background: #000;
+}
+
+.live-tile video.live-tile-face.hidden {
+  display: none;
+}

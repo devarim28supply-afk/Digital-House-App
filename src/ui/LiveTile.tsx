@@ -10,8 +10,8 @@ const PEEK_TAG = Math.random().toString(36).slice(2, 8);
 
 /**
  * Someone is in stream mode: a LIVE tile at the top of the sidebar playing
- * their stream (no sound), their name at the bottom and a glowing red LIVE
- * (Kaalob's drawing). Clicking it takes you into that videochat with their
+ * their stream (no sound) with their webcam small in the corner, their name
+ * at the bottom and a glowing red LIVE (Kaalob's drawings). Clicking it takes you into that videochat with their
  * stream big.
  */
 export function LiveTile(props: {
@@ -23,7 +23,9 @@ export function LiveTile(props: {
   onOpen: () => void;
 }) {
   let video: HTMLVideoElement | undefined;
+  let face: HTMLVideoElement | undefined;
   const [playing, setPlaying] = createSignal(false);
+  const [faceOn, setFaceOn] = createSignal(false);
 
   onMount(() => {
     let room: Room | undefined;
@@ -48,10 +50,24 @@ export function LiveTile(props: {
         const next = new Room({ adaptiveStream: true });
         next
           .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
-            if (participant.identity === props.uid && pub.trackName === "stream" && track.kind === Track.Kind.Video) attach(track);
+            if (participant.identity !== props.uid || track.kind !== Track.Kind.Video) return;
+            if (pub.trackName === "stream") attach(track);
+            // their webcam, small in the corner
+            else if (pub.source === Track.Source.Camera && face) {
+              track.attach(face);
+              setFaceOn(!pub.isMuted);
+            }
           })
           .on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
-            if (participant.identity === props.uid && pub.trackName === "stream") setPlaying(false);
+            if (participant.identity !== props.uid) return;
+            if (pub.trackName === "stream") setPlaying(false);
+            else if (pub.source === Track.Source.Camera) setFaceOn(false);
+          })
+          .on(RoomEvent.TrackMuted, (pub, participant) => {
+            if (participant.identity === props.uid && pub.source === Track.Source.Camera) setFaceOn(false);
+          })
+          .on(RoomEvent.TrackUnmuted, (pub, participant) => {
+            if (participant.identity === props.uid && pub.source === Track.Source.Camera) setFaceOn(true);
           })
           .on(RoomEvent.Disconnected, () => {
             setPlaying(false);
@@ -78,6 +94,7 @@ export function LiveTile(props: {
       <Show when={!playing()}>
         <span class="live-tile-wait" />
       </Show>
+      <video ref={face} class="live-tile-face" autoplay playsinline muted classList={{ hidden: !faceOn() }} />
       <span class="live-badge">LIVE</span>
       <span class="room-tile-name">{props.name}</span>
     </button>
