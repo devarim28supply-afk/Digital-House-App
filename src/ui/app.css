@@ -1984,3 +1984,27 @@ button.msg-media {
   font-size: 15px;
   cursor: pointer;
 }
+
+/* who is in a tile's room: round pictures on the tile, top right */
+.tile-people {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: row-reverse;
+  line-height: 1;
+}
+
+.avatar.tile-face {
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  border: 2px solid #000;
+  font-size: 9px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.avatar.tile-face.more {
+  background: #1a1a1a;
+  color: var(--text);
+}

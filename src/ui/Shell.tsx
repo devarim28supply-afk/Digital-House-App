@@ -41,6 +41,10 @@ import "./app.css";
 const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
 const RIGHT_MODE_KEY = "dh_right_mode";
+// a tile shows up to this many faces, then "+N"
+const TILE_FACES = 5;
+// other names a tile's room goes by in people's "where"
+const TILE_ALIASES: Record<string, string[]> = { "m2a-operation": ["M2A-access"] };
 // how long a new chat message keeps the right sidebar slid in
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
@@ -232,6 +236,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
   };
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
+  // Who is in a tile's room right now: standing in the 3D room or in its
+  // videochat (their "where"). The bunker's lobby is the Operation Room's room.
+  const peopleIn = (tile: Channel) => {
+    const names = [tile.name, ...(TILE_ALIASES[tile.roomKey ?? ""] ?? [])];
+    const places = new Set(names.flatMap((n) => [`In ${n}`, `Videochat · ${n}`]));
+    return onlineHere().filter((uid) => places.has(whereOf(uid)));
+  };
   const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
 
   // Picture tiles all the way (Kaalob): # text and voice channels are no
@@ -307,6 +318,21 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                   >
                     <img src={imageSrc(c.image)} alt="" draggable={false} />
                     <span class="room-tile-name">{c.name}</span>
+                    {/* round pictures of who is in this room, like Discord's voice list */}
+                    <Show when={peopleIn(c).length}>
+                      <span class="tile-people" title={peopleIn(c).map(nameOf).join(", ")}>
+                        <For each={peopleIn(c).slice(0, TILE_FACES)}>
+                          {(uid) => (
+                            <span class="avatar tile-face" style={{ background: profiles().get(uid)?.color ?? "#404040" }}>
+                              {initials(nameOf(uid))}
+                            </span>
+                          )}
+                        </For>
+                        <Show when={peopleIn(c).length > TILE_FACES}>
+                          <span class="avatar tile-face more">+{peopleIn(c).length - TILE_FACES}</span>
+                        </Show>
+                      </span>
+                    </Show>
                   </button>
                   {/* built-in tiles (Operation Room, Living Room) cannot be deleted */}
                   <Show when={runsServer() && !isBuiltInTile(c)}>
