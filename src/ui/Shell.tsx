@@ -233,7 +233,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   onCleanup(() => window.clearTimeout(leaveTimer));
   const [chatPing, setChatPing] = createSignal(false);
   let pingTimer = 0;
+  // phones and tablets: no slide-in over the call, a red dot on the chat button
+  const [unread, setUnread] = createSignal(false);
+  const TOUCH = matchMedia("(hover: none)").matches;
+  createEffect(() => {
+    if (sideChatOpen()) setUnread(false);
+  });
   function pingRight() {
+    if (TOUCH) {
+      if (!sideChatOpen()) setUnread(true);
+      return;
+    }
     setChatPing(true);
     window.clearTimeout(pingTimer);
     pingTimer = window.setTimeout(() => setChatPing(false), RIGHT_HOLD_MS);
@@ -523,6 +533,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             {(chat) => (
               <button
                 class="btn side-chat-btn"
+                classList={{ unread: unread() }}
                 type="button"
                 aria-pressed={sideChatOpen()}
                 onClick={() => setSideChatOpen(!sideChatOpen())}

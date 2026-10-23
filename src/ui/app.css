@@ -19,7 +19,8 @@
     top: 0;
     bottom: 0;
     z-index: 30;
-    transform: translateX(-120%);
+    /* fully off screen: the channels column starts 72 px in */
+    transform: translateX(calc(-100% - 80px));
     transition: transform 200ms ease;
   }
   .rail {
@@ -47,8 +48,9 @@
     opacity: 1;
     pointer-events: auto;
   }
-  .menu-btn {
-    display: inline-grid !important;
+  .shell .menu-btn {
+    display: inline-grid;
+    flex: none;
   }
 }
 
@@ -823,7 +825,7 @@
 }
 
 .menu-btn {
-  display: none !important;
+  display: none;
 }
 
 .main-empty {
@@ -2392,4 +2394,75 @@ img.live-tile-still {
 
 .live-team i.on {
   background: #f87171;
+}
+
+/* ---- phones and tablets (touch) --------------------------------------------- */
+
+/* a new chat message on a phone: a red dot on the chat button, no slide-in */
+.side-chat-btn {
+  position: relative;
+}
+
+.side-chat-btn.unread::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: #f43f5e;
+}
+
+/* no hover on touch: the stream picture's resize corner always shows */
+@media (hover: none) {
+  .inset-resize {
+    opacity: 0.8;
+  }
+  .tile-row .tile-pic {
+    opacity: 1;
+  }
+}
+
+/* a tall, narrow screen: the call's tiles stack in one column and scroll */
+.tiles.narrow {
+  place-content: start center;
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  .voice {
+    padding: 8px;
+    gap: 8px;
+  }
+  .dock {
+    gap: 6px;
+  }
+  .dock-btn {
+    min-width: 0;
+    height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+  .main-head {
+    gap: 8px;
+  }
+}
+
+/* phones cannot share a screen: no Share screen button there */
+.share-wrap.hidden {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  /* the chat (or people) covers the whole phone screen */
+  .side-chat,
+  .members {
+    width: 100vw;
+  }
+  /* "always show" has no room on a phone */
+  .pin-btn {
+    display: none;
+  }
 }

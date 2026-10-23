@@ -743,7 +743,13 @@ export function VoiceRoom(props: {
     let cols: number;
     let rows: number;
     let small = false;
-    if (rv && n <= 3) {
+    const { w: boxW, h: boxH } = box();
+    // a phone held upright: one column, every tile full width, scrolling
+    const narrow = boxW > 0 && boxW < 560 && boxH > boxW;
+    if (narrow) {
+      cols = 1;
+      rows = Math.max(1, n + (rv ? 1 : 0));
+    } else if (rv && n <= 3) {
       cols = n === 0 ? 1 : 2;
       rows = n >= 2 ? 2 : 1;
     } else {
@@ -756,11 +762,12 @@ export function VoiceRoom(props: {
     const { w, h } = box();
     const byWidth = (w - (cols - 1) * GAP - (small ? GAP : 0)) / (cols + extra);
     const byHeight = ((h - (rows - 1) * GAP) / rows) * (16 / 9);
-    const tileW = Math.max(96, Math.floor(Math.min(byWidth, byHeight)));
+    const tileW = narrow ? Math.floor(w) : Math.max(96, Math.floor(Math.min(byWidth, byHeight)));
     const tileH = Math.floor((tileW * 9) / 16);
     const smallW = Math.floor(tileW * SMALL_ROOM_VIEW);
     return {
       n,
+      narrow,
       small,
       grid: {
         "grid-template-columns": `repeat(${cols}, ${tileW}px)${small ? ` ${smallW}px` : ""}`,
@@ -774,12 +781,15 @@ export function VoiceRoom(props: {
   // Where person i sits in the grid.
   function cellOf(i: number): JSX.CSSProperties {
     const l = layout();
+    // one column: the Room view first, then everyone
+    if (l.narrow) return { "grid-column": "1", "grid-row": String(i + 1 + (showingRoomView() ? 1 : 0)) };
     if (showingRoomView() && !l.small && l.n === 2) return { "grid-column": "1", "grid-row": String(i + 1) };
     if (showingRoomView() && !l.small && l.n === 3 && i === 2) return { "grid-column": "1", "grid-row": "2" };
     return { "grid-column": String((i % l.cols) + 1), "grid-row": String(Math.floor(i / l.cols) + 1) };
   }
   function roomViewCell(): JSX.CSSProperties {
     const l = layout();
+    if (l.narrow) return { "grid-column": "1", "grid-row": "1" };
     if (l.small) return { "grid-column": String(l.cols + 1), "grid-row": "1", "align-self": "start", ...l.smallSize };
     if (l.n === 0) return { "grid-column": "1", "grid-row": "1" };
     if (l.n === 1) return { "grid-column": "2", "grid-row": "1" };
@@ -902,7 +912,7 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" classList={{ spotlight: Boolean(spot()) }} ref={watchBox} style={spot() ? {} : layout().grid}>
+        <div class="tiles" classList={{ spotlight: Boolean(spot()), narrow: !spot() && layout().narrow }} ref={watchBox} style={spot() ? {} : layout().grid}>
           <Show when={showingRoomView() && roomCamTrack()}>
             {(track) => (
               <RoomViewTile
@@ -985,7 +995,7 @@ export function VoiceRoom(props: {
             )}
           </Show>
           {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
-          <div class="share-wrap">
+          <div class="share-wrap" classList={{ hidden: !CAN_SHARE }}>
             <button
               type="button"
               class="dock-btn"
@@ -1111,6 +1121,25 @@ export function VoiceRoom(props: {
   );
 }
 
+/**
+ * A double-tap for touch screens (some phones never send a double-click):
+ * two taps within 320 ms. Mouse clicks are left to onDblClick.
+ */
+function doubleTap(handler: () => void) {
+  let last = 0;
+  return (e: PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    const now = performance.now();
+    if (now - last < 320) {
+      last = 0;
+      handler();
+    } else last = now;
+  };
+}
+
+// Phone browsers cannot share a screen: hide Share screen and stream mode there.
+const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
 // A team screen shows each member this long, then the next (Kaalob).
 const TEAM_TURN_MS = 10_000;
 
@@ -1135,7 +1164,7 @@ function TeamScreen(props: {
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick}>
+    <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
       <video ref={video} autoplay playsinline muted classList={{ hidden: !track() }} />
       <span class="tile-name">
         <span class="live-dot" aria-hidden="true" /> {props.nameOf(current())}
@@ -1163,7 +1192,7 @@ function RoomFaceTile(props: {
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile in-room" style={props.style} onDblClick={props.onDblClick}>
+    <article class="tile in-room" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
       <video ref={video} autoplay playsinline muted />
       <span class="tile-name">{props.name}</span>
     </article>
@@ -1187,7 +1216,13 @@ function RoomViewTile(props: {
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile room-view" classList={{ small: props.small }} style={props.style} onDblClick={props.onDblClick}>
+    <article
+      class="tile room-view"
+      classList={{ small: props.small }}
+      style={props.style}
+      onDblClick={props.onDblClick}
+      onPointerUp={doubleTap(props.onDblClick)}
+    >
       <video ref={video} autoplay playsinline muted />
       <button class="room-view-hide" type="button" title="Hide the room view" onClick={props.onHide}>
         Hide
@@ -1299,11 +1334,14 @@ function Tile(props: {
     resizeFrom = undefined;
   }
 
+  const insetTap = doubleTap(() => props.onSwap?.());
   function dragEnd(e: PointerEvent) {
+    // the tile's own double-tap (make it big) must not see this one
+    e.stopPropagation();
     const from = dragFrom;
     dragFrom = undefined;
     setDrag(undefined);
-    if (!from?.moved) return;
+    if (!from?.moved) return insetTap(e);
     const tile = (e.currentTarget as HTMLElement).closest(".tile")?.getBoundingClientRect();
     if (!tile) return;
     const top = e.clientY < tile.top + tile.height / 2;
@@ -1317,6 +1355,7 @@ function Tile(props: {
       classList={{ speaking: props.speaking, screen: props.tile.screen, attention: Boolean(props.flashing) }}
       style={props.style}
       onDblClick={props.onDblClick}
+      onPointerUp={doubleTap(props.onDblClick)}
     >
       <video ref={video} autoplay playsinline muted classList={{ hidden: !big(), mirror: mirrored() }} />
       <Show when={!big()}>
