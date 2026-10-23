@@ -2332,22 +2332,41 @@ img.live-tile-still {
 }
 
 /* ---- attention: a white strobe around someone's tile (3 s) ----------------- */
-/* About 2.5 flashes a second, under the rate that bothers people sensitive to
-   flashing light. */
+/* Bright and fast (Kaalob): about 5 flashes a second, a thick white ring, a
+   wide glow, and the tile itself washed white on each flash. */
 .tile.attention {
-  animation: attention-strobe 0.4s steps(1, end) infinite;
+  animation: attention-strobe 0.2s steps(1, end) infinite;
+}
+
+.tile.attention::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  animation: attention-wash 0.2s steps(1, end) infinite;
 }
 
 @keyframes attention-strobe {
   0% {
     border-color: #fff;
     box-shadow:
-      0 0 0 3px #fff,
-      0 0 28px 8px rgba(255, 255, 255, 0.9);
+      0 0 0 6px #fff,
+      0 0 40px 16px #fff,
+      0 0 90px 30px rgba(255, 255, 255, 0.85);
   }
   50% {
     border-color: transparent;
     box-shadow: none;
+  }
+}
+
+@keyframes attention-wash {
+  0% {
+    background: rgba(255, 255, 255, 0.45);
+  }
+  50% {
+    background: transparent;
   }
 }
 
