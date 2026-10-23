@@ -34,7 +34,14 @@ import { db } from "../firebase";
  *       messages/{mid}   authorUid, text, createdAt, editedAt?
  */
 
-export type Profile = { uid: string; name: string; username: string; color: string };
+export type Profile = {
+  uid: string;
+  name: string;
+  username: string;
+  color: string;
+  /** shown on your videochat tile instead of your name, if you set one */
+  callName?: string;
+};
 export type Server = {
   id: string;
   name: string;
@@ -170,6 +177,12 @@ const toDate = (t: unknown) => ((t as Timestamp | null)?.toDate?.() ?? null);
 /** Keep your public face in step with your member record. */
 export async function saveProfile(uid: string, name: string, username: string) {
   await setDoc(doc(db, "profiles", uid), { uid, name, username, color: colorFor(uid) }, { merge: true });
+}
+
+/** The name on your videochat tile; empty goes back to your normal name. */
+export async function saveCallName(uid: string, callName: string) {
+  const clean = callName.trim().slice(0, 40);
+  await setDoc(doc(db, "profiles", uid), { callName: clean || deleteField() }, { merge: true });
 }
 
 export function watchProfiles(cb: (profiles: Map<string, Profile>) => void): Unsubscribe {

@@ -2008,3 +2008,18 @@ button.msg-media {
   background: #1a1a1a;
   color: var(--text);
 }
+
+.call-name-row {
+  display: flex;
+  gap: 8px;
+}
+
+.call-name-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.call-name-note {
+  color: var(--muted);
+  font-size: 12px;
+}

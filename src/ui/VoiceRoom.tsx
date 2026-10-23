@@ -168,7 +168,7 @@ export function VoiceRoom(props: {
   }
   // A room name is a member username: show their profile name.
   const roomFaceName = (name: string) => {
-    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.name || p.username;
+    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.callName || p.name || p.username;
     return name;
   };
   const roomFaceColor = (name: string) => {
@@ -423,7 +423,11 @@ export function VoiceRoom(props: {
     return [...screens, ...cams];
   });
 
-  const nameOf = (p: Participant) => props.profiles.get(p.identity)?.name || p.name || "Member";
+  // the name on a tile: their chosen videochat name, else their name
+  const nameOf = (p: Participant) => {
+    const profile = props.profiles.get(p.identity);
+    return profile?.callName || profile?.name || p.name || "Member";
+  };
 
   // ---- the layout (Kaalob's drawings) --------------------------------------
   // Every tile is one 16:9 size; the Room view is one of the tiles:

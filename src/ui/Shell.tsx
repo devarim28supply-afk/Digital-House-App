@@ -25,6 +25,7 @@ import {
   shrinkImage,
   startPresence,
   watchChannels,
+  saveCallName,
   watchEmojis,
   watchPresence,
   watchProfiles,
@@ -638,6 +639,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         <p class="modal-text">
           Signed in as <b>{props.name}</b> (@{props.username || "member"}).
         </p>
+        <CallNameField uid={props.uid} name={props.name} current={profiles().get(props.uid)?.callName ?? ""} />
         <div class="field">
           <span>Right sidebar</span>
           <div class="kind-pick">
@@ -658,6 +660,52 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         </div>
       </Modal>
     </div>
+  );
+}
+
+/**
+ * The name on your own videochat tile, if you want it different from your
+ * name (everyone sees it there). Empty = your normal name.
+ */
+function CallNameField(props: { uid: string; name: string; current: string }) {
+  const [value, setValue] = createSignal(props.current);
+  const [state, setState] = createSignal<"" | "saving" | "saved" | "error">("");
+  createEffect(() => setValue(props.current));
+  async function save(e: SubmitEvent) {
+    e.preventDefault();
+    setState("saving");
+    try {
+      await saveCallName(props.uid, value());
+      setState("saved");
+    } catch {
+      setState("error");
+    }
+  }
+  return (
+    <form class="field call-name" onSubmit={save}>
+      <span>Name on my webcam (videochat)</span>
+      <div class="call-name-row">
+        <input
+          value={value()}
+          maxLength={40}
+          placeholder={props.name}
+          onInput={(e) => {
+            setValue(e.currentTarget.value);
+            setState("");
+          }}
+        />
+        <button class="btn" type="submit" disabled={state() === "saving" || value().trim() === props.current}>
+          Save
+        </button>
+      </div>
+      <small class="call-name-note">
+        {state() === "saved"
+          ? "Saved. Everyone sees it on your tile."
+          : state() === "error"
+            ? "Could not save. Check your connection."
+            : "Leave it empty to show your name."}
+      </small>
+    </form>
   );
 }
 
