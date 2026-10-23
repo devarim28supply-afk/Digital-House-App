@@ -19,6 +19,7 @@ function recallPane(cid: string): Pane {
  * A picture tile opened: the room's video chat, and a toggle that flips the
  * same pane to the room page. Both stay alive underneath, so looking at the
  * room does not hang up the call and coming back does not reload the room.
+ * The tile's room is one fixed room (store GESTR_ROOMS), the same for all.
  */
 export function RoomPane(props: {
   serverId: string;
@@ -27,6 +28,8 @@ export function RoomPane(props: {
   name: string;
   username: string;
   profiles: Map<string, Profile>;
+  /** Disconnect pressed: the app ends this call (and with it the room) */
+  onLeave: () => void;
 }) {
   const [pane, setPane] = createSignal<Pane>(recallPane(props.channel.id));
   // The room page loads the first time it is shown, then stays loaded.
@@ -89,6 +92,8 @@ export function RoomPane(props: {
           name={props.name}
           profiles={props.profiles}
           roomView={roomView()}
+          autoJoin
+          onLeave={props.onLeave}
         />
       </div>
 

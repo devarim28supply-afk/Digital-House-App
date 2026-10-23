@@ -722,10 +722,81 @@
 /* ---- main ---------------------------------------------------------------- */
 
 .main {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* The one call. While you read another channel it is only hidden, never
+   display:none (that would pause the room page and its Room view camera). */
+.call-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.call-host.away {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* "Connected · <room>" above your name, like Discord's voice bar */
+.call-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 8px 10px 8px 12px;
+  border-top: 1px solid var(--line);
+  background: #06110a;
+}
+
+.call-bar-where {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.call-bar-where .live-dot {
+  background: var(--green);
+}
+
+.call-bar-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.call-bar-text b {
+  color: var(--green);
+  font-size: 13px;
+}
+
+.call-bar-text small {
+  overflow: hidden;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.call-bar-leave {
+  color: #f87171;
 }
 
 .main-title {

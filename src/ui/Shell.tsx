@@ -76,6 +76,22 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const [navOpen, setNavOpen] = createSignal(false);
   const [sideChatOpen, setSideChatOpen] = createSignal(false);
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
+  // Your one videochat, like Discord voice: opening a room tile or voice
+  // channel joins it, and it stays connected while you read other channels
+  // (or servers) until Disconnect. Joining another one moves you there.
+  const [call, setCall] = createSignal<{ serverId: string; channel: Channel } | undefined>();
+  function joinCall(serverId: string, ch: Channel) {
+    if (call()?.channel.id === ch.id) return;
+    setCall({ serverId, channel: ch });
+  }
+  function goToCall() {
+    const c = call();
+    if (!c) return;
+    remember(lastChannelKey(c.serverId), c.channel.id);
+    if (serverId() === c.serverId) setChannelId(c.channel.id);
+    else setServerId(c.serverId);
+    setNavOpen(false);
+  }
 
   onMount(() => {
     void saveProfile(props.uid, props.name, props.username);
@@ -148,7 +164,11 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     const sid = serverId();
     if (sid) remember(lastChannelKey(sid), id);
     setNavOpen(false);
+    // clicking a room tile or voice channel puts you in its videochat
+    const ch = channels().find((c) => c.id === id);
+    if (sid && ch && (ch.kind === "room" || ch.kind === "voice")) joinCall(sid, ch);
   }
+  const inThisCall = () => Boolean(channel() && call()?.channel.id === channel()!.id);
 
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
@@ -282,6 +302,28 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           </Show>
         </div>
 
+        <Show when={call()}>
+          {(c) => (
+            <div class="call-bar">
+              <button class="call-bar-where" type="button" title="Go to your videochat" onClick={goToCall}>
+                <span class="live-dot" aria-hidden="true" />
+                <span class="call-bar-text">
+                  <b>Connected</b>
+                  <small>{c().channel.name}</small>
+                </span>
+              </button>
+              <button
+                class="icon-btn call-bar-leave"
+                type="button"
+                title="Disconnect"
+                aria-label="Disconnect"
+                onClick={() => setCall(undefined)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </Show>
         <footer class="me">
           <span class="avatar" style={{ background: profiles().get(props.uid)?.color ?? "#4ADE80" }}>
             {initials(props.name)}
@@ -333,20 +375,53 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               />
             )}
           </Match>
-          <Match when={server() && channel()?.kind === "voice" && channel()}>
-            {(ch) => <VoiceRoom serverId={server()!.id} channel={ch()} uid={props.uid} name={props.name} profiles={profiles()} />}
-          </Match>
-          <Match when={server() && channel()?.kind === "room" && channel()}>
-            {(ch) => <RoomPane
-                serverId={server()!.id}
-                channel={ch()}
-                uid={props.uid}
-                name={props.name}
-                username={props.username}
-                profiles={profiles()}
-              />}
+          {/* your call is showing (it lives below, outside the channel switch) */}
+          <Match when={inThisCall()}>{null}</Match>
+          <Match when={server() && (channel()?.kind === "voice" || channel()?.kind === "room") && channel()}>
+            {(ch) => (
+              <div class="voice">
+                <div class="voice-lobby">
+                  <h2>
+                    {ch().kind === "room" ? "▣" : "◉"} {ch().name}
+                  </h2>
+                  <p>Join the videochat. Your mic and camera stay off until you turn them on.</p>
+                  <button class="btn primary" type="button" onClick={() => joinCall(server()!.id, ch())}>
+                    {call() ? "Move here" : "Join"}
+                  </button>
+                </div>
+              </div>
+            )}
           </Match>
         </Switch>
+        {/* The one call. Reading another channel only hides it: the call (and
+            the room page in it) keeps running, so nobody drops out. */}
+        <Show when={call()} keyed>
+          {(c) => (
+            <div class="call-host" classList={{ away: !inThisCall() }}>
+              {c.channel.kind === "room" ? (
+                <RoomPane
+                  serverId={c.serverId}
+                  channel={c.channel}
+                  uid={props.uid}
+                  name={props.name}
+                  username={props.username}
+                  profiles={profiles()}
+                  onLeave={() => setCall(undefined)}
+                />
+              ) : (
+                <VoiceRoom
+                  serverId={c.serverId}
+                  channel={c.channel}
+                  uid={props.uid}
+                  name={props.name}
+                  profiles={profiles()}
+                  autoJoin
+                  onLeave={() => setCall(undefined)}
+                />
+              )}
+            </div>
+          )}
+        </Show>
       </main>
 
       {/* ---- right: the open tile's chat, otherwise the people ---- */}

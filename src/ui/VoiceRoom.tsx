@@ -92,8 +92,8 @@ async function watchRoomCam(
 }
 
 /**
- * A voice/video channel. Nothing turns on by itself: Join connects, and the
- * mic and camera start off until you switch them on.
+ * A voice/video channel. Join (or autoJoin, when the app opens it as your
+ * call) connects; the mic and camera start off until you switch them on.
  */
 export function VoiceRoom(props: {
   serverId: string;
@@ -117,6 +117,8 @@ export function VoiceRoom(props: {
    * pass under its own name), no tile for yourself, no buttons.
    */
   viewOnly?: boolean;
+  /** Disconnect: the app hangs up its one call (it keeps the call alive across channels) */
+  onLeave?: () => void;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
@@ -160,6 +162,30 @@ export function VoiceRoom(props: {
     for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.color;
     return "#404040";
   };
+  // Someone in the call AND in the room is one person: one tile, showing the
+  // webcam from the room when their call camera is off. Room names may carry
+  // "-ghost"; call identities are uids.
+  const baseName = (name: string) => name.replace(/-ghost$/, "");
+  const usernameOf = (identity: string) => roomName(props.profiles.get(identity)?.username || "");
+  const callNames = () => {
+    version();
+    const names = new Set<string>();
+    const current = room();
+    if (!current) return names;
+    for (const p of [current.localParticipant, ...current.remoteParticipants.values()]) {
+      const name = usernameOf(p.identity);
+      if (name) names.add(name);
+    }
+    return names;
+  };
+  const roomFaceOf = (identity: string) => {
+    const name = usernameOf(identity);
+    if (!name) return undefined;
+    for (const [face, track] of roomFaces()) if (baseName(face) === name) return track;
+    return undefined;
+  };
+  // people in the room who are not in the call: their own tiles
+  const loneRoomFaces = () => [...roomFaces().entries()].filter(([face]) => !callNames().has(baseName(face)));
   const [joining, setJoining] = createSignal(false);
   const [error, setError] = createSignal("");
   const [version, setVersion] = createSignal(0);
@@ -331,7 +357,7 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" data-count={Math.min(tiles().length + roomFaces().size + (showingRoomView() ? 1 : 0), 9)}>
+        <div class="tiles" data-count={Math.min(tiles().length + loneRoomFaces().length + (showingRoomView() ? 1 : 0), 9)}>
           <Show when={showingRoomView() && roomCamTrack()}>
             {(track) => (
               <RoomViewTile
@@ -350,11 +376,12 @@ export function VoiceRoom(props: {
                 name={tile.screen ? `${nameOf(tile.participant)}'s screen` : nameOf(tile.participant)}
                 color={props.profiles.get(tile.participant.identity)?.color ?? "#404040"}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
+                roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
               />
             )}
           </For>
-          {/* people standing in the 3D room: their webcams, in the call too */}
-          <For each={[...roomFaces().entries()]}>
+          {/* people standing in the 3D room but not in the call: their webcams too */}
+          <For each={loneRoomFaces()}>
             {([name, track]) => (
               <RoomFaceTile track={track} name={`${roomFaceName(name)} · in room`} color={roomFaceColor(name)} />
             )}
@@ -389,8 +416,8 @@ export function VoiceRoom(props: {
               Room view
             </button>
           </Show>
-          <button type="button" class="dock-btn leave" onClick={leave}>
-            Leave
+          <button type="button" class="dock-btn leave" onClick={() => (props.onLeave ? props.onLeave() : leave())}>
+            Disconnect
           </button>
         </div>
       </Show>
@@ -437,12 +464,20 @@ function RoomViewTile(props: { track: RemoteTrack; name: string; wide: boolean; 
   );
 }
 
-function Tile(props: { tile: TileInfo; version: number; name: string; color: string; speaking: boolean }) {
+function Tile(props: {
+  tile: TileInfo;
+  version: number;
+  name: string;
+  color: string;
+  speaking: boolean;
+  /** their webcam from the 3D room, shown while their call camera is off */
+  roomFace?: RemoteTrack;
+}) {
   let video: HTMLVideoElement | undefined;
-  const track = () => {
+  const track = (): Track | undefined => {
     void props.version;
     const pub = props.tile.publication;
-    return pub && !pub.isMuted ? pub.track : undefined;
+    return (pub && !pub.isMuted ? pub.track : undefined) ?? props.roomFace;
   };
 
   createEffect(() => {
