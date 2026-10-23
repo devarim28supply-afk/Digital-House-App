@@ -1675,3 +1675,47 @@ video.msg-media {
   text-align: center;
   pointer-events: none;
 }
+
+/* ---- right sidebar: "always show" (pinned) -------------------------------- */
+/* Its own column beside the videochat, covering nothing. Phones and narrow
+   windows keep the slide-in (there is no room for a fourth column). */
+@media (min-width: 1101px) {
+  .shell.right-pinned {
+    grid-template-columns: 72px 248px minmax(0, 1fr) 260px;
+  }
+  .shell.right-pinned.with-side-chat {
+    grid-template-columns: 72px 248px minmax(0, 1fr) 340px;
+  }
+  .right-pinned .side-chat,
+  .right-pinned .members {
+    position: static;
+    width: auto;
+    transform: none;
+    transition: none;
+    box-shadow: none;
+  }
+  .right-pinned .right-edge {
+    display: none;
+  }
+}
+
+.members-head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pin-btn {
+  opacity: 0.45;
+  font-size: 14px;
+  filter: grayscale(1);
+}
+
+.pin-btn.on,
+.pin-btn:hover {
+  opacity: 1;
+  filter: none;
+}
+
+.side-chat-head .pin-btn {
+  margin-left: auto;
+}

@@ -38,6 +38,7 @@ import "./app.css";
 
 const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
+const RIGHT_MODE_KEY = "dh_right_mode";
 // how long a new chat message keeps the right sidebar slid in
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
@@ -205,6 +206,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   // A file dragged in from a folder slides it in too, so it can be dropped on the chat.
   const [fileDrag, setFileDrag] = createSignal(false);
   const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card()) || fileDrag();
+  // Each person picks: the sidebar slides in and out, or it is always there
+  // as its own column beside the videochat (covering nothing). Remembered.
+  const [rightPinned, setRightPinned] = createSignal(recall(RIGHT_MODE_KEY) === "pinned");
+  function pinRight(on: boolean) {
+    setRightPinned(on);
+    remember(RIGHT_MODE_KEY, on ? "pinned" : "slide");
+  }
 
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
@@ -228,7 +236,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   return (
     <div
       class="shell"
-      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen() }}
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned() }}
     >
       {/* ---- servers ---- */}
       <nav class="rail" aria-label="Servers">
@@ -451,6 +459,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               <span>
                 <span class="hash">#</span> {chat().name}
               </span>
+              <PinButton pinned={rightPinned()} onPin={pinRight} />
               <button
                 class="icon-btn side-chat-close"
                 type="button"
@@ -499,6 +508,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         onMouseEnter={enterRight}
         onMouseLeave={leaveRight}
       >
+        <div class="members-head">
+          <PinButton pinned={rightPinned()} onPin={pinRight} />
+        </div>
         <Show when={server()}>
           {(s) => {
             const online = () => s().memberUids.filter(isOnline);
@@ -587,6 +599,19 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         <p class="modal-text">
           Signed in as <b>{props.name}</b> (@{props.username || "member"}).
         </p>
+        <div class="field">
+          <span>Right sidebar</span>
+          <div class="kind-pick">
+            <label>
+              <input type="radio" name="right-mode" checked={!rightPinned()} onChange={() => pinRight(false)} /> Slides in
+              and out
+            </label>
+            <label>
+              <input type="radio" name="right-mode" checked={rightPinned()} onChange={() => pinRight(true)} /> Always
+              show (beside, covering nothing)
+            </label>
+          </div>
+        </div>
         <div class="modal-actions">
           <button class="btn danger" type="button" onClick={props.onLogout}>
             Log out
@@ -594,6 +619,23 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         </div>
       </Modal>
     </div>
+  );
+}
+
+/** Keep the right sidebar always there, or let it slide away again. */
+function PinButton(props: { pinned: boolean; onPin: (on: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      class="icon-btn pin-btn"
+      classList={{ on: props.pinned }}
+      aria-pressed={props.pinned}
+      title={props.pinned ? "Let the sidebar slide away" : "Keep the sidebar always showing"}
+      aria-label={props.pinned ? "Let the sidebar slide away" : "Keep the sidebar always showing"}
+      onClick={() => props.onPin(!props.pinned)}
+    >
+      📌
+    </button>
   );
 }
 
