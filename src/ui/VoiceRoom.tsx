@@ -1,6 +1,7 @@
 import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
 import {
+  type LocalTrackPublication,
   type Participant,
   type RemoteTrack,
   Room,
@@ -33,7 +34,13 @@ type TileInfo = {
   participant: Participant;
   publication?: TrackPublication;
   screen: boolean;
+  /** the sharer's 2nd screen */
+  second?: boolean;
 };
+
+// A 2nd shared screen rides its own named track: LiveKit keeps one
+// "screen share" per person, so this one is published beside it.
+const SECOND_SCREEN = "screen-2";
 
 // the call grid: gap between tiles, and the small Room view's width (of a tile)
 const GAP = 10;
@@ -220,6 +227,9 @@ export function VoiceRoom(props: {
     roomCamWatcher = undefined;
     watcher?.disconnect();
     setRoomCamTrack(undefined);
+    secondScreen?.track?.stop();
+    secondScreen = undefined;
+    setSecondOn(false);
     setRoomFaces(new Map<string, RemoteTrack>());
   }
 
@@ -312,6 +322,42 @@ export function VoiceRoom(props: {
   const micOn = () => Boolean(local()?.isMicrophoneEnabled);
   const camOn = () => Boolean(local()?.isCameraEnabled);
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
+  let secondScreen: LocalTrackPublication | undefined;
+  const [secondOn, setSecondOn] = createSignal(false);
+
+  /** Share (or stop) a 2nd screen, next to the first. */
+  async function toggleSecondScreen() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    if (secondScreen) {
+      await stopSecondScreen();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const media = stream.getVideoTracks()[0];
+      if (!media) return;
+      // the browser's own "Stop sharing" ends it too
+      media.addEventListener("ended", () => void stopSecondScreen());
+      secondScreen = await me.publishTrack(media, { name: SECOND_SCREEN, source: Track.Source.Unknown, simulcast: false });
+      setSecondOn(true);
+    } catch (err) {
+      // picking nothing in the browser's dialog is not an error
+      if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
+        setError(err instanceof Error ? err.message : "That screen could not be shared.");
+      }
+    }
+    bump();
+  }
+  async function stopSecondScreen() {
+    const pub = secondScreen;
+    secondScreen = undefined;
+    setSecondOn(false);
+    if (pub?.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
+    pub?.track?.stop();
+    bump();
+  }
 
   async function toggle(kind: "mic" | "cam" | "screen") {
     const me = room()?.localParticipant;
@@ -337,8 +383,11 @@ export function VoiceRoom(props: {
     const screens: TileInfo[] = [];
     const cams: TileInfo[] = [];
     for (const p of people) {
-      const screen = p.getTrackPublication(Track.Source.ScreenShare);
-      if (screen && !screen.isMuted) screens.push({ key: `${p.identity}:screen`, participant: p, publication: screen, screen: true });
+      for (const pub of p.trackPublications.values()) {
+        const second = pub.trackName === SECOND_SCREEN;
+        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
+        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
+      }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
     return [...screens, ...cams];
@@ -447,7 +496,7 @@ export function VoiceRoom(props: {
                 style={cellOf(i())}
                 tile={tile}
                 version={version()}
-                name={tile.screen ? `${nameOf(tile.participant)}'s screen` : nameOf(tile.participant)}
+                name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
                 color={props.profiles.get(tile.participant.identity)?.color ?? "#404040"}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
@@ -489,6 +538,9 @@ export function VoiceRoom(props: {
           </Show>
           <button type="button" class="dock-btn" aria-pressed={screenOn()} onClick={() => void toggle("screen")}>
             {screenOn() ? "Sharing" : "Share screen"}
+          </button>
+          <button type="button" class="dock-btn" aria-pressed={secondOn()} onClick={() => void toggleSecondScreen()}>
+            {secondOn() ? "Sharing 2nd" : "Share 2nd screen"}
           </button>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
