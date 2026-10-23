@@ -15,13 +15,13 @@ import { auth } from "../firebase";
 import { initials } from "./Shell";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
-async function fetchPass(serverId: string, channelId: string) {
+async function fetchPass(serverId: string, channelId: string, wall = false) {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error("Log in first.");
   const res = await fetch("/api/dh-token", {
     method: "POST",
     headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ serverId, channelId }),
+    body: JSON.stringify({ serverId, channelId, wall }),
   });
   const body = (await res.json().catch(() => ({}))) as { url?: string; token?: string; error?: string };
   if (!res.ok || !body.url || !body.token) throw new Error(body.error || "Could not join the call.");
@@ -51,10 +51,16 @@ const roomName = (raw: string) => raw.trim().replace(/\s+/g, "-").replace(/[^A-Z
 // name would knock each other out of the call.
 const WATCH_TAG = Math.random().toString(36).slice(2, 8);
 
+/**
+ * The same watcher also picks up the webcams ("facecam") of the people
+ * standing in the 3D room, so the videochat sees them too: onFace(name,
+ * track) as they come and go (track undefined when gone).
+ */
 async function watchRoomCam(
   source: RoomViewSource,
   onTrack: (track: RemoteTrack | undefined) => void,
   onDropped: () => void,
+  onFace: (name: string, track: RemoteTrack | undefined) => void,
 ) {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) return undefined;
@@ -68,12 +74,15 @@ async function watchRoomCam(
   if (!res.ok || !body.url || !body.token) return undefined;
   const watcher = new Room({ adaptiveStream: true });
   watcher
-    .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub) => {
+    .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
       if (pub.trackName === "roomcam") onTrack(track);
+      else if (pub.trackName === "facecam" && track.kind === Track.Kind.Video) onFace(participant.identity, track);
     })
-    .on(RoomEvent.TrackUnsubscribed, (_track: RemoteTrack, pub) => {
+    .on(RoomEvent.TrackUnsubscribed, (_track: RemoteTrack, pub, participant) => {
       if (pub.trackName === "roomcam") onTrack(undefined);
+      else if (pub.trackName === "facecam") onFace(participant.identity, undefined);
     })
+    .on(RoomEvent.ParticipantDisconnected, (participant) => onFace(participant.identity, undefined))
     .on(RoomEvent.Disconnected, () => {
       onTrack(undefined);
       onDropped();
@@ -103,6 +112,11 @@ export function VoiceRoom(props: {
    * tile's videochat in Darkwood Node passes it, never the wall in the room.
    */
   roomView?: RoomViewSource;
+  /**
+   * The wall in a 3D room: watch the call only (an invisible, watch-only
+   * pass under its own name), no tile for yourself, no buttons.
+   */
+  viewOnly?: boolean;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
@@ -127,6 +141,25 @@ export function VoiceRoom(props: {
   }
   const showingRoomView = () => Boolean(roomCamTrack()) && !roomViewHidden();
   let roomCamWatcher: Room | undefined;
+  // Webcams of the people standing in the 3D room (their name -> video).
+  const [roomFaces, setRoomFaces] = createSignal(new Map<string, RemoteTrack>());
+  function setRoomFace(name: string, track: RemoteTrack | undefined) {
+    setRoomFaces((prev) => {
+      const next = new Map(prev);
+      if (track) next.set(name, track);
+      else next.delete(name);
+      return next;
+    });
+  }
+  // A room name is a member username: show their profile name.
+  const roomFaceName = (name: string) => {
+    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.name || p.username;
+    return name;
+  };
+  const roomFaceColor = (name: string) => {
+    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.color;
+    return "#404040";
+  };
   const [joining, setJoining] = createSignal(false);
   const [error, setError] = createSignal("");
   const [version, setVersion] = createSignal(0);
@@ -155,6 +188,7 @@ export function VoiceRoom(props: {
     roomCamWatcher = undefined;
     watcher?.disconnect();
     setRoomCamTrack(undefined);
+    setRoomFaces(new Map<string, RemoteTrack>());
   }
 
   // Leaving the channel (or switching away) hangs up.
@@ -169,9 +203,14 @@ export function VoiceRoom(props: {
     const source = props.roomView;
     if (!source || room() !== call) return;
     const retry = () => window.setTimeout(() => startRoomView(call), 3000);
-    watchRoomCam(source, setRoomCamTrack, () => {
-      if (room() === call) retry();
-    })
+    watchRoomCam(
+      source,
+      setRoomCamTrack,
+      () => {
+        if (room() === call) retry();
+      },
+      setRoomFace,
+    )
       .then((watcher) => {
         if (room() !== call) {
           void watcher?.disconnect();
@@ -193,7 +232,7 @@ export function VoiceRoom(props: {
     setError("");
     setJoining(true);
     try {
-      const pass = await fetchPass(props.serverId, props.channel.id);
+      const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
       const next = new Room({ adaptiveStream: true, dynacast: true });
       next
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
@@ -261,7 +300,8 @@ export function VoiceRoom(props: {
     version();
     const current = room();
     if (!current) return [];
-    const people: Participant[] = [current.localParticipant, ...current.remoteParticipants.values()];
+    const remote = [...current.remoteParticipants.values()];
+    const people: Participant[] = props.viewOnly ? remote : [current.localParticipant, ...remote];
     const screens: TileInfo[] = [];
     const cams: TileInfo[] = [];
     for (const p of people) {
@@ -291,7 +331,7 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" data-count={Math.min(tiles().length + (showingRoomView() ? 1 : 0), 9)}>
+        <div class="tiles" data-count={Math.min(tiles().length + roomFaces().size + (showingRoomView() ? 1 : 0), 9)}>
           <Show when={showingRoomView() && roomCamTrack()}>
             {(track) => (
               <RoomViewTile
@@ -313,11 +353,17 @@ export function VoiceRoom(props: {
               />
             )}
           </For>
+          {/* people standing in the 3D room: their webcams, in the call too */}
+          <For each={[...roomFaces().entries()]}>
+            {([name, track]) => (
+              <RoomFaceTile track={track} name={`${roomFaceName(name)} · in room`} color={roomFaceColor(name)} />
+            )}
+          </For>
         </div>
         <Show when={error()}>
           <p class="form-error voice-error">{error()}</p>
         </Show>
-        <div class="dock">
+        <div class="dock" classList={{ hidden: Boolean(props.viewOnly) }}>
           <button type="button" class="dock-btn" aria-pressed={micOn()} onClick={() => void toggle("mic")}>
             {micOn() ? "Mic on" : "Mic off"}
           </button>
@@ -349,6 +395,23 @@ export function VoiceRoom(props: {
         </div>
       </Show>
     </div>
+  );
+}
+
+/** A webcam from someone standing in the 3D room, shown like a call tile. */
+function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string }) {
+  let video: HTMLVideoElement | undefined;
+  createEffect(() => {
+    const t = props.track;
+    if (!video) return;
+    t.attach(video);
+    onCleanup(() => t.detach(video!));
+  });
+  return (
+    <article class="tile in-room">
+      <video ref={video} autoplay playsinline muted />
+      <span class="tile-name">{props.name}</span>
+    </article>
   );
 }
 

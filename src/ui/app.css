@@ -1128,6 +1128,10 @@
   text-align: center;
 }
 
+.dock.hidden {
+  display: none;
+}
+
 .dock {
   display: flex;
   justify-content: center;

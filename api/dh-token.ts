@@ -24,7 +24,7 @@ function base64url(input: Buffer | string) {
   return Buffer.from(input).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-export function signPass(apiKey: string, apiSecret: string, identity: string, name: string, room: string) {
+export function signPass(apiKey: string, apiSecret: string, identity: string, name: string, room: string, watchOnly = false) {
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const payload = base64url(
@@ -34,7 +34,9 @@ export function signPass(apiKey: string, apiSecret: string, identity: string, na
       name,
       nbf: now - 10,
       exp: now + PASS_SECONDS,
-      video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+      video: watchOnly
+        ? { room, roomJoin: true, hidden: true, canPublish: false, canSubscribe: true, canPublishData: false }
+        : { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
     }),
   );
   const signature = base64url(createHmac("sha256", apiSecret).update(`${header}.${payload}`).digest());
@@ -103,10 +105,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!channelRes.ok) return send(res, 404, { error: "That channel is gone" });
 
   const room = `dh-${serverId}-${channelId}`;
+  // The wall in a 3D room watches the call: invisible and watch-only, under
+  // its own name so it never knocks your own app tab out of the same call.
+  const wall = body.wall === true;
   const name = claims.name || (claims.email ?? "").split("@")[0] || "Member";
   send(res, 200, {
     url: LIVEKIT_URL,
-    token: signPass(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, uid, name, room),
+    token: signPass(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, wall ? `${uid}:wall` : uid, name, room, wall),
     room,
   });
 }
