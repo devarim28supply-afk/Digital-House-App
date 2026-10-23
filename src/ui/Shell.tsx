@@ -263,12 +263,18 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   };
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
   // Who is streaming in this server right now (stream mode): their LIVE tiles.
-  const liveStreams = createMemo(() =>
-    onlineHere().flatMap((uid) => {
-      const live = presence().get(uid)?.streaming;
-      const ch = live && live.serverId === serverId() ? channels().find((c) => c.id === live.channelId) : undefined;
-      return ch ? [{ uid, channel: ch }] : [];
-    }),
+  // Kept as plain text keys ("uid|channel"): a key stays the same string while
+  // the stream goes on, so its LIVE tile stays put. Rebuilt objects would make
+  // the list throw the tile away (and reconnect it) on every presence beat.
+  const liveStreams = createMemo(
+    () =>
+      onlineHere().flatMap((uid) => {
+        const live = presence().get(uid)?.streaming;
+        const ch = live && live.serverId === serverId() ? channels().find((c) => c.id === live.channelId) : undefined;
+        return ch ? [`${uid}|${ch.id}`] : [];
+      }),
+    [],
+    { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
   );
   /** A LIVE tile: into that videochat, their stream big. */
   function watchStream(uid: string, ch: Channel) {
@@ -346,17 +352,23 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
             <For each={liveStreams()}>
-              {(live) => (
-                <div class="tile-row">
-                  <LiveTile
-                    serverId={serverId()!}
-                    channelId={live.channel.id}
-                    uid={live.uid}
-                    name={nameOf(live.uid)}
-                    onOpen={() => watchStream(live.uid, live.channel)}
-                  />
-                </div>
-              )}
+              {(key) => {
+                const [uid, channelId] = key.split("|");
+                return (
+                  <div class="tile-row">
+                    <LiveTile
+                      serverId={serverId()!}
+                      channelId={channelId}
+                      uid={uid}
+                      name={nameOf(uid)}
+                      onOpen={() => {
+                        const ch = channels().find((c) => c.id === channelId);
+                        if (ch) watchStream(uid, ch);
+                      }}
+                    />
+                  </div>
+                );
+              }}
             </For>
             <For each={roomTiles()}>
               {(c) => (

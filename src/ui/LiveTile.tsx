@@ -4,9 +4,6 @@ import { type RemoteTrack, Room, RoomEvent, Track } from "livekit-client";
 
 import { auth } from "../firebase";
 
-// The preview's own name in the call (one per screen): the token server makes
-// it invisible and watch-only, so nobody sees an extra person.
-const PEEK_TAG = Math.random().toString(36).slice(2, 8);
 
 /**
  * Someone is in stream mode: a LIVE tile at the top of the sidebar playing
@@ -24,6 +21,10 @@ export function LiveTile(props: {
 }) {
   let video: HTMLVideoElement | undefined;
   let face: HTMLVideoElement | undefined;
+  // This preview's own name in the call (one per LIVE tile, so two tiles on
+  // one screen never knock each other out); the token server makes it
+  // invisible and watch-only, so nobody sees an extra person.
+  const peekTag = Math.random().toString(36).slice(2, 10);
   const [playing, setPlaying] = createSignal(false);
   const [faceOn, setFaceOn] = createSignal(false);
 
@@ -43,7 +44,7 @@ export function LiveTile(props: {
         const res = await fetch("/api/dh-token", {
           method: "POST",
           headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ serverId: props.serverId, channelId: props.channelId, peek: PEEK_TAG }),
+          body: JSON.stringify({ serverId: props.serverId, channelId: props.channelId, peek: peekTag }),
         });
         const pass = (await res.json()) as { url?: string; token?: string };
         if (!res.ok || !pass.url || !pass.token || gone) throw new Error("no pass");
