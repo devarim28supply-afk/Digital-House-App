@@ -1,7 +1,7 @@
 import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 
 import { type Channel, type Profile, roomCamOf, roomUrlOf } from "../data/store";
-import { setInRoom } from "../data/where";
+import { setInRoom, watchRequest } from "../data/where";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -53,6 +53,11 @@ export function RoomPane(props: {
       { defer: true },
     ),
   );
+
+  // A LIVE tile was clicked: the stream is in the videochat, so show it.
+  createEffect(() => {
+    if (watchRequest() && pane() !== "video") show("video");
+  });
 
   function show(next: Pane) {
     setPane(next);

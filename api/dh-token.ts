@@ -108,10 +108,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // The wall in a 3D room watches the call: invisible and watch-only, under
   // its own name so it never knocks your own app tab out of the same call.
   const wall = body.wall === true;
+  // A LIVE tile's preview: invisible and watch-only too, one name per screen
+  // so two screens never knock each other out.
+  const peekTag = typeof body.peek === "string" && /^[a-z0-9]{1,12}$/.test(body.peek) ? body.peek : "";
   const name = claims.name || (claims.email ?? "").split("@")[0] || "Member";
   send(res, 200, {
     url: LIVEKIT_URL,
-    token: signPass(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, wall ? `${uid}:wall` : uid, name, room, wall),
+    token: signPass(
+      LIVEKIT_API_KEY,
+      LIVEKIT_API_SECRET,
+      peekTag ? `${uid}:peek-${peekTag}` : wall ? `${uid}:wall` : uid,
+      name,
+      room,
+      wall || Boolean(peekTag),
+    ),
     room,
   });
 }

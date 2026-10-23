@@ -217,7 +217,9 @@ export const ONLINE_WINDOW_MS = 2 * 60_000;
  * write "In <room>" for whoever stands in them (room-presence.js). A where
  * older than ONLINE_WINDOW_MS has expired (they left that place).
  */
-export type Presence = { lastSeen: number; where: string; whereAt: number };
+/** Where someone is streaming (stream mode), shown as a LIVE tile to the server. */
+export type Streaming = { serverId: string; channelId: string };
+export type Presence = { lastSeen: number; where: string; whereAt: number; streaming?: Streaming };
 
 /** Heartbeat for this app; setWhere("") when you are not in a call or room. */
 export function startPresence(uid: string) {
@@ -239,6 +241,10 @@ export function startPresence(uid: string) {
       where = next;
       beat();
     },
+    /** In stream mode: everyone in that server sees a LIVE tile. null when it ends. */
+    setStreaming(streaming: Streaming | null) {
+      void setDoc(ref, { streaming: streaming ?? deleteField(), lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
+    },
     stop() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
@@ -258,6 +264,7 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
               lastSeen: toDate(data.lastSeen)?.getTime() ?? Date.now(),
               where: typeof data.where === "string" ? data.where : "",
               whereAt: toDate(data.whereAt)?.getTime() ?? 0,
+              streaming: data.streaming?.serverId && data.streaming?.channelId ? (data.streaming as Streaming) : undefined,
             },
           ];
         }),

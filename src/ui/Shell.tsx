@@ -39,7 +39,8 @@ import { Chat } from "./Chat";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
-import { whereNow } from "../data/where";
+import { setWatchRequest, streamingIn, whereNow } from "../data/where";
+import { LiveTile } from "./LiveTile";
 
 import "./app.css";
 
@@ -135,6 +136,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     createEffect(() => me.setWhere(whereNow()));
+    // stream mode on: everyone in that server gets a LIVE tile
+    createEffect(() => me.setStreaming(streamingIn() ?? null));
     const stops = [
       me.stop,
       watchServers(props.uid, setServers),
@@ -259,6 +262,19 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
   };
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
+  // Who is streaming in this server right now (stream mode): their LIVE tiles.
+  const liveStreams = createMemo(() =>
+    onlineHere().flatMap((uid) => {
+      const live = presence().get(uid)?.streaming;
+      const ch = live && live.serverId === serverId() ? channels().find((c) => c.id === live.channelId) : undefined;
+      return ch ? [{ uid, channel: ch }] : [];
+    }),
+  );
+  /** A LIVE tile: into that videochat, their stream big. */
+  function watchStream(uid: string, ch: Channel) {
+    setWatchRequest(uid);
+    pickChannel(ch.id);
+  }
   // Who is in a tile's room right now: standing in the 3D room or in its
   // videochat (their "where"). The bunker's lobby is the Operation Room's room.
   const peopleIn = (tile: Channel) => {
@@ -328,6 +344,20 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 
         <div class="side-scroll">
           <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
+            {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
+            <For each={liveStreams()}>
+              {(live) => (
+                <div class="tile-row">
+                  <LiveTile
+                    serverId={serverId()!}
+                    channelId={live.channel.id}
+                    uid={live.uid}
+                    name={nameOf(live.uid)}
+                    onOpen={() => watchStream(live.uid, live.channel)}
+                  />
+                </div>
+              )}
+            </For>
             <For each={roomTiles()}>
               {(c) => (
                 <div class="tile-row" classList={{ active: c.id === channelId() }}>

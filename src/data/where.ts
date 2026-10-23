@@ -10,6 +10,14 @@ const [inRoom, setInRoom] = createSignal<string | undefined>();
 
 export { inCall, inRoom, setInCall, setInRoom };
 
+/** Where you are streaming right now (stream mode), for your presence. */
+const [streamingIn, setStreamingIn] = createSignal<{ serverId: string; channelId: string } | undefined>();
+export { setStreamingIn, streamingIn };
+
+/** A LIVE tile was clicked: show this person's stream big once the call is up. */
+const [watchRequest, setWatchRequest] = createSignal<string | undefined>();
+export { setWatchRequest, watchRequest };
+
 export function whereNow() {
   const room = inRoom();
   if (room) return `In ${room}`;

@@ -12,7 +12,7 @@ import {
 } from "livekit-client";
 
 import { type Channel, type Profile } from "../data/store";
-import { setInCall } from "../data/where";
+import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { faceStyle, faceText } from "./Shell";
 
@@ -247,6 +247,7 @@ export function VoiceRoom(props: {
     for (const pub of streamPubs) pub.track?.stop();
     streamPubs = [];
     setStreamOn(false);
+    setStreamingIn(undefined);
     setRoomFaces(new Map<string, RemoteTrack>());
   }
 
@@ -410,6 +411,7 @@ export function VoiceRoom(props: {
       const audio = media.getAudioTracks()[0];
       if (audio) streamPubs.push(await me.publishTrack(audio, { name: STREAM_AUDIO, source: Track.Source.ScreenShareAudio }));
       setStreamOn(true);
+      setStreamingIn({ serverId: props.serverId, channelId: props.channel.id });
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
         setError(err instanceof Error ? err.message : "That could not be streamed.");
@@ -421,6 +423,7 @@ export function VoiceRoom(props: {
     const pubs = streamPubs;
     streamPubs = [];
     setStreamOn(false);
+    setStreamingIn(undefined);
     for (const pub of pubs) {
       if (pub.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
       pub.track?.stop();
@@ -748,6 +751,18 @@ export function VoiceRoom(props: {
     return rects;
   });
   const placeOf = (key: string, gridPlace: JSX.CSSProperties) => spot()?.get(key) ?? gridPlace;
+
+  // A LIVE tile brought you here: once the streamer's tile is up, it goes big
+  // with their stream big (webcam small), then the request is done.
+  createEffect(() => {
+    const uid = watchRequest();
+    if (!uid) return;
+    const tile = tiles().find((t) => !t.screen && t.participant.identity === uid);
+    if (!tile || !streamOf(tile.participant)) return;
+    setFocus(tile.key);
+    setSwapped((prev) => new Set(prev).add(uid));
+    setWatchRequest(undefined);
+  });
 
   return (
     <div class="voice">

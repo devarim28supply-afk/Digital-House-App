@@ -2238,3 +2238,58 @@ img.msg-sticker {
   border-top-width: 3px;
   cursor: nwse-resize;
 }
+
+/* ---- a LIVE tile: someone in stream mode (top of the sidebar) -------------- */
+
+.live-tile {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: #000;
+}
+
+.live-tile video,
+.live-tile-wait {
+  display: block;
+  width: 100%;
+  height: 108px;
+  object-fit: cover;
+  background: #050505;
+}
+
+.live-tile video.hidden {
+  display: none;
+}
+
+.live-tile:hover {
+  border-color: #f87171;
+}
+
+/* the red LIVE, glowing */
+.live-badge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #e11d48;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  animation: live-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes live-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 4px rgba(225, 29, 72, 0.7),
+      0 0 10px rgba(225, 29, 72, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 9px rgba(244, 63, 94, 1),
+      0 0 22px rgba(244, 63, 94, 0.7);
+  }
+}
