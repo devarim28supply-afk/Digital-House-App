@@ -1,8 +1,11 @@
-import { Show, createEffect, createSignal, onCleanup, untrack } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js";
 
 import { type RemoteTrack, Room, RoomEvent, Track } from "livekit-client";
 
 import { auth } from "../firebase";
+
+// A team's LIVE tile shows each member this long, then the next (Kaalob).
+const ROTATE_MS = 10_000;
 
 /** A still picture of a video element (a small JPEG), or undefined with no frame yet. */
 function still(video: HTMLVideoElement | undefined, width: number) {
@@ -20,18 +23,22 @@ function still(video: HTMLVideoElement | undefined, width: number) {
  * at the bottom and a glowing red LIVE (Kaalob's drawings). Clicking it takes
  * you into that videochat with their stream big.
  *
+ * A team (streamers who teamed up for the same game) shares one tile: it
+ * shows each member for 10 seconds, then the next, round and round.
+ *
  * In that same videochat already (frozen), the tile holds a still picture
  * instead: you see the stream in the call, so the sidebar downloads nothing.
  */
 export function LiveTile(props: {
   serverId: string;
   channelId: string;
-  /** the streamer: their uid is their name in the call */
-  uid: string;
-  name: string;
-  /** you are in the streamer's videochat: hold a still picture, no live preview */
+  /** the streamer(s): their uid is their name in the call */
+  uids: string[];
+  nameOf: (uid: string) => string;
+  /** you are in the streamers' videochat: hold a still picture, no live preview */
   frozen: boolean;
-  onOpen: () => void;
+  /** clicked: open this streamer (the one showing now) */
+  onOpen: (uid: string) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let face: HTMLVideoElement | undefined;
@@ -39,38 +46,67 @@ export function LiveTile(props: {
   // one screen never knock each other out); the token server makes it
   // invisible and watch-only, so nobody sees an extra person.
   const peekTag = Math.random().toString(36).slice(2, 10);
-  const [playing, setPlaying] = createSignal(false);
-  const [faceOn, setFaceOn] = createSignal(false);
+  // every member's stream and webcam, as they arrive
+  const [streams, setStreams] = createSignal(new Map<string, RemoteTrack>());
+  const [faces, setFaces] = createSignal(new Map<string, RemoteTrack>());
+  const put = (set: typeof setStreams, uid: string, track: RemoteTrack | undefined) =>
+    set((prev) => {
+      const next = new Map(prev);
+      if (track) next.set(uid, track);
+      else next.delete(uid);
+      return next;
+    });
+
+  // who is showing now; a team turns every 10 seconds
+  const [turn, setTurn] = createSignal(0);
+  createEffect(() => {
+    if (props.uids.length < 2) return;
+    const timer = window.setInterval(() => setTurn((t) => t + 1), ROTATE_MS);
+    onCleanup(() => window.clearInterval(timer));
+  });
+  const current = () => props.uids[turn() % props.uids.length] ?? props.uids[0];
+  const stream = () => streams().get(current());
+  const camera = () => faces().get(current());
+
   // the frozen picture: the stream, and their webcam if it was on
   const [snapshot, setSnapshot] = createSignal<{ stream: string; face?: string } | undefined>();
-
   // Frozen: take the still from the live preview, then let it go. (Untracked:
-  // the webcam going on or off must not restart the connection below.)
+  // tracks coming and going must not restart the connection below.)
   function freezeNow() {
     return untrack(() => {
-      const stream = still(video, 480);
-      if (!stream) return false;
-      setSnapshot({ stream, face: faceOn() ? still(face, 200) : undefined });
+      const picture = still(video, 480);
+      if (!picture || !stream()) return false;
+      setSnapshot({ stream: picture, face: camera() ? still(face, 200) : undefined });
       return true;
     });
   }
+
+  // show the current member's stream and webcam
+  createEffect(() => {
+    const t = stream();
+    if (!t || !video) return;
+    t.attach(video);
+    onCleanup(() => t.detach(video!));
+  });
+  createEffect(() => {
+    const t = camera();
+    if (!t || !face) return;
+    t.attach(face);
+    onCleanup(() => t.detach(face!));
+  });
 
   // Live (or frozen without a picture yet): be connected. Frozen with a
   // picture: not connected at all.
   createEffect(() => {
     if (props.frozen && snapshot()) return;
     if (!props.frozen && untrack(snapshot)) setSnapshot(undefined);
+    const members = new Set(props.uids);
     let room: Room | undefined;
     let gone = false;
     let retry = 0;
-    const attach = (track: RemoteTrack) => {
-      if (!video) return;
-      track.attach(video);
-      setPlaying(true);
-    };
     // frozen and waiting for a picture: take one once frames arrive
     const onFrame = () => {
-      if (props.frozen && !snapshot()) window.setTimeout(freezeNow, 400);
+      if (props.frozen && !untrack(snapshot)) window.setTimeout(freezeNow, 400);
     };
     video?.addEventListener("loadeddata", onFrame);
     async function connect() {
@@ -87,27 +123,26 @@ export function LiveTile(props: {
         const next = new Room({ adaptiveStream: true });
         next
           .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
-            if (participant.identity !== props.uid || track.kind !== Track.Kind.Video) return;
-            if (pub.trackName === "stream") attach(track);
+            if (!members.has(participant.identity) || track.kind !== Track.Kind.Video) return;
+            if (pub.trackName === "stream") put(setStreams, participant.identity, track);
             // their webcam, small in the corner
-            else if (pub.source === Track.Source.Camera && face) {
-              track.attach(face);
-              setFaceOn(!pub.isMuted);
-            }
+            else if (pub.source === Track.Source.Camera && !pub.isMuted) put(setFaces, participant.identity, track);
           })
           .on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
-            if (participant.identity !== props.uid) return;
-            if (pub.trackName === "stream") setPlaying(false);
-            else if (pub.source === Track.Source.Camera) setFaceOn(false);
+            if (pub.trackName === "stream") put(setStreams, participant.identity, undefined);
+            else if (pub.source === Track.Source.Camera) put(setFaces, participant.identity, undefined);
           })
           .on(RoomEvent.TrackMuted, (pub, participant) => {
-            if (participant.identity === props.uid && pub.source === Track.Source.Camera) setFaceOn(false);
+            if (pub.source === Track.Source.Camera) put(setFaces, participant.identity, undefined);
           })
           .on(RoomEvent.TrackUnmuted, (pub, participant) => {
-            if (participant.identity === props.uid && pub.source === Track.Source.Camera) setFaceOn(true);
+            if (members.has(participant.identity) && pub.source === Track.Source.Camera && pub.track) {
+              put(setFaces, participant.identity, pub.track as RemoteTrack);
+            }
           })
           .on(RoomEvent.Disconnected, () => {
-            setPlaying(false);
+            setStreams(new Map());
+            setFaces(new Map());
             if (!gone) retry = window.setTimeout(() => void connect(), 3000);
           });
         await next.connect(pass.url, pass.token);
@@ -124,18 +159,22 @@ export function LiveTile(props: {
       gone = true;
       window.clearTimeout(retry);
       video?.removeEventListener("loadeddata", onFrame);
-      setPlaying(false);
+      setStreams(new Map());
+      setFaces(new Map());
       void room?.disconnect();
     });
   });
+
+  const playing = () => Boolean(stream());
+  const names = () => props.uids.map(props.nameOf).join(" & ");
 
   return (
     <button
       type="button"
       class="room-tile live-tile"
       classList={{ frozen: Boolean(snapshot()) }}
-      title={`${props.name} is live`}
-      onClick={props.onOpen}
+      title={`${names()} ${props.uids.length > 1 ? "are" : "is"} live`}
+      onClick={() => props.onOpen(current())}
     >
       <video ref={video} autoplay playsinline muted classList={{ hidden: !playing() || Boolean(snapshot()) }} />
       <Show when={snapshot()}>{(snap) => <img class="live-tile-still" src={snap().stream} alt="" />}</Show>
@@ -148,11 +187,19 @@ export function LiveTile(props: {
         autoplay
         playsinline
         muted
-        classList={{ hidden: !faceOn() || Boolean(snapshot()) }}
+        classList={{ hidden: !camera() || Boolean(snapshot()) }}
       />
       <Show when={snapshot()?.face}>{(src) => <img class="live-tile-face" src={src()} alt="" />}</Show>
       <span class="live-badge">LIVE</span>
-      <span class="room-tile-name">{props.name}</span>
+      <span class="room-tile-name">
+        {props.nameOf(current())}
+        {/* a team: which member is showing */}
+        <Show when={props.uids.length > 1}>
+          <span class="live-team" aria-hidden="true">
+            <For each={props.uids}>{(uid) => <i classList={{ on: uid === current() }} />}</For>
+          </span>
+        </Show>
+      </span>
     </button>
   );
 }

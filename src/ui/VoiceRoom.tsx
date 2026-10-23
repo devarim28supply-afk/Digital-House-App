@@ -438,6 +438,7 @@ export function VoiceRoom(props: {
       const audio = media.getAudioTracks()[0];
       if (audio) streamPubs.push(await me.publishTrack(audio, { name: STREAM_AUDIO, source: Track.Source.ScreenShareAudio }));
       setStreamOn(true);
+      setTeam(undefined);
       setStreamingIn({ serverId: props.serverId, channelId: props.channel.id });
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
@@ -498,6 +499,16 @@ export function VoiceRoom(props: {
       setError("Could not send that. Check your connection.");
     }
   }
+
+  // ---- team up: two (or more) streams of the same game share one LIVE tile ---
+  const [team, setTeam] = createSignal<string | undefined>();
+  /** Team up with another streamer here (their uid), or undefined to leave the team. */
+  function teamUp(uid: string | undefined) {
+    setTeam(uid);
+    if (streamOn()) setStreamingIn({ serverId: props.serverId, channelId: props.channel.id, ...(uid ? { team: uid } : {}) });
+  }
+  // the other people streaming in this videochat: who you can team up with
+  const otherStreamers = () => [...(room()?.remoteParticipants.values() ?? [])].filter((p) => streamOf(p));
 
   async function stopStream() {
     const pubs = streamPubs;
@@ -985,6 +996,35 @@ export function VoiceRoom(props: {
                   >
                     Start stream mode (720p, lighter)
                   </button>
+                </Show>
+                {/* streaming: team up with another streamer here (one LIVE tile) */}
+                <Show when={streamOn()}>
+                  <For each={otherStreamers()}>
+                    {(p) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setShareMenu(false);
+                          teamUp(p.identity);
+                        }}
+                      >
+                        {team() === p.identity ? `✓ Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}
+                      </button>
+                    )}
+                  </For>
+                  <Show when={team()}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareMenu(false);
+                        teamUp(undefined);
+                      }}
+                    >
+                      Leave the team
+                    </button>
+                  </Show>
                 </Show>
               </div>
             </Show>

@@ -266,13 +266,28 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   // Kept as plain text keys ("uid|channel"): a key stays the same string while
   // the stream goes on, so its LIVE tile stays put. Rebuilt objects would make
   // the list throw the tile away (and reconnect it) on every presence beat.
+  // A team (streamers who teamed up, in the same videochat) is one key:
+  // "uid1,uid2|channel", members sorted, so it stays the same string.
   const liveStreams = createMemo(
-    () =>
-      onlineHere().flatMap((uid) => {
-        const live = presence().get(uid)?.streaming;
-        const ch = live && live.serverId === serverId() ? channels().find((c) => c.id === live.channelId) : undefined;
-        return ch ? [`${uid}|${ch.id}`] : [];
-      }),
+    () => {
+      const live = new Map<string, string>(); // uid -> channel
+      const teamOf = new Map<string, string | undefined>();
+      for (const uid of onlineHere()) {
+        const s = presence().get(uid)?.streaming;
+        if (!s || s.serverId !== serverId() || !channels().some((c) => c.id === s.channelId)) continue;
+        live.set(uid, s.channelId);
+        teamOf.set(uid, s.team);
+      }
+      // join teammates (a points at b, both live in the same videochat)
+      const root = new Map<string, string>([...live.keys()].map((u) => [u, u]));
+      const find = (u: string): string => (root.get(u) === u ? u : find(root.get(u)!));
+      for (const [uid, mate] of teamOf) {
+        if (mate && live.get(mate) === live.get(uid)) root.set(find(uid), find(mate));
+      }
+      const groups = new Map<string, string[]>();
+      for (const uid of live.keys()) groups.set(find(uid), [...(groups.get(find(uid)) ?? []), uid]);
+      return [...groups.values()].map((members) => `${members.sort().join(",")}|${live.get(members[0])}`).sort();
+    },
     [],
     { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
   );
@@ -353,16 +368,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
             <For each={liveStreams()}>
               {(key) => {
-                const [uid, channelId] = key.split("|");
+                const [members, channelId] = key.split("|");
+                const uids = members.split(",");
                 return (
                   <div class="tile-row">
                     <LiveTile
                       serverId={serverId()!}
                       channelId={channelId}
-                      uid={uid}
-                      name={nameOf(uid)}
+                      uids={uids}
+                      nameOf={nameOf}
                       frozen={call()?.serverId === serverId() && call()?.channel.id === channelId}
-                      onOpen={() => {
+                      onOpen={(uid) => {
                         const ch = channels().find((c) => c.id === channelId);
                         if (ch) watchStream(uid, ch);
                       }}

@@ -218,7 +218,12 @@ export const ONLINE_WINDOW_MS = 2 * 60_000;
  * older than ONLINE_WINDOW_MS has expired (they left that place).
  */
 /** Where someone is streaming (stream mode), shown as a LIVE tile to the server. */
-export type Streaming = { serverId: string; channelId: string };
+/**
+ * Where someone is streaming (stream mode), shown as a LIVE tile to the
+ * server. team: the streamer they teamed up with (one LIVE tile for the team,
+ * rotating between them every 10 s).
+ */
+export type Streaming = { serverId: string; channelId: string; team?: string };
 export type Presence = { lastSeen: number; where: string; whereAt: number; streaming?: Streaming };
 
 /** Heartbeat for this app; setWhere("") when you are not in a call or room. */
@@ -243,7 +248,9 @@ export function startPresence(uid: string) {
     },
     /** In stream mode: everyone in that server sees a LIVE tile. null when it ends. */
     setStreaming(streaming: Streaming | null) {
-      void setDoc(ref, { streaming: streaming ?? deleteField(), lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
+      // merge would keep an old "team" inside; leaving a team must remove it
+      const value = streaming ? { ...streaming, team: streaming.team ?? deleteField() } : deleteField();
+      void setDoc(ref, { streaming: value, lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
     },
     stop() {
       window.clearInterval(timer);
@@ -264,7 +271,14 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
               lastSeen: toDate(data.lastSeen)?.getTime() ?? Date.now(),
               where: typeof data.where === "string" ? data.where : "",
               whereAt: toDate(data.whereAt)?.getTime() ?? 0,
-              streaming: data.streaming?.serverId && data.streaming?.channelId ? (data.streaming as Streaming) : undefined,
+              streaming:
+                data.streaming?.serverId && data.streaming?.channelId
+                  ? {
+                      serverId: data.streaming.serverId as string,
+                      channelId: data.streaming.channelId as string,
+                      ...(typeof data.streaming.team === "string" ? { team: data.streaming.team as string } : {}),
+                    }
+                  : undefined,
             },
           ];
         }),

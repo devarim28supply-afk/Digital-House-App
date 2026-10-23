@@ -11,7 +11,7 @@ const [inRoom, setInRoom] = createSignal<string | undefined>();
 export { inCall, inRoom, setInCall, setInRoom };
 
 /** Where you are streaming right now (stream mode), for your presence. */
-const [streamingIn, setStreamingIn] = createSignal<{ serverId: string; channelId: string } | undefined>();
+const [streamingIn, setStreamingIn] = createSignal<{ serverId: string; channelId: string; team?: string } | undefined>();
 export { setStreamingIn, streamingIn };
 
 /** A LIVE tile was clicked: show this person's stream big once the call is up. */

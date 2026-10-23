@@ -2374,3 +2374,22 @@ img.live-tile-still {
   border-color: #fff;
   color: #fff;
 }
+
+/* a team's LIVE tile: dots for who is showing (it turns every 10 s) */
+.live-team {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.live-team i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.live-team i.on {
+  background: #f87171;
+}
