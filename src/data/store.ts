@@ -24,10 +24,11 @@ import { db } from "../firebase";
 /*
  * Firestore layout (rules: M2A-Access-Control/firestore.rules):
  *
- *   profiles/{uid}       name, username, color          everyone approved reads
+ *   profiles/{uid}       name, username, color,          everyone approved reads
+ *                        photo, banner, background        your card's pictures
  *   presence/{uid}       lastSeen                         heartbeat, self-written
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
- *                        banner? (a JPEG data URL across the top of the channels)
+ *                        banner? (a picture URL across the top of the channels)
  *     channels/{cid}     name, kind "text"|"voice"|"room", position
  *                        room: image, and roomKey (a Gestr room) or url
  *                        text: parentId = the room tile it is the chat of
@@ -41,9 +42,14 @@ export type Profile = {
   color: string;
   /** shown on your videochat tile instead of your name, if you set one */
   callName?: string;
-  /** your profile picture: a small JPEG (data URL), shrunk in the browser */
+  /** the three pictures on your profile card: uploaded URLs (a GIF keeps moving) */
   photo?: string;
-};
+  banner?: string;
+  background?: string;
+}
+/** Which picture on the profile card: the round face, the top strip, the card itself. */
+export type ProfilePicture = "photo" | "banner" | "background";
+
 export type Server = {
   id: string;
   name: string;
@@ -182,9 +188,9 @@ export async function saveProfile(uid: string, name: string, username: string) {
   await setDoc(doc(db, "profiles", uid), { uid, name, username, color: colorFor(uid) }, { merge: true });
 }
 
-/** Your profile picture, or null to go back to your initials. */
-export async function saveProfilePhoto(uid: string, photo: string | null) {
-  await setDoc(doc(db, "profiles", uid), { photo: photo ?? deleteField() }, { merge: true });
+/** One picture on your card, or null to give that spot back its colour. */
+export async function saveProfilePicture(uid: string, field: ProfilePicture, url: string | null) {
+  await setDoc(doc(db, "profiles", uid), { [field]: url ?? deleteField() }, { merge: true });
 }
 
 /** The name on your videochat tile; empty goes back to your normal name. */

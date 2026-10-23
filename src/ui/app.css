@@ -2036,6 +2036,15 @@ button.msg-media {
   font-size: 18px;
 }
 
+/* a card banner or background in the Account controls */
+.picture-preview {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+}
+
 /* ---- stickers: like emojis, but sent on their own and shown bigger --------- */
 
 .emoji-tabs {

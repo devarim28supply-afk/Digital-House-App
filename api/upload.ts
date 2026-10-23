@@ -8,6 +8,8 @@ import { type HandleUploadBody, handleUpload } from "@vercel/blob/client";
  *   POST /api/upload   (the @vercel/blob/client upload() handshake)
  *   clientPayload: JSON { idToken, serverId, channelId }      a chat file
  *                  JSON { idToken, serverId, kind: "emoji" }  a server emoji
+ *                  JSON { idToken, serverId, kind: "banner" } a server banner
+ *                  JSON { idToken, kind: "profile" }          your profile card
  *
  * The browser uploads straight to Vercel Blob; this only hands out the pass.
  * The check is done by Firestore itself, as in dh-token.ts: we read the
@@ -20,10 +22,36 @@ import { type HandleUploadBody, handleUpload } from "@vercel/blob/client";
 const PROJECT_ID = "gestr-lab";
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const OWNER_EMAIL = "kaalobmoran@gmail.com";
 const MAX_BYTES = 500 * 1024 * 1024;
 // a server emoji: a small picture or a little GIF
 const MAX_EMOJI_BYTES = 2 * 1024 * 1024;
-const EMOJI_TYPES = ["image/png", "image/gif", "image/webp", "image/jpeg"];
+const IMAGE_TYPES = ["image/png", "image/gif", "image/webp", "image/jpeg"];
+// a server banner, or a picture on your profile card (GIFs included)
+const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * An approved member's uid: Firestore reads members/{uid} with their own
+ * token. The owner account passes without a record, exactly as in the rooms'
+ * own token route (M2A-access's api/livekit-token.js).
+ */
+async function approvedUid(idToken: string) {
+  const claims = claimsOf(idToken);
+  const uid = claims.sub ?? "";
+  if (!idToken || !ID_RE.test(uid)) throw new Error("Log in first");
+  const res = await fetch(`${FIRESTORE}/members/${uid}`, { headers: { Authorization: `Bearer ${idToken}` } });
+  if (res.status === 401) throw new Error("Your login has expired. Log in again.");
+  const owner = String(claims.email ?? "").toLowerCase() === OWNER_EMAIL;
+  if (!res.ok) {
+    if (owner) return uid;
+    throw new Error("Approved members only");
+  }
+  if (!owner) {
+    const data = (await res.json()) as { fields?: { status?: { stringValue?: string } } };
+    if (data.fields?.status?.stringValue !== "approved") throw new Error("Approved members only");
+  }
+  return uid;
+}
 
 function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
@@ -44,7 +72,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-function claimsOf(idToken: string): { sub?: string } {
+function claimsOf(idToken: string): { sub?: string; email?: string } {
   try {
     return JSON.parse(Buffer.from(idToken.split(".")[1], "base64url").toString("utf8"));
   } catch {
@@ -93,7 +121,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           if (!pathname.startsWith(`emoji/${payload.serverId}/`)) throw new Error("Bad file path");
           return {
             maximumSizeInBytes: MAX_EMOJI_BYTES,
-            allowedContentTypes: EMOJI_TYPES,
+            allowedContentTypes: IMAGE_TYPES,
+            addRandomSuffix: true,
+            tokenPayload: JSON.stringify({ uid }),
+          };
+        }
+        if (payload.kind === "banner" || payload.kind === "profile") {
+          const uid =
+            payload.kind === "banner"
+              ? await memberOf(payload.idToken ?? "", payload.serverId ?? "")
+              : await approvedUid(payload.idToken ?? "");
+          const folder = payload.kind === "banner" ? `banner/${payload.serverId}/` : `profile/${uid}/`;
+          if (!pathname.startsWith(folder)) throw new Error("Bad file path");
+          return {
+            maximumSizeInBytes: MAX_PICTURE_BYTES,
+            allowedContentTypes: IMAGE_TYPES,
             addRandomSuffix: true,
             tokenPayload: JSON.stringify({ uid }),
           };

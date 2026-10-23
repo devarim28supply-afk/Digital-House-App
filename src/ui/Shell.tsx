@@ -6,6 +6,7 @@ import {
   ONLINE_WINDOW_MS,
   type Presence,
   type Profile,
+  type ProfilePicture,
   type Server,
   addServerMembers,
   createChannel,
@@ -26,12 +27,13 @@ import {
   startPresence,
   watchChannels,
   saveCallName,
-  saveProfilePhoto,
+  saveProfilePicture,
   watchEmojis,
   watchPresence,
   watchProfiles,
   watchServers,
 } from "../data/store";
+import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
@@ -81,6 +83,14 @@ export function faceStyle(profile: Profile | undefined, fallback = "#404040"): J
 }
 /** The initials inside it, only when there is no picture. */
 export const faceText = (profile: Profile | undefined, name: string) => (profile?.photo ? "" : initials(name));
+/** The card's top strip or its background: the chosen picture over your colour. */
+function pictureStyle(profile: Profile | undefined, field: "banner" | "background"): JSX.CSSProperties {
+  const url = profile?.[field];
+  const color = profile?.color ?? "#404040";
+  return url
+    ? { "background-color": color, "background-image": `url("${url}")`, "background-size": "cover", "background-position": "center" }
+    : { background: color };
+}
 
 /**
  * Darkwood Node once you are in: servers on the far left, the chosen
@@ -650,7 +660,34 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         <p class="modal-text">
           Signed in as <b>{props.name}</b> (@{props.username || "member"}).
         </p>
-        <PhotoField uid={props.uid} name={props.name} profile={profiles().get(props.uid)} />
+        <PictureField
+          uid={props.uid}
+          field="photo"
+          label="Profile picture"
+          hint="The round picture on your card, in chat and on your tile. A GIF keeps moving."
+          value={profiles().get(props.uid)?.photo}
+          preview={
+            <span class="avatar photo-preview" style={faceStyle(profiles().get(props.uid))}>
+              {faceText(profiles().get(props.uid), props.name)}
+            </span>
+          }
+        />
+        <PictureField
+          uid={props.uid}
+          field="banner"
+          label="Card banner"
+          hint="The strip across the top of your card. A GIF keeps moving."
+          value={profiles().get(props.uid)?.banner}
+          preview={<span class="picture-preview" style={pictureStyle(profiles().get(props.uid), "banner")} />}
+        />
+        <PictureField
+          uid={props.uid}
+          field="background"
+          label="Card background"
+          hint="Fills the card behind your name. A GIF keeps moving."
+          value={profiles().get(props.uid)?.background}
+          preview={<span class="picture-preview" style={pictureStyle(profiles().get(props.uid), "background")} />}
+        />
         <CallNameField uid={props.uid} name={props.name} current={profiles().get(props.uid)?.callName ?? ""} />
         <div class="field">
           <span>Right sidebar</span>
@@ -676,10 +713,18 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 }
 
 /**
- * Your profile picture: shown in chat, the Online list, room tiles, your
- * card and your videochat tile (camera off). Shrunk to 256 px in the browser.
+ * One picture on your profile card: your round face, the strip across the
+ * top, or the card itself. A GIF goes up whole and keeps moving.
  */
-function PhotoField(props: { uid: string; name: string; profile?: Profile }) {
+function PictureField(props: {
+  uid: string;
+  field: ProfilePicture;
+  label: string;
+  hint: string;
+  value?: string;
+  /** what that spot of the card looks like now */
+  preview: JSX.Element;
+}) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   let picker: HTMLInputElement | undefined;
@@ -688,20 +733,29 @@ function PhotoField(props: { uid: string; name: string; profile?: Profile }) {
     setBusy(true);
     setError("");
     try {
-      await saveProfilePhoto(props.uid, await shrinkImage(file, 256));
+      await saveProfilePicture(props.uid, props.field, await uploadPicture(file, { kind: "profile", name: props.field }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not use that picture");
     } finally {
       setBusy(false);
     }
   }
+  async function remove() {
+    setBusy(true);
+    setError("");
+    try {
+      await saveProfilePicture(props.uid, props.field, null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove that picture");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div class="field photo-field">
-      <span>Profile picture</span>
+      <span>{props.label}</span>
       <div class="photo-row">
-        <span class="avatar photo-preview" style={faceStyle(props.profile)}>
-          {faceText(props.profile, props.name)}
-        </span>
+        {props.preview}
         <input
           ref={picker}
           type="file"
@@ -713,14 +767,15 @@ function PhotoField(props: { uid: string; name: string; profile?: Profile }) {
           }}
         />
         <button class="btn" type="button" disabled={busy()} onClick={() => picker?.click()}>
-          {busy() ? "Saving…" : props.profile?.photo ? "Change picture" : "Upload picture"}
+          {busy() ? "Saving…" : props.value ? "Change picture" : "Upload picture"}
         </button>
-        <Show when={props.profile?.photo}>
-          <button class="btn" type="button" disabled={busy()} onClick={() => void saveProfilePhoto(props.uid, null)}>
+        <Show when={props.value}>
+          <button class="btn" type="button" disabled={busy()} onClick={() => void remove()}>
             Remove
           </button>
         </Show>
       </div>
+      <small class="field-hint">{props.hint}</small>
       <Show when={error()}>
         <p class="form-error">{error()}</p>
       </Show>
@@ -817,16 +872,25 @@ function ProfileCard(props: {
   const H = 280;
   const left = () => Math.max(12, Math.min(props.x - W - 16, window.innerWidth - W - 12));
   const top = () => Math.max(12, Math.min(props.y - 40, window.innerHeight - H - 12));
-  const color = () => props.profile?.color ?? "#404040";
   return (
     <div class="card-backdrop" onClick={props.onClose}>
       <article
         class="profile-card"
-        style={{ left: `${left()}px`, top: `${top()}px` }}
+        style={{
+          left: `${left()}px`,
+          top: `${top()}px`,
+          ...(props.profile?.background
+            ? {
+                "background-image": `linear-gradient(rgba(11, 11, 11, 0.72), rgba(11, 11, 11, 0.93)), url("${props.profile.background}")`,
+                "background-size": "cover",
+                "background-position": "center",
+              }
+            : {}),
+        }}
         onClick={(e) => e.stopPropagation()}
         aria-label={`${props.name}'s profile`}
       >
-        <div class="profile-banner" style={{ background: color() }} />
+        <div class="profile-banner" style={pictureStyle(props.profile, "banner")} />
         <span class="avatar profile-avatar" style={faceStyle(props.profile)}>
           {faceText(props.profile, props.name)}
           <i class="dot" classList={{ off: !props.online }} />
@@ -1033,6 +1097,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
   const [banner, setBanner] = createSignal<string | null | undefined>();
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
+  const [uploading, setUploading] = createSignal(false);
   // Delete takes two clicks: the first arms it, the second deletes.
   const [deleteArmed, setDeleteArmed] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
@@ -1063,13 +1128,18 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
   }
 
   async function pick(e: Event) {
-    const file = (e.currentTarget as HTMLInputElement).files?.[0];
-    if (!file) return;
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || !props.server) return;
+    setUploading(true);
+    setError("");
     try {
-      setError("");
-      setBanner(await shrinkImage(file, 960));
+      setBanner(await uploadPicture(file, { kind: "banner", serverId: props.server.id }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read that image");
+      setError(err instanceof Error ? err.message : "Could not use that picture");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -1113,8 +1183,8 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           </div>
           <div class="banner-actions">
             <label class="btn banner-upload">
-              {shown() ? "Change picture" : "Upload picture"}
-              <input type="file" accept="image/*" onChange={pick} />
+              {uploading() ? "Uploading…" : shown() ? "Change picture" : "Upload picture"}
+              <input type="file" accept="image/*" disabled={uploading()} onChange={pick} />
             </label>
             <Show when={shown()}>
               <button class="btn danger" type="button" onClick={() => setBanner(null)}>
@@ -1122,7 +1192,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
               </button>
             </Show>
           </div>
-          <small class="field-hint">Wide pictures work best (about 3 : 1).</small>
+          <small class="field-hint">Wide pictures work best (about 3 : 1). A GIF keeps moving.</small>
         </div>
         <Show when={props.canDelete}>
           <div class="field">

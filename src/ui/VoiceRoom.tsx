@@ -1,6 +1,7 @@
 import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
 import {
+  type LocalParticipant,
   type LocalTrackPublication,
   type Participant,
   type RemoteTrack,
@@ -28,6 +29,9 @@ async function fetchPass(serverId: string, channelId: string, wall = false) {
   if (!res.ok || !body.url || !body.token) throw new Error(body.error || "Could not join the call.");
   return { url: body.url, token: body.token };
 }
+
+/** How long a camera start or stop may take before the button stops waiting. */
+const CAMERA_TIMEOUT_MS = 10_000;
 
 type TileInfo = {
   key: string;
@@ -385,17 +389,90 @@ export function VoiceRoom(props: {
     }
   }
 
+  // The Camera button answers at once: it shows what you asked for while the
+  // camera starts or stops, and quick extra clicks only change the wish. One
+  // loop catches the camera up to your last click, each step with a way out;
+  // the wish belongs to the call it was made in, so leaving or reconnecting
+  // drops it instead of letting a slow start write over the next call.
+  const [camWant, setCamWant] = createSignal<boolean | undefined>();
+  const camShown = () => camWant() ?? camOn();
+  let camRun = 0; // one per call: an old loop sees the change and stops
+  let camLooping = false;
+
+  createEffect(() => {
+    room();
+    camRun++;
+    camLooping = false;
+    setCamWant(undefined);
+  });
+
+  /** One camera start or stop, and a way out if the browser never answers. */
+  async function moveCamera(active: LocalParticipant, on: boolean) {
+    let timer = 0;
+    const attempt = active
+      .setCameraEnabled(on)
+      .then(
+        () => ({ ok: true as const }),
+        (err: unknown) => ({
+          ok: false as const,
+          message: err instanceof Error ? err.message : on ? "The camera could not be turned on." : "The camera could not be turned off.",
+        }),
+      )
+      .finally(bump);
+    const slow = new Promise<{ ok: false; message: string }>((resolve) => {
+      timer = window.setTimeout(
+        () => resolve({ ok: false, message: "The camera did not answer. Check the browser's camera permission, then try again." }),
+        CAMERA_TIMEOUT_MS,
+      );
+    });
+    const result = await Promise.race([attempt, slow]);
+    window.clearTimeout(timer);
+    return result;
+  }
+
+  async function toggleCam() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    const next = !camShown();
+    setCamWant(next);
+    if (!next) cameraOffInRooms();
+    if (camLooping) return;
+    camLooping = true;
+    const run = camRun;
+    try {
+      let tried: boolean | undefined;
+      for (;;) {
+        const want = camWant();
+        const active = room()?.localParticipant;
+        if (run !== camRun || want === undefined || !active) break;
+        if (active.isCameraEnabled === want) break;
+        if (tried === want) break; // it did not take; do not spin
+        tried = want;
+        const result = await moveCamera(active, want);
+        if (run !== camRun) return;
+        if (!result.ok) {
+          setError(result.message);
+          break;
+        }
+        bump();
+      }
+    } finally {
+      if (run === camRun) {
+        camLooping = false;
+        setCamWant(undefined);
+        bump();
+      }
+    }
+  }
+
   async function toggle(kind: "mic" | "cam" | "screen") {
+    if (kind === "cam") return toggleCam();
     const me = room()?.localParticipant;
     if (!me) return;
     setError("");
     try {
       if (kind === "mic") await me.setMicrophoneEnabled(!me.isMicrophoneEnabled);
-      if (kind === "cam") {
-        const on = !me.isCameraEnabled;
-        await me.setCameraEnabled(on);
-        if (!on) cameraOffInRooms();
-      }
       if (kind === "screen") await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That device could not be turned on.");
@@ -534,6 +611,7 @@ export function VoiceRoom(props: {
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
+                forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
               />
             )}
           </For>
@@ -559,8 +637,8 @@ export function VoiceRoom(props: {
           <Show
             when={props.camera}
             fallback={
-              <button type="button" class="dock-btn" aria-pressed={camOn()} onClick={() => void toggle("cam")}>
-                {camOn() ? "Camera on" : "Camera off"}
+              <button type="button" class="dock-btn" aria-pressed={camShown()} onClick={() => void toggle("cam")}>
+                {camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
               </button>
             }
           >
@@ -674,11 +752,14 @@ function Tile(props: {
   speaking: boolean;
   /** their webcam from the 3D room, shown while their call camera is off */
   roomFace?: RemoteTrack;
+  /** your own camera, already switched off (it is still stopping) */
+  forceOff?: boolean;
 }) {
   let video: HTMLVideoElement | undefined;
   const track = (): Track | undefined => {
     void props.version;
     const pub = props.tile.publication;
+    if (props.forceOff) return undefined;
     if (pub && !pub.isMuted && pub.track) return pub.track;
     // Their room webcam stands in only while they have never turned the call
     // camera on. Once they press Camera off (a muted camera), off means off.
