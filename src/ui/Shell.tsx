@@ -361,6 +361,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                       channelId={channelId}
                       uid={uid}
                       name={nameOf(uid)}
+                      frozen={call()?.serverId === serverId() && call()?.channel.id === channelId}
                       onOpen={() => {
                         const ch = channels().find((c) => c.id === channelId);
                         if (ch) watchStream(uid, ch);
