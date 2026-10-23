@@ -370,13 +370,32 @@ export function VoiceRoom(props: {
     bump();
   }
 
+  /**
+   * Camera off is off everywhere (Kaalob): the 3D room open in this app (a
+   * tile's Room side) turns its webcam off too, or your face would still
+   * show on your avatar and through the room's webcams.
+   */
+  function cameraOffInRooms() {
+    for (const frame of document.querySelectorAll<HTMLIFrameElement>(".room-layer iframe")) {
+      try {
+        frame.contentWindow?.postMessage({ type: "dh-camera-off" }, new URL(frame.src).origin);
+      } catch {
+        /* a room that is not loaded yet has no webcam on */
+      }
+    }
+  }
+
   async function toggle(kind: "mic" | "cam" | "screen") {
     const me = room()?.localParticipant;
     if (!me) return;
     setError("");
     try {
       if (kind === "mic") await me.setMicrophoneEnabled(!me.isMicrophoneEnabled);
-      if (kind === "cam") await me.setCameraEnabled(!me.isCameraEnabled);
+      if (kind === "cam") {
+        const on = !me.isCameraEnabled;
+        await me.setCameraEnabled(on);
+        if (!on) cameraOffInRooms();
+      }
       if (kind === "screen") await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That device could not be turned on.");
@@ -656,7 +675,10 @@ function Tile(props: {
   const track = (): Track | undefined => {
     void props.version;
     const pub = props.tile.publication;
-    return (pub && !pub.isMuted ? pub.track : undefined) ?? props.roomFace;
+    if (pub && !pub.isMuted && pub.track) return pub.track;
+    // Their room webcam stands in only while they have never turned the call
+    // camera on. Once they press Camera off (a muted camera), off means off.
+    return pub ? undefined : props.roomFace;
   };
 
   createEffect(() => {
