@@ -448,13 +448,35 @@ export function VoiceRoom(props: {
     );
   }
   onCleanup(() => flashTimers.forEach((t) => window.clearTimeout(t)));
-  /** Ask for attention: your tile strobes on everyone's screen (yours too). */
-  async function callAttention() {
+  /**
+   * Ask for attention: your tile strobes on everyone's screen, or (to) only on
+   * that one person's screen. Yours flashes too, so you know it went out.
+   */
+  const [attentionMenu, setAttentionMenu] = createSignal(false);
+  createEffect(() => {
+    if (!attentionMenu()) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".attention-wrap")) setAttentionMenu(false);
+    };
+    window.addEventListener("pointerdown", close);
+    onCleanup(() => window.removeEventListener("pointerdown", close));
+  });
+  // the people you can call: everyone else in the call (not the hidden watchers)
+  const others = () => {
+    void version();
+    return [...(room()?.remoteParticipants.values() ?? [])];
+  };
+  async function callAttention(to?: string) {
+    setAttentionMenu(false);
     const me = room()?.localParticipant;
     if (!me) return;
     flashTile(me.identity);
     try {
-      await me.publishData(new TextEncoder().encode("1"), { reliable: true, topic: ATTENTION_TOPIC });
+      await me.publishData(new TextEncoder().encode("1"), {
+        reliable: true,
+        topic: ATTENTION_TOPIC,
+        ...(to ? { destinationIdentities: [to] } : {}),
+      });
     } catch {
       setError("Could not send that. Check your connection.");
     }
@@ -938,9 +960,32 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
-          <button type="button" class="dock-btn attention-btn" title="Make your tile flash white for everyone (3 s)" onClick={() => void callAttention()}>
-            ✦ Attention
-          </button>
+          {/* Attention: flash your tile for everyone, or for one person only */}
+          <div class="share-wrap attention-wrap">
+            <button
+              type="button"
+              class="dock-btn attention-btn"
+              title="Make your tile flash white (3 s)"
+              aria-expanded={attentionMenu()}
+              onClick={() => setAttentionMenu(!attentionMenu())}
+            >
+              ✦ Attention ▴
+            </button>
+            <Show when={attentionMenu()}>
+              <div class="share-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => void callAttention()}>
+                  Everyone
+                </button>
+                <For each={others()}>
+                  {(p) => (
+                    <button type="button" role="menuitem" onClick={() => void callAttention(p.identity)}>
+                      Only {nameOf(p)}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
