@@ -45,6 +45,11 @@ type TileInfo = {
 // A 2nd shared screen rides its own named track: LiveKit keeps one
 // "screen share" per person, so this one is published beside it.
 const SECOND_SCREEN = "screen-2";
+// Stream mode (Kaalob): still a screen share, but it rides on the sharer's
+// own tile as a small picture instead of a tile of its own.
+const STREAM = "stream";
+const STREAM_AUDIO = "stream-audio";
+type InsetCorner = "tl" | "tr" | "bl" | "br";
 
 // the call grid: gap between tiles, and the small Room view's width (of a tile)
 const GAP = 10;
@@ -236,6 +241,9 @@ export function VoiceRoom(props: {
     secondScreen?.track?.stop();
     secondScreen = undefined;
     setSecondOn(false);
+    for (const pub of streamPubs) pub.track?.stop();
+    streamPubs = [];
+    setStreamOn(false);
     setRoomFaces(new Map<string, RemoteTrack>());
   }
 
@@ -330,7 +338,7 @@ export function VoiceRoom(props: {
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
   let secondScreen: LocalTrackPublication | undefined;
   const [secondOn, setSecondOn] = createSignal(false);
-  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0);
+  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0) + (streamOn() ? 1 : 0);
   const [shareMenu, setShareMenu] = createSignal(false);
   // a click anywhere else closes the share menu
   createEffect(() => {
@@ -367,6 +375,80 @@ export function VoiceRoom(props: {
     }
     bump();
   }
+  // ---- stream mode --------------------------------------------------------
+  let streamPubs: LocalTrackPublication[] = [];
+  const [streamOn, setStreamOn] = createSignal(false);
+  async function toggleStream() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    if (streamPubs.length) {
+      await stopStream();
+      return;
+    }
+    try {
+      // a game or a window, smooth, with its sound if "share audio" is ticked
+      const media = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: true,
+      });
+      const video = media.getVideoTracks()[0];
+      if (!video) return;
+      video.contentHint = "motion";
+      video.addEventListener("ended", () => void stopStream());
+      streamPubs = [
+        await me.publishTrack(video, {
+          name: STREAM,
+          source: Track.Source.Unknown,
+          simulcast: false,
+          videoEncoding: { maxBitrate: 4_500_000, maxFramerate: 30 },
+        }),
+      ];
+      const audio = media.getAudioTracks()[0];
+      if (audio) streamPubs.push(await me.publishTrack(audio, { name: STREAM_AUDIO, source: Track.Source.ScreenShareAudio }));
+      setStreamOn(true);
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
+        setError(err instanceof Error ? err.message : "That could not be streamed.");
+      }
+    }
+    bump();
+  }
+  async function stopStream() {
+    const pubs = streamPubs;
+    streamPubs = [];
+    setStreamOn(false);
+    for (const pub of pubs) {
+      if (pub.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
+      pub.track?.stop();
+    }
+    bump();
+  }
+  // Someone's stream, if they are streaming.
+  const streamOf = (participant: Participant) => {
+    void version();
+    for (const pub of participant.trackPublications.values()) {
+      if (pub.trackName === STREAM && pub.kind === Track.Kind.Video && !pub.isMuted && pub.track) return pub.track;
+    }
+    return undefined;
+  };
+  // Whose tile shows the stream big and the webcam small: your own choice,
+  // only on your screen (double-click the small picture).
+  const [swapped, setSwapped] = createSignal(new Set<string>());
+  const swap = (identity: string) =>
+    setSwapped((prev) => {
+      const next = new Set(prev);
+      if (next.has(identity)) next.delete(identity);
+      else next.add(identity);
+      return next;
+    });
+
+  // Which corner of a tile the small picture sits in: dragged there, only on
+  // your screen (top left to start, like the drawing).
+  const [corners, setCorners] = createSignal(new Map<string, InsetCorner>());
+  const setCorner = (identity: string, corner: InsetCorner) =>
+    setCorners((prev) => new Map(prev).set(identity, corner));
+
   async function stopSecondScreen() {
     const pub = secondScreen;
     secondScreen = undefined;
@@ -493,6 +575,7 @@ export function VoiceRoom(props: {
     const cams: TileInfo[] = [];
     for (const p of people) {
       for (const pub of p.trackPublications.values()) {
+        if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO) continue;
         const second = pub.trackName === SECOND_SCREEN;
         if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
         screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
@@ -701,6 +784,11 @@ export function VoiceRoom(props: {
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
+                stream={tile.screen ? undefined : streamOf(tile.participant)}
+                swapped={swapped().has(tile.participant.identity)}
+                onSwap={() => swap(tile.participant.identity)}
+                corner={corners().get(tile.participant.identity) ?? "tl"}
+                onCorner={(corner) => setCorner(tile.participant.identity, corner)}
               />
             )}
           </For>
@@ -770,6 +858,16 @@ export function VoiceRoom(props: {
                   }}
                 >
                   {secondOn() ? "Stop screen 2" : "Share screen 2"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenu(false);
+                    void toggleStream();
+                  }}
+                >
+                  {streamOn() ? "Stop stream mode" : "Start stream mode"}
                 </button>
               </div>
             </Show>
@@ -852,8 +950,17 @@ function Tile(props: {
   roomFace?: RemoteTrack;
   /** your own camera, already switched off (it is still stopping) */
   forceOff?: boolean;
+  /** their stream (stream mode): a small picture on their tile */
+  stream?: Track;
+  /** the stream big and the webcam small (double-click the small one) */
+  swapped?: boolean;
+  onSwap?: () => void;
+  /** the corner the small picture sits in; dragging it picks another */
+  corner?: InsetCorner;
+  onCorner?: (corner: InsetCorner) => void;
 }) {
   let video: HTMLVideoElement | undefined;
+  let inset: HTMLVideoElement | undefined;
   const track = (): Track | undefined => {
     void props.version;
     const pub = props.tile.publication;
@@ -864,26 +971,101 @@ function Tile(props: {
     return pub ? undefined : props.roomFace;
   };
 
+  // Stream mode: the big picture and the small one, swapped on double-click.
+  const swapped = () => Boolean(props.stream && props.swapped);
+  const big = () => (swapped() ? props.stream : track());
+  const small = () => (props.stream ? (swapped() ? track() : props.stream) : undefined);
+
   createEffect(() => {
-    const t = track();
+    const t = big();
     if (!t || !video) return;
     t.attach(video);
     onCleanup(() => t.detach(video!));
   });
+  createEffect(() => {
+    const t = small();
+    if (!t || !inset) return;
+    t.attach(inset);
+    onCleanup(() => t.detach(inset!));
+  });
 
-  const mirrored = () => props.tile.participant.isLocal && !props.tile.screen;
+  const mirrored = () => props.tile.participant.isLocal && !props.tile.screen && !swapped();
+
+  // Drag the small picture: it follows the pointer, and on letting go it
+  // snaps to the corner of the tile the pointer is in.
+  const [drag, setDrag] = createSignal<{ x: number; y: number } | undefined>();
+  let dragFrom: { x: number; y: number; moved: boolean } | undefined;
+  function dragStart(e: PointerEvent) {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragFrom = { x: e.clientX, y: e.clientY, moved: false };
+  }
+  function dragMove(e: PointerEvent) {
+    if (!dragFrom) return;
+    const dx = e.clientX - dragFrom.x;
+    const dy = e.clientY - dragFrom.y;
+    if (!dragFrom.moved && Math.hypot(dx, dy) < 5) return;
+    dragFrom.moved = true;
+    setDrag({ x: dx, y: dy });
+  }
+  function dragEnd(e: PointerEvent) {
+    const from = dragFrom;
+    dragFrom = undefined;
+    setDrag(undefined);
+    if (!from?.moved) return;
+    const tile = (e.currentTarget as HTMLElement).closest(".tile")?.getBoundingClientRect();
+    if (!tile) return;
+    const top = e.clientY < tile.top + tile.height / 2;
+    const left = e.clientX < tile.left + tile.width / 2;
+    props.onCorner?.(`${top ? "t" : "b"}${left ? "l" : "r"}` as InsetCorner);
+  }
 
   return (
     <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }} style={props.style} onDblClick={props.onDblClick}>
-      <video ref={video} autoplay playsinline muted classList={{ hidden: !track(), mirror: mirrored() }} />
-      <Show when={!track()}>
+      <video ref={video} autoplay playsinline muted classList={{ hidden: !big(), mirror: mirrored() }} />
+      <Show when={!big()}>
         <div class="tile-empty">
           <span class="avatar big" style={faceStyle(props.profile)}>
             {faceText(props.profile, props.name)}
           </span>
         </div>
       </Show>
-      <span class="tile-name">{props.name}</span>
+      <Show when={props.stream}>
+        <div
+          class={`tile-inset corner-${props.corner ?? "tl"}`}
+          classList={{ dragging: Boolean(drag()) }}
+          style={drag() ? { transform: `translate(${drag()!.x}px, ${drag()!.y}px)` } : {}}
+          title="Double-click to swap · drag to another corner"
+          onPointerDown={dragStart}
+          onPointerMove={dragMove}
+          onPointerUp={dragEnd}
+          onPointerCancel={dragEnd}
+          onDblClick={(e) => {
+            // swap, not the tile's own double-click (make it big)
+            e.stopPropagation();
+            props.onSwap?.();
+          }}
+        >
+          <video
+            ref={inset}
+            autoplay
+            playsinline
+            muted
+            classList={{ hidden: !small(), mirror: swapped() && props.tile.participant.isLocal }}
+          />
+          <Show when={!small()}>
+            <span class="avatar" style={faceStyle(props.profile)}>
+              {faceText(props.profile, props.name)}
+            </span>
+          </Show>
+        </div>
+      </Show>
+      <span class="tile-name">
+        <Show when={props.stream}>
+          <span class="live-dot" aria-hidden="true" />{" "}
+        </Show>
+        {props.name}
+      </span>
     </article>
   );
 }
