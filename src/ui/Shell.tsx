@@ -27,6 +27,7 @@ import {
   startPresence,
   watchChannels,
   saveCallName,
+  setTileImage,
   saveProfilePicture,
   watchEmojis,
   watchPresence,
@@ -356,6 +357,27 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                       </span>
                     </Show>
                   </button>
+                  {/* whoever runs the server can change any tile's picture */}
+                  <Show when={runsServer()}>
+                    <label class="icon-btn tile-pic" title={`Change the picture of ${c.name}`}>
+                      🖼
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={async (e) => {
+                          const file = e.currentTarget.files?.[0];
+                          e.currentTarget.value = "";
+                          if (!file) return;
+                          try {
+                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480));
+                          } catch {
+                            /* the old picture stays */
+                          }
+                        }}
+                      />
+                    </label>
+                  </Show>
                   {/* built-in tiles (Operation Room, Living Room) cannot be deleted */}
                   <Show when={runsServer() && !isBuiltInTile(c)}>
                     <button

@@ -443,6 +443,9 @@ export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
     img.src = src;
   });
 }
+/** A room tile's picture (a JPEG data URL, as when the tile was made). */
+export const setTileImage = (sid: string, cid: string, image: string) =>
+  updateDoc(doc(db, "servers", sid, "channels", cid), { image });
 export const renameChannel = (sid: string, cid: string, name: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid), { name });
 export const deleteChannel = (sid: string, cid: string) => deleteDoc(doc(db, "servers", sid, "channels", cid));
