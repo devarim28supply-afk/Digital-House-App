@@ -9,6 +9,7 @@ import {
   RoomEvent,
   Track,
   type TrackPublication,
+  VideoPresets,
 } from "livekit-client";
 
 import { type Channel, type Profile } from "../data/store";
@@ -404,8 +405,11 @@ export function VoiceRoom(props: {
         await me.publishTrack(video, {
           name: STREAM,
           source: Track.Source.Unknown,
-          simulcast: false,
+          // sent in three sizes: the small LIVE tile previews and small tiles
+          // take a small one, the big view takes the full 1080p
+          simulcast: true,
           videoEncoding: { maxBitrate: 4_500_000, maxFramerate: 30 },
+          videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h720],
         }),
       ];
       const audio = media.getAudioTracks()[0];
