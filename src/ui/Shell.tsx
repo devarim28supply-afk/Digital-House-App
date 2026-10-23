@@ -184,11 +184,12 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     pingTimer = window.setTimeout(() => setChatPing(false), RIGHT_HOLD_MS);
   }
   onCleanup(() => window.clearTimeout(pingTimer));
-  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen();
 
   // A person's profile card, like Discord's, next to where you clicked.
   const [card, setCard] = createSignal<{ uid: string; x: number; y: number } | undefined>();
   const openCard = (uid: string, at: MouseEvent) => setCard({ uid, x: at.clientX, y: at.clientY });
+  // A profile card opened from the sidebar keeps the sidebar in until it closes.
+  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card());
 
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
