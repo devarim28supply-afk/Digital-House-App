@@ -9,6 +9,7 @@ import {
   RoomEvent,
   Track,
   type TrackPublication,
+  type TrackPublishOptions,
   VideoPresets,
 } from "livekit-client";
 
@@ -50,6 +51,19 @@ const SECOND_SCREEN = "screen-2";
 // own tile as a small picture instead of a tile of its own.
 const STREAM = "stream";
 const STREAM_AUDIO = "stream-audio";
+// While gaming, the PC and the upload are stretched (Kaalob's webcam got slow).
+// The webcam keeps its frame rate (signing needs smooth motion more than
+// sharpness) and goes first; the stream gives way.
+const CAMERA_PUBLISH: TrackPublishOptions = {
+  degradationPreference: "maintain-framerate",
+  videoEncoding: { maxBitrate: 1_700_000, maxFramerate: 30, priority: "high" },
+};
+// stream mode sizes: full 1080p, or a lighter 720p (about half the work and upload)
+const STREAM_QUALITY = {
+  "1080": { width: 1920, height: 1080, maxBitrate: 4_500_000, layers: [VideoPresets.h360, VideoPresets.h720] },
+  "720": { width: 1280, height: 720, maxBitrate: 2_000_000, layers: [VideoPresets.h360] },
+} as const;
+type StreamQuality = keyof typeof STREAM_QUALITY;
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
 const ATTENTION_TOPIC = "attention";
 const ATTENTION_MS = 3000;
@@ -389,7 +403,7 @@ export function VoiceRoom(props: {
   // ---- stream mode --------------------------------------------------------
   let streamPubs: LocalTrackPublication[] = [];
   const [streamOn, setStreamOn] = createSignal(false);
-  async function toggleStream() {
+  async function toggleStream(quality: StreamQuality = "1080") {
     const me = room()?.localParticipant;
     if (!me) return;
     setError("");
@@ -399,8 +413,9 @@ export function VoiceRoom(props: {
     }
     try {
       // a game or a window, smooth, with its sound if "share audio" is ticked
+      const size = STREAM_QUALITY[quality];
       const media = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { frameRate: { ideal: 30 }, width: { ideal: size.width }, height: { ideal: size.height } },
         audio: true,
       });
       const video = media.getVideoTracks()[0];
@@ -414,8 +429,10 @@ export function VoiceRoom(props: {
           // sent in three sizes: the small LIVE tile previews and small tiles
           // take a small one, the big view takes the full 1080p
           simulcast: true,
-          videoEncoding: { maxBitrate: 4_500_000, maxFramerate: 30 },
-          videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h720],
+          // low priority: when the upload is tight, the stream gives way to the webcam
+          videoEncoding: { maxBitrate: size.maxBitrate, maxFramerate: 30, priority: "low" },
+          videoSimulcastLayers: [...size.layers],
+          degradationPreference: "balanced",
         }),
       ];
       const audio = media.getAudioTracks()[0];
@@ -567,7 +584,7 @@ export function VoiceRoom(props: {
   async function moveCamera(active: LocalParticipant, on: boolean) {
     let timer = 0;
     const attempt = active
-      .setCameraEnabled(on)
+      .setCameraEnabled(on, undefined, CAMERA_PUBLISH)
       .then(
         () => ({ ok: true as const }),
         (err: unknown) => ({
@@ -952,11 +969,23 @@ export function VoiceRoom(props: {
                   role="menuitem"
                   onClick={() => {
                     setShareMenu(false);
-                    void toggleStream();
+                    void toggleStream("1080");
                   }}
                 >
-                  {streamOn() ? "Stop stream mode" : "Start stream mode"}
+                  {streamOn() ? "Stop stream mode" : "Start stream mode (1080p)"}
                 </button>
+                <Show when={!streamOn()}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShareMenu(false);
+                      void toggleStream("720");
+                    }}
+                  >
+                    Start stream mode (720p, lighter)
+                  </button>
+                </Show>
               </div>
             </Show>
           </div>
