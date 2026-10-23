@@ -1,7 +1,7 @@
 import { Match, Switch, createResource, createSignal, onCleanup, onMount } from "solid-js";
 
-import { findRoomTile, watchProfiles } from "../data/store";
-import type { Profile } from "../data/store";
+import { findRoomTile, roomCamOf, watchProfiles } from "../data/store";
+import type { Channel, Profile } from "../data/store";
 import { VoiceRoom } from "./VoiceRoom";
 
 import "./app.css";
@@ -18,9 +18,16 @@ const ROOM_ORIGINS = new Set([location.origin, "http://localhost:5176", "http://
  * from the room itself: the tile's videochat shows everyone standing in the
  * room. Esc gives the cursor back to the room.
  */
-export function WallView(props: { uid: string; name: string; roomKey: string }) {
+export function WallView(props: { uid: string; name: string; username: string; roomKey: string }) {
   const [tile] = createResource(() => findRoomTile(props.uid, props.roomKey));
   const [profiles, setProfiles] = createSignal(new Map<string, Profile>());
+
+  // Webcams of the people standing in the room show on the wall too (on
+  // their call tile, or a tile of their own), but never the Room view.
+  function wallRoomFaces(channel: Channel) {
+    const cam = roomCamOf(channel);
+    return cam && props.username ? { ...cam, username: props.username } : undefined;
+  }
 
   function parentOrigin() {
     const ancestor = location.ancestorOrigins?.[0];
@@ -55,6 +62,8 @@ export function WallView(props: { uid: string; name: string; roomKey: string }) 
               profiles={profiles()}
               autoJoin
               viewOnly
+              roomView={wallRoomFaces(found().channel)}
+              noRoomViewTile
             />
           )}
         </Match>

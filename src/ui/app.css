@@ -1117,15 +1117,13 @@
   grid-column: 1 / -1;
 }
 
+/* A webcam is always the whole 16:9 picture (Kaalob), never cropped to the
+   tile's shape: it fits inside, black around it. */
 .tile video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  background: #000;
-}
-
-.tile.screen video {
   object-fit: contain;
+  background: #000;
 }
 
 .tile video.hidden {
@@ -1165,10 +1163,6 @@
 .room-view-hide:hover {
   border-color: var(--green);
   color: var(--green);
-}
-
-.tile.room-view video {
-  object-fit: cover;
 }
 
 .live-dot {

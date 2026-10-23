@@ -48,7 +48,12 @@ export function App() {
       <Match when={!settled() || toBunker()}>{null}</Match>
       <Match when={Boolean(wallRoom) && state().status === "approved" && state().user}>
         {(user) => (
-          <WallView uid={user().uid} name={state().member?.name || user().displayName || "Member"} roomKey={wallRoom} />
+          <WallView
+            uid={user().uid}
+            name={state().member?.name || user().displayName || "Member"}
+            username={state().member?.username || ""}
+            roomKey={wallRoom}
+          />
         )}
       </Match>
       <Match when={state().status === "approved" && state().user}>

@@ -112,6 +112,8 @@ export function VoiceRoom(props: {
    * tile's videochat in Darkwood Node passes it, never the wall in the room.
    */
   roomView?: RoomViewSource;
+  /** the room's wall: room webcams from roomView, but never the Room view itself */
+  noRoomViewTile?: boolean;
   /**
    * The wall in a 3D room: watch the call only (an invisible, watch-only
    * pass under its own name), no tile for yourself, no buttons.
@@ -141,7 +143,7 @@ export function VoiceRoom(props: {
       /* private mode */
     }
   }
-  const showingRoomView = () => Boolean(roomCamTrack()) && !roomViewHidden();
+  const showingRoomView = () => Boolean(roomCamTrack()) && !roomViewHidden() && !props.noRoomViewTile;
   let roomCamWatcher: Room | undefined;
   // Webcams of the people standing in the 3D room (their name -> video).
   const [roomFaces, setRoomFaces] = createSignal(new Map<string, RemoteTrack>());
@@ -411,7 +413,7 @@ export function VoiceRoom(props: {
           <button type="button" class="dock-btn" aria-pressed={screenOn()} onClick={() => void toggle("screen")}>
             {screenOn() ? "Sharing" : "Share screen"}
           </button>
-          <Show when={roomCamTrack() && roomViewHidden()}>
+          <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
             </button>
