@@ -162,6 +162,8 @@ export function VoiceRoom(props: {
    * pass under its own name), no tile for yourself, no buttons.
    */
   viewOnly?: boolean;
+  /** teamed-up streamers in this call (uids): one screen per team, rotating every 10 s */
+  teams?: string[][];
   /** Disconnect: the app hangs up its one call (it keeps the call alive across channels) */
   onLeave?: () => void;
 }) {
@@ -707,7 +709,34 @@ export function VoiceRoom(props: {
   }
   onCleanup(() => boxObserver?.disconnect());
 
-  const people = () => tiles().length + loneRoomFaces().length;
+  // A team (streamers who teamed up, Kaalob): one extra screen in the grid,
+  // showing each member's stream for 10 s in turn. Only members here now.
+  // Kept as plain text ("uid1,uid2") and only changed when a team really
+  // changes: a rebuilt list would restart each screen's 10 s turn on every
+  // call event.
+  const teamScreens = createMemo(
+    () => {
+      void version();
+      const here = room();
+      if (!here) return [];
+      const inCall = new Set([here.localParticipant.identity, ...here.remoteParticipants.keys()]);
+      return (props.teams ?? [])
+        .map((t) => t.filter((uid) => inCall.has(uid)))
+        .filter((t) => t.length > 1)
+        .map((t) => t.join(","));
+    },
+    [],
+    { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
+  );
+  const teamKey = (members: string) => `team:${members}`;
+  // a member's stream track (theirs, or your own)
+  const streamFor = (uid: string) => {
+    const here = room();
+    if (!here) return undefined;
+    const participant = uid === here.localParticipant.identity ? here.localParticipant : here.remoteParticipants.get(uid);
+    return participant ? streamOf(participant) : undefined;
+  };
+  const people = () => tiles().length + loneRoomFaces().length + teamScreens().length;
   const layout = createMemo(() => {
     const n = people();
     const rv = showingRoomView();
@@ -769,6 +798,7 @@ export function VoiceRoom(props: {
     ...(showingRoomView() && roomCamTrack() ? [ROOM_VIEW_KEY] : []),
     ...tiles().map((t) => t.key),
     ...loneRoomFaces().map(([name]) => faceKey(name)),
+    ...teamScreens().map(teamKey),
   ]);
   // the big one left the call (or was hidden): back to the grid
   createEffect(() => {
@@ -920,6 +950,18 @@ export function VoiceRoom(props: {
               />
             )}
           </For>
+          {/* a team's screen: each member's stream for 10 s in turn */}
+          <For each={teamScreens()}>
+            {(members, i) => (
+              <TeamScreen
+                style={placeOf(teamKey(members), cellOf(tiles().length + loneRoomFaces().length + i()))}
+                onDblClick={() => toggleFocus(teamKey(members))}
+                uids={members.split(",")}
+                streamFor={streamFor}
+                nameOf={(uid) => props.profiles.get(uid)?.callName || props.profiles.get(uid)?.name || "Member"}
+              />
+            )}
+          </For>
         </div>
         <Show when={error()}>
           <p class="form-error voice-error">{error()}</p>
@@ -1066,6 +1108,42 @@ export function VoiceRoom(props: {
         </div>
       </Show>
     </div>
+  );
+}
+
+// A team screen shows each member this long, then the next (Kaalob).
+const TEAM_TURN_MS = 10_000;
+
+/** Teamed-up streamers: one screen in the call, each stream for 10 s in turn. */
+function TeamScreen(props: {
+  uids: string[];
+  streamFor: (uid: string) => Track | undefined;
+  nameOf: (uid: string) => string;
+  style: JSX.CSSProperties;
+  onDblClick: () => void;
+}) {
+  let video: HTMLVideoElement | undefined;
+  const [turn, setTurn] = createSignal(0);
+  const timer = window.setInterval(() => setTurn((t) => t + 1), TEAM_TURN_MS);
+  onCleanup(() => window.clearInterval(timer));
+  const current = () => props.uids[turn() % props.uids.length];
+  const track = () => props.streamFor(current());
+  createEffect(() => {
+    const t = track();
+    if (!t || !video) return;
+    t.attach(video);
+    onCleanup(() => t.detach(video!));
+  });
+  return (
+    <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick}>
+      <video ref={video} autoplay playsinline muted classList={{ hidden: !track() }} />
+      <span class="tile-name">
+        <span class="live-dot" aria-hidden="true" /> {props.nameOf(current())}
+        <span class="live-team" aria-hidden="true">
+          <For each={props.uids}>{(uid) => <i classList={{ on: uid === current() }} />}</For>
+        </span>
+      </span>
+    </article>
   );
 }
 

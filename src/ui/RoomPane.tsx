@@ -28,6 +28,8 @@ export function RoomPane(props: {
   name: string;
   username: string;
   profiles: Map<string, Profile>;
+  /** teamed-up streamers here: one rotating screen per team */
+  teams?: string[][];
   /** Disconnect pressed: the app ends this call (and with it the room) */
   onLeave: () => void;
 }) {
@@ -97,6 +99,7 @@ export function RoomPane(props: {
           name={props.name}
           profiles={props.profiles}
           roomView={roomView()}
+          teams={props.teams}
           autoJoin
           onLeave={props.onLeave}
         />

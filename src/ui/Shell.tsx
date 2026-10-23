@@ -291,6 +291,15 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     [],
     { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
   );
+  // The teams streaming in a videochat (2+ teamed-up streamers each): the
+  // call shows each team as one rotating screen.
+  const teamsIn = (sid: string, cid: string) =>
+    sid !== serverId()
+      ? []
+      : liveStreams()
+          .map((key) => key.split("|"))
+          .filter(([members, channelId]) => channelId === cid && members.includes(","))
+          .map(([members]) => members.split(","));
   /** A LIVE tile: into that videochat, their stream big. */
   function watchStream(uid: string, ch: Channel) {
     setWatchRequest(uid);
@@ -567,6 +576,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                   name={props.name}
                   username={props.username}
                   profiles={profiles()}
+                  teams={teamsIn(c.serverId, c.channel.id)}
                   onLeave={() => setCall(undefined)}
                 />
               ) : (
@@ -576,6 +586,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                   uid={props.uid}
                   name={props.name}
                   profiles={profiles()}
+                  teams={teamsIn(c.serverId, c.channel.id)}
                   autoJoin
                   onLeave={() => setCall(undefined)}
                 />
