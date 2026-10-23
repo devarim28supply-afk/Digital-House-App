@@ -11,7 +11,7 @@ function apiDev(): Plugin {
     name: "api-dev",
     apply: "serve",
     configureServer(server) {
-      Object.assign(process.env, loadEnv(server.config.mode, __dirname, ["LIVEKIT_"]));
+      Object.assign(process.env, loadEnv(server.config.mode, __dirname, ["LIVEKIT_", "BLOB_"]));
       server.middlewares.use("/api", async (req, res, next) => {
         const name = (req.url ?? "").split("?")[0].replace(/^\/+/, "");
         if (!/^[a-z-]+$/.test(name)) return next();

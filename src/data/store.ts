@@ -141,10 +141,14 @@ const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
 
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
 export const isBuiltInTile = (c: Channel) => HOME_TILES.some((h) => h.tile.roomKey === c.roomKey);
+/** A picture, video or file sent in a chat (stored in Vercel Blob). */
+export type ChatFile = { url: string; name: string; type: string; size: number };
+
 export type Message = {
   id: string;
   authorUid: string;
   text: string;
+  files: ChatFile[];
   createdAt: Date | null;
   editedAt: Date | null;
 };
@@ -434,7 +438,8 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
       return {
         id: d.id,
         authorUid: data.authorUid as string,
-        text: data.text as string,
+        text: (data.text as string) ?? "",
+        files: Array.isArray(data.files) ? (data.files as ChatFile[]) : [],
         // a message we just sent has no server time yet: show it as now
         createdAt: toDate(data.createdAt) ?? new Date(),
         editedAt: toDate(data.editedAt),
@@ -444,10 +449,11 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
   });
 }
 
-export const sendMessage = (sid: string, cid: string, authorUid: string, text: string) =>
+export const sendMessage = (sid: string, cid: string, authorUid: string, text: string, files: ChatFile[] = []) =>
   addDoc(collection(db, "servers", sid, "channels", cid, "messages"), {
     authorUid,
     text,
+    ...(files.length ? { files } : {}),
     createdAt: serverTimestamp(),
   });
 

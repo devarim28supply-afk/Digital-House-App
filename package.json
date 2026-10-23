@@ -12,6 +12,7 @@
     "sync-access": "node scripts/sync-access.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.2",
     "firebase": "^13.1.0",
     "livekit-client": "^2.23.0",
     "solid-js": "^1.9.17"
