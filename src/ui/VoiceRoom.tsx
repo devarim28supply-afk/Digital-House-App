@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
+import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
 import {
   type Participant,
@@ -34,6 +34,10 @@ type TileInfo = {
   publication?: TrackPublication;
   screen: boolean;
 };
+
+// the call grid: gap between tiles, and the small Room view's width (of a tile)
+const GAP = 10;
+const SMALL_ROOM_VIEW = 0.4;
 
 /** Where a Gestr room's live camera is watched from (store.roomCamOf). */
 /** wide: spans the call like a shared screen; otherwise a normal tile. */
@@ -342,6 +346,72 @@ export function VoiceRoom(props: {
 
   const nameOf = (p: Participant) => props.profiles.get(p.identity)?.name || p.name || "Member";
 
+  // ---- the layout (Kaalob's drawings) --------------------------------------
+  // Every tile is one 16:9 size; the Room view is one of the tiles:
+  //   1 person   [you][Room view]
+  //   2 people   the two stacked on the left, the Room view on the right, centred
+  //   3 people   a 2x2 grid, the Room view in the last spot
+  //   4 or more  everyone in the grid, the Room view small at the top right
+  const [box, setBox] = createSignal({ w: 0, h: 0 });
+  let boxObserver: ResizeObserver | undefined;
+  function watchBox(el: HTMLDivElement) {
+    boxObserver?.disconnect();
+    boxObserver = new ResizeObserver(([entry]) => setBox({ w: entry.contentRect.width, h: entry.contentRect.height }));
+    boxObserver.observe(el);
+  }
+  onCleanup(() => boxObserver?.disconnect());
+
+  const people = () => tiles().length + loneRoomFaces().length;
+  const layout = createMemo(() => {
+    const n = people();
+    const rv = showingRoomView();
+    let cols: number;
+    let rows: number;
+    let small = false;
+    if (rv && n <= 3) {
+      cols = n === 0 ? 1 : 2;
+      rows = n >= 2 ? 2 : 1;
+    } else {
+      cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+      rows = Math.max(1, Math.ceil(n / cols));
+      small = rv;
+    }
+    // the small Room view takes an extra column 40% of a tile wide
+    const extra = small ? SMALL_ROOM_VIEW : 0;
+    const { w, h } = box();
+    const byWidth = (w - (cols - 1) * GAP - (small ? GAP : 0)) / (cols + extra);
+    const byHeight = ((h - (rows - 1) * GAP) / rows) * (16 / 9);
+    const tileW = Math.max(96, Math.floor(Math.min(byWidth, byHeight)));
+    const tileH = Math.floor((tileW * 9) / 16);
+    const smallW = Math.floor(tileW * SMALL_ROOM_VIEW);
+    return {
+      n,
+      small,
+      grid: {
+        "grid-template-columns": `repeat(${cols}, ${tileW}px)${small ? ` ${smallW}px` : ""}`,
+        "grid-template-rows": `repeat(${rows}, ${tileH}px)`,
+      },
+      cols,
+      tileH,
+      smallSize: { width: `${smallW}px`, height: `${Math.floor((smallW * 9) / 16)}px` },
+    };
+  });
+  // Where person i sits in the grid.
+  function cellOf(i: number): JSX.CSSProperties {
+    const l = layout();
+    if (showingRoomView() && !l.small && l.n === 2) return { "grid-column": "1", "grid-row": String(i + 1) };
+    if (showingRoomView() && !l.small && l.n === 3 && i === 2) return { "grid-column": "1", "grid-row": "2" };
+    return { "grid-column": String((i % l.cols) + 1), "grid-row": String(Math.floor(i / l.cols) + 1) };
+  }
+  function roomViewCell(): JSX.CSSProperties {
+    const l = layout();
+    if (l.small) return { "grid-column": String(l.cols + 1), "grid-row": "1", "align-self": "start", ...l.smallSize };
+    if (l.n === 0) return { "grid-column": "1", "grid-row": "1" };
+    if (l.n === 1) return { "grid-column": "2", "grid-row": "1" };
+    if (l.n === 2) return { "grid-column": "2", "grid-row": "1 / span 2", "align-self": "center", height: `${l.tileH}px` };
+    return { "grid-column": "2", "grid-row": "2" };
+  }
+
   return (
     <div class="voice">
       <Show
@@ -359,20 +429,22 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" data-count={Math.min(tiles().length + loneRoomFaces().length + (showingRoomView() ? 1 : 0), 9)}>
+        <div class="tiles" ref={watchBox} style={layout().grid}>
           <Show when={showingRoomView() && roomCamTrack()}>
             {(track) => (
               <RoomViewTile
                 track={track()}
                 name={`${props.channel.name} · Room view`}
-                wide={Boolean(props.roomView?.wide)}
+                small={layout().small}
+                style={roomViewCell()}
                 onHide={() => hideRoomView(true)}
               />
             )}
           </Show>
           <For each={tiles()}>
-            {(tile) => (
+            {(tile, i) => (
               <Tile
+                style={cellOf(i())}
                 tile={tile}
                 version={version()}
                 name={tile.screen ? `${nameOf(tile.participant)}'s screen` : nameOf(tile.participant)}
@@ -384,8 +456,13 @@ export function VoiceRoom(props: {
           </For>
           {/* people standing in the 3D room but not in the call: their webcams too */}
           <For each={loneRoomFaces()}>
-            {([name, track]) => (
-              <RoomFaceTile track={track} name={`${roomFaceName(name)} · in room`} color={roomFaceColor(name)} />
+            {([name, track], i) => (
+              <RoomFaceTile
+                style={cellOf(tiles().length + i())}
+                track={track}
+                name={`${roomFaceName(name)} · in room`}
+                color={roomFaceColor(name)}
+              />
             )}
           </For>
         </div>
@@ -428,7 +505,7 @@ export function VoiceRoom(props: {
 }
 
 /** A webcam from someone standing in the 3D room, shown like a call tile. */
-function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string }) {
+function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string; style: JSX.CSSProperties }) {
   let video: HTMLVideoElement | undefined;
   createEffect(() => {
     const t = props.track;
@@ -437,15 +514,21 @@ function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string }
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile in-room">
+    <article class="tile in-room" style={props.style}>
       <video ref={video} autoplay playsinline muted />
       <span class="tile-name">{props.name}</span>
     </article>
   );
 }
 
-/** The 3D room's live camera: wide like a shared screen, or a normal tile. */
-function RoomViewTile(props: { track: RemoteTrack; name: string; wide: boolean; onHide: () => void }) {
+/** The 3D room's live camera: a 16:9 tile like everyone's, small beside 4+ people. */
+function RoomViewTile(props: {
+  track: RemoteTrack;
+  name: string;
+  small: boolean;
+  style: JSX.CSSProperties;
+  onHide: () => void;
+}) {
   let video: HTMLVideoElement | undefined;
   createEffect(() => {
     const t = props.track;
@@ -454,7 +537,7 @@ function RoomViewTile(props: { track: RemoteTrack; name: string; wide: boolean; 
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile room-view" classList={{ screen: props.wide }}>
+    <article class="tile room-view" classList={{ small: props.small }} style={props.style}>
       <video ref={video} autoplay playsinline muted />
       <button class="room-view-hide" type="button" title="Hide the room view" onClick={props.onHide}>
         Hide
@@ -467,6 +550,7 @@ function RoomViewTile(props: { track: RemoteTrack; name: string; wide: boolean; 
 }
 
 function Tile(props: {
+  style: JSX.CSSProperties;
   tile: TileInfo;
   version: number;
   name: string;
@@ -492,7 +576,7 @@ function Tile(props: {
   const mirrored = () => props.tile.participant.isLocal && !props.tile.screen;
 
   return (
-    <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }}>
+    <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }} style={props.style}>
       <video ref={video} autoplay playsinline muted classList={{ hidden: !track(), mirror: mirrored() }} />
       <Show when={!track()}>
         <div class="tile-empty">
