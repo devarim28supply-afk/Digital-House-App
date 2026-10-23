@@ -1,9 +1,10 @@
-import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import { MAX_FILE_BYTES, uploadChatFile } from "../data/files";
 import {
   type Channel,
   type ChatFile,
+  type Emoji,
   type Message,
   type Profile,
   deleteMessage,
@@ -11,6 +12,7 @@ import {
   sendMessage,
   watchMessages,
 } from "../data/store";
+import { EmojiPicker, ImageViewer } from "./Emoji";
 import { initials } from "./Shell";
 
 // Messages from the same person within this gap share one header.
@@ -20,10 +22,21 @@ const URL_RE = /(https?:\/\/[^\s<]+)/g;
 function timeLabel(d: Date | null) {
   if (!d) return "";
   const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  return sameDay ? `Today ${time}` : `${d.toLocaleDateString()} ${time}`;
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const time = shortTime(d);
+  if (d.toDateString() === today.toDateString()) return `Today at ${time}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday at ${time}`;
+  return `${d.toLocaleDateString()} ${time}`;
 }
+
+const shortTime = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+// the full date and time, shown when you hover any time
+const fullTime = (d: Date | null) =>
+  d ? d.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+
+const EMOJI_TOKEN = /(:[a-z0-9_]{2,32}:)/g;
+// a message of only emojis (and spaces) shows them big, like Discord
+const ONLY_EMOJI = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f|\s|:[a-z0-9_]{2,32}:)+$/u;
 
 /** A file waiting to go with the next message, uploading as soon as it is picked. */
 type Pending = { id: number; file: File; progress: number; done?: ChatFile; error?: string };
@@ -37,7 +50,7 @@ function sizeLabel(bytes: number) {
 }
 
 /** A sent picture or video shows itself; any other file is a download card. */
-function FileView(props: { file: ChatFile }) {
+function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
   const kind = () => props.file.type.split("/")[0];
   return (
     <Show
@@ -55,9 +68,9 @@ function FileView(props: { file: ChatFile }) {
       }
     >
       <Show when={kind() === "image"}>
-        <a class="msg-media" href={props.file.url} target="_blank" rel="noopener noreferrer">
+        <button type="button" class="msg-media" title="Open" onClick={() => props.onOpen(props.file)}>
           <img src={props.file.url} alt={props.file.name} loading="lazy" />
-        </a>
+        </button>
       </Show>
       <Show when={kind() === "video"}>
         <video class="msg-media" src={props.file.url} controls preload="metadata" playsinline />
@@ -69,8 +82,11 @@ function FileView(props: { file: ChatFile }) {
   );
 }
 
-/** Plain text with links made clickable. Nothing is parsed as HTML. */
-function Text(props: { text: string }) {
+/**
+ * Plain text with links made clickable and :name: shown as the server's
+ * emoji. Nothing is parsed as HTML.
+ */
+function Text(props: { text: string; emojis: Map<string, Emoji> }) {
   const parts = () => props.text.split(URL_RE);
   return (
     <For each={parts()}>
@@ -80,7 +96,12 @@ function Text(props: { text: string }) {
             {part}
           </a>
         ) : (
-          part
+          <For each={part.split(EMOJI_TOKEN)}>
+            {(bit) => {
+              const emoji = /^:[a-z0-9_]{2,32}:$/.test(bit) ? props.emojis.get(bit.slice(1, -1)) : undefined;
+              return emoji ? <img class="emoji" src={emoji.url} alt={bit} title={bit} /> : bit;
+            }}
+          </For>
         )
       }
     </For>
@@ -106,7 +127,13 @@ export function Chat(props: {
    */
   catchPageDrops?: boolean;
   onDragging?: (on: boolean) => void;
+  /** the server's own emojis (:name:) */
+  emojis?: Emoji[];
 }) {
+  const emojiMap = createMemo(() => new Map((props.emojis ?? []).map((e) => [e.name, e])));
+  const [viewing, setViewing] = createSignal<ChatFile | undefined>();
+  const [picker, setPicker] = createSignal(false);
+  const jumbo = (text: string) => ONLY_EMOJI.test(text) && [...text.replace(/\s/g, "")].length <= 54;
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
   const [editing, setEditing] = createSignal<string | undefined>();
@@ -204,6 +231,22 @@ export function Chat(props: {
       setDraft(text);
       setError("Could not send. Check your connection.");
     }
+  }
+
+  function insertAtCursor(text: string) {
+    const el = input;
+    const value = draft();
+    const at = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const before = value.slice(0, at);
+    const pad = text.startsWith(":") && before && !/\s$/.test(before) ? " " : "";
+    setDraft(before + pad + text + value.slice(end));
+    queueMicrotask(() => {
+      if (!el) return;
+      el.focus();
+      const pos = at + pad.length + text.length;
+      el.setSelectionRange(pos, pos);
+    });
   }
 
   function onKey(e: KeyboardEvent) {
@@ -306,13 +349,18 @@ export function Chat(props: {
                   {initials(nameOf(m.authorUid))}
                 </button>
               </Show>
+              <Show when={!startsGroup(i())}>
+                <time class="msg-side-time" title={fullTime(m.createdAt)}>
+                  {shortTime(m.createdAt)}
+                </time>
+              </Show>
               <div class="msg-body">
                 <Show when={startsGroup(i())}>
                   <header class="msg-head">
                     <b class="msg-author" onClick={(e) => props.onProfile?.(m.authorUid, e)}>
                       {nameOf(m.authorUid)}
                     </b>
-                    <time>{timeLabel(m.createdAt)}</time>
+                    <time title={fullTime(m.createdAt)}>{timeLabel(m.createdAt)}</time>
                   </header>
                 </Show>
                 <Show
@@ -320,8 +368,8 @@ export function Chat(props: {
                   fallback={
                     <>
                       <Show when={m.text}>
-                        <p class="msg-text">
-                          <Text text={m.text} />
+                        <p class="msg-text" classList={{ jumbo: jumbo(m.text) }}>
+                          <Text text={m.text} emojis={emojiMap()} />
                           <Show when={m.editedAt}>
                             <small class="edited"> (edited)</small>
                           </Show>
@@ -329,7 +377,7 @@ export function Chat(props: {
                       </Show>
                       <Show when={m.files.length}>
                         <div class="msg-files">
-                          <For each={m.files}>{(file) => <FileView file={file} />}</For>
+                          <For each={m.files}>{(file) => <FileView file={file} onOpen={setViewing} />}</For>
                         </div>
                       </Show>
                     </>
@@ -385,6 +433,19 @@ export function Chat(props: {
           </For>
         </div>
       </Show>
+      <Show when={picker()}>
+        <EmojiPicker
+          serverId={props.serverId}
+          uid={props.uid}
+          emojis={props.emojis ?? []}
+          canModerate={props.canModerate}
+          onPick={insertAtCursor}
+          onClose={() => setPicker(false)}
+        />
+      </Show>
+      <Show when={viewing()}>
+        {(file) => <ImageViewer url={file().url} name={file().name} onClose={() => setViewing(undefined)} />}
+      </Show>
       <div class="composer">
         <input
           ref={filePicker}
@@ -404,6 +465,16 @@ export function Chat(props: {
           onClick={() => filePicker?.click()}
         >
           📎
+        </button>
+        <button
+          class="icon-btn emoji-btn"
+          type="button"
+          title="Emojis"
+          aria-label="Emojis"
+          aria-expanded={picker()}
+          onClick={() => setPicker(!picker())}
+        >
+          😀
         </button>
         <textarea
           ref={input}

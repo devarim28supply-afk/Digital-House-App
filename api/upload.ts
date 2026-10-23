@@ -6,7 +6,8 @@ import { type HandleUploadBody, handleUpload } from "@vercel/blob/client";
  * Upload pass for a picture, video or file sent in a Darkwood Node chat.
  *
  *   POST /api/upload   (the @vercel/blob/client upload() handshake)
- *   clientPayload: JSON { idToken, serverId, channelId }
+ *   clientPayload: JSON { idToken, serverId, channelId }      a chat file
+ *                  JSON { idToken, serverId, kind: "emoji" }  a server emoji
  *
  * The browser uploads straight to Vercel Blob; this only hands out the pass.
  * The check is done by Firestore itself, as in dh-token.ts: we read the
@@ -20,6 +21,9 @@ const PROJECT_ID = "gestr-lab";
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 500 * 1024 * 1024;
+// a server emoji: a small picture or a little GIF
+const MAX_EMOJI_BYTES = 2 * 1024 * 1024;
+const EMOJI_TYPES = ["image/png", "image/gif", "image/webp", "image/jpeg"];
 
 function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
@@ -48,9 +52,11 @@ function claimsOf(idToken: string): { sub?: string } {
   }
 }
 
-/** The uploader's uid, once Firestore confirms they are in this server and channel. */
-async function memberOf(idToken: string, serverId: string, channelId: string) {
-  if (!idToken || !ID_RE.test(serverId) || !ID_RE.test(channelId)) throw new Error("Bad channel");
+/** The uploader's uid, once Firestore confirms they are in this server (and channel, if given). */
+async function memberOf(idToken: string, serverId: string, channelId?: string) {
+  if (!idToken || !ID_RE.test(serverId) || (channelId !== undefined && !ID_RE.test(channelId))) {
+    throw new Error("Bad channel");
+  }
   const headers = { Authorization: `Bearer ${idToken}` };
   const serverRes = await fetch(`${FIRESTORE}/servers/${serverId}`, { headers });
   if (serverRes.status === 401) throw new Error("Your login has expired. Log in again.");
@@ -61,6 +67,7 @@ async function memberOf(idToken: string, serverId: string, channelId: string) {
   };
   const members = server.fields?.memberUids?.arrayValue?.values?.map((v) => v.stringValue) ?? [];
   if (!uid || !members.includes(uid)) throw new Error("You are not in this server");
+  if (channelId === undefined) return uid;
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
   if (!channelRes.ok) throw new Error("That channel is gone");
   return uid;
@@ -75,7 +82,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       body,
       request: req,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
-        const payload = JSON.parse(clientPayload || "{}") as { idToken?: string; serverId?: string; channelId?: string };
+        const payload = JSON.parse(clientPayload || "{}") as {
+          idToken?: string;
+          serverId?: string;
+          channelId?: string;
+          kind?: string;
+        };
+        if (payload.kind === "emoji") {
+          const uid = await memberOf(payload.idToken ?? "", payload.serverId ?? "");
+          if (!pathname.startsWith(`emoji/${payload.serverId}/`)) throw new Error("Bad file path");
+          return {
+            maximumSizeInBytes: MAX_EMOJI_BYTES,
+            allowedContentTypes: EMOJI_TYPES,
+            addRandomSuffix: true,
+            tokenPayload: JSON.stringify({ uid }),
+          };
+        }
         const uid = await memberOf(payload.idToken ?? "", payload.serverId ?? "", payload.channelId ?? "");
         // files live under their channel, so a channel's files can be found later
         if (!pathname.startsWith(`chat/${payload.serverId}/${payload.channelId}/`)) throw new Error("Bad file path");

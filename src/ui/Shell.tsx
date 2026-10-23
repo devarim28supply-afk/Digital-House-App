@@ -2,6 +2,7 @@ import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCle
 
 import {
   type Channel,
+  type Emoji,
   ONLINE_WINDOW_MS,
   type Presence,
   type Profile,
@@ -24,6 +25,7 @@ import {
   shrinkImage,
   startPresence,
   watchChannels,
+  watchEmojis,
   watchPresence,
   watchProfiles,
   watchServers,
@@ -163,6 +165,15 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   });
 
   const channel = createMemo(() => channels().find((c) => c.id === channelId()));
+
+  // The picked server's own emojis, for every chat in it.
+  const [emojis, setEmojis] = createSignal<Emoji[]>([]);
+  createEffect(() => {
+    const sid = serverId();
+    setEmojis([]);
+    if (!sid) return;
+    onCleanup(watchEmojis(sid, setEmojis));
+  });
 
   function pickChannel(id: string) {
     setChannelId(id);
@@ -392,6 +403,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                 uid={props.uid}
                 profiles={profiles()}
                 canModerate={runsServer()}
+              emojis={emojis()}
               />
             )}
           </Match>
@@ -492,6 +504,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               uid={props.uid}
               profiles={profiles()}
               canModerate={runsServer()}
+              emojis={emojis()}
               compact
               onNewMessage={pingRight}
               catchPageDrops

@@ -466,3 +466,20 @@ export const editMessage = (sid: string, cid: string, mid: string, authorUid: st
 
 export const deleteMessage = (sid: string, cid: string, mid: string) =>
   deleteDoc(doc(db, "servers", sid, "channels", cid, "messages", mid));
+
+// ---- the server's own emojis -------------------------------------------------
+
+/** A server emoji (a picture or a little GIF), used in chat as :name:. */
+export type Emoji = { id: string; name: string; url: string; addedBy: string; animated: boolean };
+
+export function watchEmojis(sid: string, cb: (emojis: Emoji[]) => void): Unsubscribe {
+  return onSnapshot(collection(db, "servers", sid, "emojis"), (snap) => {
+    const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Emoji, "id">) }));
+    cb(rows.sort((a, b) => a.name.localeCompare(b.name)));
+  });
+}
+
+export const addEmoji = (sid: string, emoji: Omit<Emoji, "id">) =>
+  addDoc(collection(db, "servers", sid, "emojis"), { ...emoji, createdAt: serverTimestamp() });
+
+export const deleteEmoji = (sid: string, id: string) => deleteDoc(doc(db, "servers", sid, "emojis", id));

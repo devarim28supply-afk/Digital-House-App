@@ -31,3 +31,22 @@ export async function uploadChatFile(
   });
   return { url: blob.url, name: file.name, type: file.type || blob.contentType || "", size: file.size };
 }
+
+/** The largest server emoji picture (a little GIF included). */
+export const MAX_EMOJI_BYTES = 2 * 1024 * 1024;
+
+/** Upload a picture or little GIF as one of the server's emojis. */
+export async function uploadEmoji(serverId: string, file: File): Promise<string> {
+  if (!/^image\/(png|gif|webp|jpeg)$/.test(file.type)) throw new Error("Use a PNG, GIF, WebP or JPG picture");
+  if (file.size > MAX_EMOJI_BYTES) throw new Error("An emoji can be up to 2 MB");
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new Error("Log in first.");
+  const safeName = file.name.replace(/[^\w.-]+/g, "_").slice(-60) || "emoji";
+  const blob = await upload(`emoji/${serverId}/${safeName}`, file, {
+    access: "public",
+    handleUploadUrl: "/api/upload",
+    clientPayload: JSON.stringify({ idToken, serverId, kind: "emoji" }),
+    contentType: file.type,
+  });
+  return blob.url;
+}
