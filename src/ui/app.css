@@ -2113,3 +2113,23 @@ img.msg-sticker {
 .tile-row:hover .tile-pic {
   opacity: 1;
 }
+
+/* double-click a screen: it goes big on top, the rest small in a row under it */
+.tiles.spotlight {
+  position: relative;
+  display: block;
+}
+
+.tiles.spotlight > .tile {
+  position: absolute;
+  transition:
+    left 200ms ease,
+    top 200ms ease,
+    width 200ms ease,
+    height 200ms ease;
+}
+
+/* a double-click must not select the tile's text */
+.tile {
+  user-select: none;
+}

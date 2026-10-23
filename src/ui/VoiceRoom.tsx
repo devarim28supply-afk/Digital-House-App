@@ -572,6 +572,56 @@ export function VoiceRoom(props: {
     return { "grid-column": "2", "grid-row": "2" };
   }
 
+  // ---- double-click: one screen big (Kaalob's drawings) --------------------
+  // Double-click any screen (webcam, shared screen, Room view): it goes big on
+  // top and every other one sits small in a centred row under it, all 16:9.
+  // Double-click the big one, or Esc, to go back to the grid.
+  const ROOM_VIEW_KEY = "roomview";
+  const faceKey = (name: string) => `face:${name}`;
+  const [focus, setFocus] = createSignal<string | undefined>();
+  const order = createMemo(() => [
+    ...(showingRoomView() && roomCamTrack() ? [ROOM_VIEW_KEY] : []),
+    ...tiles().map((t) => t.key),
+    ...loneRoomFaces().map(([name]) => faceKey(name)),
+  ]);
+  // the big one left the call (or was hidden): back to the grid
+  createEffect(() => {
+    const big = focus();
+    if (big && !order().includes(big)) setFocus(undefined);
+  });
+  createEffect(() => {
+    if (!focus()) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setFocus(undefined);
+    window.addEventListener("keydown", esc);
+    onCleanup(() => window.removeEventListener("keydown", esc));
+  });
+  const toggleFocus = (key: string) => setFocus(focus() === key ? undefined : key);
+  const spot = createMemo(() => {
+    const big = focus();
+    if (!big) return undefined;
+    const rest = order().filter((k) => k !== big);
+    const { w, h } = box();
+    const k = rest.length;
+    // the small ones: one row, each at most about a quarter of the width
+    const sw = k ? Math.floor(Math.min((w - (k - 1) * GAP) / k, w * 0.24)) : 0;
+    const sh = Math.floor((sw * 9) / 16);
+    const roomForBig = h - (k ? sh + GAP : 0);
+    const bigW = Math.floor(Math.min(w, (roomForBig * 16) / 9));
+    const bigH = Math.floor((bigW * 9) / 16);
+    const top = Math.max(0, (h - bigH - (k ? GAP + sh : 0)) / 2);
+    const px = (n: number) => `${Math.round(n)}px`;
+    const rects = new Map<string, JSX.CSSProperties>();
+    rects.set(big, { left: px((w - bigW) / 2), top: px(top), width: px(bigW), height: px(bigH) });
+    let x = (w - (k * sw + (k - 1) * GAP)) / 2;
+    const y = top + bigH + GAP;
+    for (const key of rest) {
+      rects.set(key, { left: px(x), top: px(y), width: px(sw), height: px(sh) });
+      x += sw + GAP;
+    }
+    return rects;
+  });
+  const placeOf = (key: string, gridPlace: JSX.CSSProperties) => spot()?.get(key) ?? gridPlace;
+
   return (
     <div class="voice">
       <Show
@@ -589,22 +639,24 @@ export function VoiceRoom(props: {
           </div>
         }
       >
-        <div class="tiles" ref={watchBox} style={layout().grid}>
+        <div class="tiles" classList={{ spotlight: Boolean(spot()) }} ref={watchBox} style={spot() ? {} : layout().grid}>
           <Show when={showingRoomView() && roomCamTrack()}>
             {(track) => (
               <RoomViewTile
                 track={track()}
                 name={`${props.channel.name} · Room view`}
-                small={layout().small}
-                style={roomViewCell()}
+                small={!spot() && layout().small}
+                style={placeOf(ROOM_VIEW_KEY, roomViewCell())}
                 onHide={() => hideRoomView(true)}
+                onDblClick={() => toggleFocus(ROOM_VIEW_KEY)}
               />
             )}
           </Show>
           <For each={tiles()}>
             {(tile, i) => (
               <Tile
-                style={cellOf(i())}
+                style={placeOf(tile.key, cellOf(i()))}
+                onDblClick={() => toggleFocus(tile.key)}
                 tile={tile}
                 version={version()}
                 name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
@@ -619,7 +671,8 @@ export function VoiceRoom(props: {
           <For each={loneRoomFaces()}>
             {([name, track], i) => (
               <RoomFaceTile
-                style={cellOf(tiles().length + i())}
+                style={placeOf(faceKey(name), cellOf(tiles().length + i()))}
+                onDblClick={() => toggleFocus(faceKey(name))}
                 track={track}
                 name={`${roomFaceName(name)} · in room`}
                 color={roomFaceColor(name)}
@@ -699,7 +752,13 @@ export function VoiceRoom(props: {
 }
 
 /** A webcam from someone standing in the 3D room, shown like a call tile. */
-function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string; style: JSX.CSSProperties }) {
+function RoomFaceTile(props: {
+  track: RemoteTrack;
+  name: string;
+  color: string;
+  style: JSX.CSSProperties;
+  onDblClick: () => void;
+}) {
   let video: HTMLVideoElement | undefined;
   createEffect(() => {
     const t = props.track;
@@ -708,7 +767,7 @@ function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string; 
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile in-room" style={props.style}>
+    <article class="tile in-room" style={props.style} onDblClick={props.onDblClick}>
       <video ref={video} autoplay playsinline muted />
       <span class="tile-name">{props.name}</span>
     </article>
@@ -717,6 +776,7 @@ function RoomFaceTile(props: { track: RemoteTrack; name: string; color: string; 
 
 /** The 3D room's live camera: a 16:9 tile like everyone's, small beside 4+ people. */
 function RoomViewTile(props: {
+  onDblClick: () => void;
   track: RemoteTrack;
   name: string;
   small: boolean;
@@ -731,7 +791,7 @@ function RoomViewTile(props: {
     onCleanup(() => t.detach(video!));
   });
   return (
-    <article class="tile room-view" classList={{ small: props.small }} style={props.style}>
+    <article class="tile room-view" classList={{ small: props.small }} style={props.style} onDblClick={props.onDblClick}>
       <video ref={video} autoplay playsinline muted />
       <button class="room-view-hide" type="button" title="Hide the room view" onClick={props.onHide}>
         Hide
@@ -744,6 +804,7 @@ function RoomViewTile(props: {
 }
 
 function Tile(props: {
+  onDblClick: () => void;
   style: JSX.CSSProperties;
   tile: TileInfo;
   version: number;
@@ -776,7 +837,7 @@ function Tile(props: {
   const mirrored = () => props.tile.participant.isLocal && !props.tile.screen;
 
   return (
-    <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }} style={props.style}>
+    <article class="tile" classList={{ speaking: props.speaking, screen: props.tile.screen }} style={props.style} onDblClick={props.onDblClick}>
       <video ref={video} autoplay playsinline muted classList={{ hidden: !track(), mirror: mirrored() }} />
       <Show when={!track()}>
         <div class="tile-empty">
