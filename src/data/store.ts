@@ -158,6 +158,7 @@ export type Message = {
   authorUid: string;
   text: string;
   files: ChatFile[];
+  sticker?: Sticker;
   createdAt: Date | null;
   editedAt: Date | null;
 };
@@ -460,6 +461,7 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
         authorUid: data.authorUid as string,
         text: (data.text as string) ?? "",
         files: Array.isArray(data.files) ? (data.files as ChatFile[]) : [],
+        sticker: data.sticker?.url ? (data.sticker as Sticker) : undefined,
         // a message we just sent has no server time yet: show it as now
         createdAt: toDate(data.createdAt) ?? new Date(),
         editedAt: toDate(data.editedAt),
@@ -469,11 +471,19 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
   });
 }
 
-export const sendMessage = (sid: string, cid: string, authorUid: string, text: string, files: ChatFile[] = []) =>
+export const sendMessage = (
+  sid: string,
+  cid: string,
+  authorUid: string,
+  text: string,
+  files: ChatFile[] = [],
+  sticker?: Sticker,
+) =>
   addDoc(collection(db, "servers", sid, "channels", cid, "messages"), {
     authorUid,
     text,
     ...(files.length ? { files } : {}),
+    ...(sticker ? { sticker } : {}),
     createdAt: serverTimestamp(),
   });
 
@@ -489,8 +499,21 @@ export const deleteMessage = (sid: string, cid: string, mid: string) =>
 
 // ---- the server's own emojis -------------------------------------------------
 
-/** A server emoji (a picture or a little GIF), used in chat as :name:. */
-export type Emoji = { id: string; name: string; url: string; addedBy: string; animated: boolean };
+/**
+ * A server emoji (a picture or a little GIF), used in chat as :name:, or a
+ * sticker (kind "sticker"): sent on its own, shown bigger.
+ */
+export type Emoji = {
+  id: string;
+  name: string;
+  url: string;
+  addedBy: string;
+  animated: boolean;
+  kind?: "emoji" | "sticker";
+};
+
+/** A sticker as sent in a message. */
+export type Sticker = { url: string; name: string };
 
 export function watchEmojis(sid: string, cb: (emojis: Emoji[]) => void): Unsubscribe {
   return onSnapshot(collection(db, "servers", sid, "emojis"), (snap) => {

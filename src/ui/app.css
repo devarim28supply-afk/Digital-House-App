@@ -2035,3 +2035,51 @@ button.msg-media {
   height: 56px;
   font-size: 18px;
 }
+
+/* ---- stickers: like emojis, but sent on their own and shown bigger --------- */
+
+.emoji-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+
+.emoji-tabs button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.emoji-tabs button[aria-selected="true"] {
+  border-color: var(--line-2);
+  background: var(--panel-2);
+  color: var(--green);
+}
+
+.emoji-grid.stickers {
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+}
+
+.emoji-grid.stickers .emoji-pick {
+  height: 84px;
+}
+
+.emoji-grid.stickers .emoji-pick img {
+  width: 72px;
+  height: 72px;
+}
+
+img.msg-sticker {
+  display: block;
+  width: 160px;
+  height: 160px;
+  margin: 4px 0;
+  object-fit: contain;
+}

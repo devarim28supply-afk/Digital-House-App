@@ -1,7 +1,7 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 
 import { uploadEmoji } from "../data/files";
-import { type Emoji, addEmoji, deleteEmoji } from "../data/store";
+import { type Emoji, type Sticker, addEmoji, deleteEmoji } from "../data/store";
 
 // The everyday emojis, in Discord-like groups. Server emojis come first.
 const STANDARD: { label: string; emojis: string[] }[] = [
@@ -56,8 +56,11 @@ export function EmojiPicker(props: {
   emojis: Emoji[];
   canModerate: boolean;
   onPick: (text: string) => void;
+  /** a sticker was picked: it is sent on its own right away */
+  onSticker: (sticker: Sticker) => void;
   onClose: () => void;
 }) {
+  const [tab, setTab] = createSignal<"emoji" | "sticker">("emoji");
   const [search, setSearch] = createSignal("");
   const [adding, setAdding] = createSignal(false);
   const [name, setName] = createSignal("");
@@ -81,9 +84,11 @@ export function EmojiPicker(props: {
     });
   });
 
+  // this tab's own: emojis (no kind, from before stickers) or stickers
+  const ofTab = () => props.emojis.filter((e) => (e.kind ?? "emoji") === tab());
   const shown = () => {
     const q = search().trim().toLowerCase();
-    return q ? props.emojis.filter((e) => e.name.includes(q)) : props.emojis;
+    return q ? ofTab().filter((e) => e.name.includes(q)) : ofTab();
   };
 
   async function add(e: SubmitEvent) {
@@ -92,12 +97,12 @@ export function EmojiPicker(props: {
     const n = emojiNameFrom(name());
     if (!f) return setError("Choose a picture or a little GIF");
     if (n.length < 2) return setError("Give it a name (2+ letters)");
-    if (props.emojis.some((x) => x.name === n)) return setError(`:${n}: is taken`);
+    if (ofTab().some((x) => x.name === n)) return setError(`"${n}" is taken`);
     setBusy(true);
     setError("");
     try {
       const url = await uploadEmoji(props.serverId, f);
-      await addEmoji(props.serverId, { name: n, url, addedBy: props.uid, animated: f.type === "image/gif" });
+      await addEmoji(props.serverId, { name: n, url, addedBy: props.uid, animated: f.type === "image/gif", kind: tab() });
       setAdding(false);
       setName("");
       setFile(undefined);
@@ -109,16 +114,24 @@ export function EmojiPicker(props: {
   }
 
   return (
-    <div class="emoji-picker" ref={root} role="dialog" aria-label="Emojis">
+    <div class="emoji-picker" ref={root} role="dialog" aria-label="Emojis and stickers">
+      <div class="emoji-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab() === "emoji"} onClick={() => setTab("emoji")}>
+          Emojis
+        </button>
+        <button type="button" role="tab" aria-selected={tab() === "sticker"} onClick={() => setTab("sticker")}>
+          Stickers
+        </button>
+      </div>
       <div class="emoji-top">
         <input
           class="emoji-search"
-          placeholder="Find a server emoji"
+          placeholder={tab() === "sticker" ? "Find a sticker" : "Find a server emoji"}
           value={search()}
           onInput={(e) => setSearch(e.currentTarget.value)}
         />
         <button type="button" class="side-tool emoji-add" onClick={() => setAdding(!adding())}>
-          {adding() ? "Cancel" : "+ Add emoji"}
+          {adding() ? "Cancel" : tab() === "sticker" ? "+ Add sticker" : "+ Add emoji"}
         </button>
       </div>
 
@@ -137,7 +150,7 @@ export function EmojiPicker(props: {
             />
           </label>
           <label class="field">
-            <span>Name (used as :name:)</span>
+            <span>{tab() === "sticker" ? "Sticker name" : "Name (used as :name:)"}</span>
             <input value={name()} maxLength={32} onInput={(e) => setName(e.currentTarget.value)} />
           </label>
           <Show when={error()}>
@@ -150,13 +163,25 @@ export function EmojiPicker(props: {
       </Show>
 
       <div class="emoji-scroll">
-        <div class="emoji-group">Server emojis</div>
-        <Show when={shown().length} fallback={<p class="emoji-empty">None yet. Add one with + Add emoji.</p>}>
-          <div class="emoji-grid">
+        <div class="emoji-group">{tab() === "sticker" ? "Server stickers" : "Server emojis"}</div>
+        <Show
+          when={shown().length}
+          fallback={<p class="emoji-empty">None yet. Add one with {tab() === "sticker" ? "+ Add sticker" : "+ Add emoji"}.</p>}
+        >
+          <div class="emoji-grid" classList={{ stickers: tab() === "sticker" }}>
             <For each={shown()}>
               {(emoji) => (
                 <span class="emoji-cell">
-                  <button type="button" class="emoji-pick" title={`:${emoji.name}:`} onClick={() => props.onPick(`:${emoji.name}:`)}>
+                  <button
+                    type="button"
+                    class="emoji-pick"
+                    title={tab() === "sticker" ? emoji.name : `:${emoji.name}:`}
+                    onClick={() =>
+                      tab() === "sticker"
+                        ? props.onSticker({ url: emoji.url, name: emoji.name })
+                        : props.onPick(`:${emoji.name}:`)
+                    }
+                  >
                     <img src={emoji.url} alt={`:${emoji.name}:`} loading="lazy" />
                   </button>
                   <Show when={emoji.addedBy === props.uid || props.canModerate}>
@@ -175,7 +200,7 @@ export function EmojiPicker(props: {
             </For>
           </div>
         </Show>
-        <Show when={!search().trim()}>
+        <Show when={tab() === "emoji" && !search().trim()}>
           <For each={STANDARD}>
             {(group) => (
               <>

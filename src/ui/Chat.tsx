@@ -7,6 +7,7 @@ import {
   type Emoji,
   type Message,
   type Profile,
+  type Sticker,
   deleteMessage,
   editMessage,
   sendMessage,
@@ -130,7 +131,20 @@ export function Chat(props: {
   /** the server's own emojis (:name:) */
   emojis?: Emoji[];
 }) {
-  const emojiMap = createMemo(() => new Map((props.emojis ?? []).map((e) => [e.name, e])));
+  const emojiMap = createMemo(
+    () => new Map((props.emojis ?? []).filter((e) => e.kind !== "sticker").map((e) => [e.name, e])),
+  );
+
+  /** A sticker goes on its own, right away, like Discord. */
+  async function sendSticker(sticker: Sticker) {
+    setPicker(false);
+    stickToBottom = true;
+    try {
+      await sendMessage(props.serverId, props.channel.id, props.uid, "", [], sticker);
+    } catch {
+      setError("Could not send. Check your connection.");
+    }
+  }
   const [viewing, setViewing] = createSignal<ChatFile | undefined>();
   const [picker, setPicker] = createSignal(false);
   const jumbo = (text: string) => ONLY_EMOJI.test(text) && [...text.replace(/\s/g, "")].length <= 54;
@@ -375,6 +389,11 @@ export function Chat(props: {
                           </Show>
                         </p>
                       </Show>
+                      <Show when={m.sticker}>
+                        {(sticker) => (
+                          <img class="msg-sticker" src={sticker().url} alt={sticker().name} title={sticker().name} loading="lazy" />
+                        )}
+                      </Show>
                       <Show when={m.files.length}>
                         <div class="msg-files">
                           <For each={m.files}>{(file) => <FileView file={file} onOpen={setViewing} />}</For>
@@ -440,6 +459,7 @@ export function Chat(props: {
           emojis={props.emojis ?? []}
           canModerate={props.canModerate}
           onPick={insertAtCursor}
+          onSticker={(sticker) => void sendSticker(sticker)}
           onClose={() => setPicker(false)}
         />
       </Show>
