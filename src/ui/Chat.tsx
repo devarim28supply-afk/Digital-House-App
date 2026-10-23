@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import { MAX_FILE_BYTES, uploadChatFile } from "../data/files";
 import {
@@ -99,6 +99,13 @@ export function Chat(props: {
   onNewMessage?: () => void;
   /** a name or picture was clicked: show that person's profile card */
   onProfile?: (uid: string, at: MouseEvent) => void;
+  /**
+   * Take files dropped ANYWHERE on the page (the sidebar chat): a file
+   * dragged in from a folder slides the sidebar in (onDragging), and the drop
+   * lands here instead of the browser opening the file.
+   */
+  catchPageDrops?: boolean;
+  onDragging?: (on: boolean) => void;
 }) {
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -206,19 +213,78 @@ export function Chat(props: {
     }
   }
 
+  // Files dragged from a folder: over this chat, or (catchPageDrops) over
+  // any part of the page. A counter, because dragenter/dragleave fire for
+  // every child element the drag crosses.
+  const [dragging, setDragging] = createSignal(false);
+  createEffect(() => props.onDragging?.(dragging()));
+  const hasFiles = (e: DragEvent) => Boolean(e.dataTransfer?.types.includes("Files"));
+  function onFileDrop(e: DragEvent) {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    setDragging(false);
+    addFiles(e.dataTransfer?.files);
+    // the message box takes the cursor, which keeps the sidebar in: type a
+    // note if you like, Enter sends
+    input?.focus();
+  }
+  onMount(() => {
+    if (!props.catchPageDrops) return;
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setDragging(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setDragging(false);
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      depth = 0;
+      onFileDrop(e);
+    };
+    const end = () => {
+      depth = 0;
+      setDragging(false);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    window.addEventListener("dragend", end);
+    onCleanup(() => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+      window.removeEventListener("dragend", end);
+      props.onDragging?.(false);
+    });
+  });
+
   return (
     <div
       class="chat"
-      classList={{ compact: props.compact }}
+      classList={{ compact: props.compact, "drag-over": dragging() }}
       onDragOver={(e) => {
-        if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+        if (hasFiles(e)) e.preventDefault();
       }}
       onDrop={(e) => {
-        if (!e.dataTransfer?.files.length) return;
-        e.preventDefault();
-        addFiles(e.dataTransfer.files);
+        // the page-wide listener takes it when it is on
+        if (props.catchPageDrops) return;
+        onFileDrop(e);
       }}
     >
+      <Show when={dragging()}>
+        <div class="drop-hint" aria-hidden="true">
+          <span>Drop to send in # {props.channel.name}</span>
+        </div>
+      </Show>
       <div class="chat-scroll" ref={scroller} onScroll={onScroll}>
         <Show when={loaded() && !messages().length}>
           <div class="chat-start">

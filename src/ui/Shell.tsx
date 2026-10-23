@@ -40,6 +40,8 @@ const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
 // how long a new chat message keeps the right sidebar slid in
 const RIGHT_HOLD_MS = 30_000;
+// how long it stays after the mouse leaves it
+const RIGHT_LINGER_MS = 5_000;
 
 function remember(key: string, value: string) {
   try {
@@ -176,6 +178,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   // for 30 seconds (each message restarts the 30); the cursor at the right
   // edge of the screen slides it in while it is there.
   const [edgeHover, setEdgeHover] = createSignal(false);
+  // Leaving it, it stays 5 more seconds (Kaalob); coming back cancels that.
+  let leaveTimer = 0;
+  function enterRight() {
+    window.clearTimeout(leaveTimer);
+    setEdgeHover(true);
+  }
+  function leaveRight() {
+    window.clearTimeout(leaveTimer);
+    leaveTimer = window.setTimeout(() => setEdgeHover(false), RIGHT_LINGER_MS);
+  }
+  onCleanup(() => window.clearTimeout(leaveTimer));
   const [chatPing, setChatPing] = createSignal(false);
   let pingTimer = 0;
   function pingRight() {
@@ -189,7 +202,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const [card, setCard] = createSignal<{ uid: string; x: number; y: number } | undefined>();
   const openCard = (uid: string, at: MouseEvent) => setCard({ uid, x: at.clientX, y: at.clientY });
   // A profile card opened from the sidebar keeps the sidebar in until it closes.
-  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card());
+  // A file dragged in from a folder slides it in too, so it can be dropped on the chat.
+  const [fileDrag, setFileDrag] = createSignal(false);
+  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card()) || fileDrag();
 
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
@@ -423,14 +438,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
 
       {/* ---- right: the open tile's chat, otherwise the people. It slides
           out of the way; the strip at the screen's right edge brings it in. ---- */}
-      <div class="right-edge" aria-hidden="true" onMouseEnter={() => setEdgeHover(true)} />
+      <div class="right-edge" aria-hidden="true" onMouseEnter={enterRight} />
       <Show when={server() && tileChat()}>
         {(chat) => (
           <aside
             class="side-chat"
             aria-label={`# ${chat().name}`}
-            onMouseEnter={() => setEdgeHover(true)}
-            onMouseLeave={() => setEdgeHover(false)}
+            onMouseEnter={enterRight}
+            onMouseLeave={leaveRight}
           >
             <header class="side-chat-head">
               <span>
@@ -470,6 +485,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               canModerate={runsServer()}
               compact
               onNewMessage={pingRight}
+              catchPageDrops
+              onDragging={setFileDrag}
               onProfile={openCard}
             />
           </aside>
@@ -479,8 +496,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         class="members"
         aria-label="Members"
         classList={{ hidden: Boolean(tileChat()) }}
-        onMouseEnter={() => setEdgeHover(true)}
-        onMouseLeave={() => setEdgeHover(false)}
+        onMouseEnter={enterRight}
+        onMouseLeave={leaveRight}
       >
         <Show when={server()}>
           {(s) => {

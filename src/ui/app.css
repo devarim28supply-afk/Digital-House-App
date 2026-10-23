@@ -1654,3 +1654,24 @@ video.msg-media {
   background: var(--panel-2);
   color: var(--green);
 }
+
+/* a file dragged in from a folder: the whole chat says where it will go */
+.chat {
+  position: relative;
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 8px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--green);
+  border-radius: 12px;
+  background: rgba(6, 17, 10, 0.88);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+}
