@@ -49,6 +49,10 @@ export function Chat(props: {
   canModerate: boolean;
   /** the narrow sidebar version beside a room tile */
   compact?: boolean;
+  /** a message arrived after the chat had loaded (the right sidebar slides in) */
+  onNewMessage?: () => void;
+  /** a name or picture was clicked: show that person's profile card */
+  onProfile?: (uid: string, at: MouseEvent) => void;
 }) {
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -67,7 +71,11 @@ export function Chat(props: {
         setLoaded(false);
         setEditing(undefined);
         stickToBottom = true;
+        let seen: Set<string> | undefined;
         const stop = watchMessages(sid, cid, (rows) => {
+          // after the first load, any message not seen before is new
+          if (seen && rows.some((r) => !seen!.has(r.id))) props.onNewMessage?.();
+          seen = new Set(rows.map((r) => r.id));
           setMessages(rows);
           setLoaded(true);
         });
@@ -133,14 +141,22 @@ export function Chat(props: {
           {(m, i) => (
             <article class="msg" classList={{ grouped: !startsGroup(i()) }}>
               <Show when={startsGroup(i())}>
-                <span class="avatar" style={{ background: props.profiles.get(m.authorUid)?.color ?? "#404040" }}>
+                <button
+                  type="button"
+                  class="avatar avatar-btn"
+                  style={{ background: props.profiles.get(m.authorUid)?.color ?? "#404040" }}
+                  aria-label={`${nameOf(m.authorUid)}'s profile`}
+                  onClick={(e) => props.onProfile?.(m.authorUid, e)}
+                >
                   {initials(nameOf(m.authorUid))}
-                </span>
+                </button>
               </Show>
               <div class="msg-body">
                 <Show when={startsGroup(i())}>
                   <header class="msg-head">
-                    <b>{nameOf(m.authorUid)}</b>
+                    <b class="msg-author" onClick={(e) => props.onProfile?.(m.authorUid, e)}>
+                      {nameOf(m.authorUid)}
+                    </b>
                     <time>{timeLabel(m.createdAt)}</time>
                   </header>
                 </Show>

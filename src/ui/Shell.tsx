@@ -11,7 +11,6 @@ import {
   createRoomTile,
   createServer,
   deleteRoomTile,
-  deleteChannel,
   ensureHomeServer,
   ensureHomeTiles,
   joinOpenServers,
@@ -39,6 +38,8 @@ import "./app.css";
 
 const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
+// how long a new chat message keeps the right sidebar slid in
+const RIGHT_HOLD_MS = 30_000;
 
 function remember(key: string, value: string) {
   try {
@@ -151,7 +152,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
       const saved = recall(lastChannelKey(sid));
-      const pick = list.find((c) => c.id === saved) ?? list.find((c) => c.kind === "text") ?? list[0];
+      // only picture tiles are shown (Kaalob): reopen the last tile, else the first
+      const pick = list.find((c) => c.id === saved && c.kind === "room") ?? list.find((c) => c.kind === "room") ?? list[0];
       setChannelId(pick?.id);
     });
     onCleanup(stop);
@@ -170,6 +172,24 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   }
   const inThisCall = () => Boolean(channel() && call()?.channel.id === channel()!.id);
 
+  // The right sidebar slides out of the way. A new chat message slides it in
+  // for 30 seconds (each message restarts the 30); the cursor at the right
+  // edge of the screen slides it in while it is there.
+  const [edgeHover, setEdgeHover] = createSignal(false);
+  const [chatPing, setChatPing] = createSignal(false);
+  let pingTimer = 0;
+  function pingRight() {
+    setChatPing(true);
+    window.clearTimeout(pingTimer);
+    pingTimer = window.setTimeout(() => setChatPing(false), RIGHT_HOLD_MS);
+  }
+  onCleanup(() => window.clearTimeout(pingTimer));
+  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen();
+
+  // A person's profile card, like Discord's, next to where you clicked.
+  const [card, setCard] = createSignal<{ uid: string; x: number; y: number } | undefined>();
+  const openCard = (uid: string, at: MouseEvent) => setCard({ uid, x: at.clientX, y: at.clientY });
+
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
   const whereOf = (uid: string) => {
@@ -179,10 +199,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
   const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
 
+  // Picture tiles all the way (Kaalob): # text and voice channels are no
+  // longer listed (their data stays). A tile's chat lives in the right sidebar.
   const roomTiles = () => channels().filter((c) => c.kind === "room");
-  // a tile's own chat is listed under its picture, not with the other text channels
-  const textChannels = () => channels().filter((c) => c.kind === "text" && !c.parentId);
-  const voiceChannels = () => channels().filter((c) => c.kind === "voice");
   const chatsOf = (tileId: string) => channels().filter((c) => c.kind === "text" && c.parentId === tileId);
   // With a tile open, its chat sits in the right sidebar.
   const tileChat = createMemo(() => {
@@ -191,7 +210,10 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   });
 
   return (
-    <div class="shell" classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen() }}>
+    <div
+      class="shell"
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen() }}
+    >
       {/* ---- servers ---- */}
       <nav class="rail" aria-label="Servers">
         <For each={servers()}>
@@ -263,39 +285,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                       ✕
                     </button>
                   </Show>
-                  <ChannelGroup
-                    channels={chatsOf(c.id)}
-                    activeId={channelId()}
-                    onPick={pickChannel}
-                    canEdit={false}
-                    onDelete={() => {}}
-                  />
                 </div>
               )}
             </For>
-            <ChannelGroup
-              label="Text"
-              channels={textChannels()}
-              activeId={channelId()}
-              onPick={pickChannel}
-              canEdit={runsServer()}
-              onDelete={(id) => void deleteChannel(serverId()!, id)}
-            />
-            <ChannelGroup
-              label="Voice"
-              channels={voiceChannels()}
-              activeId={channelId()}
-              onPick={pickChannel}
-              canEdit={runsServer()}
-              onDelete={(id) => void deleteChannel(serverId()!, id)}
-            />
             <Show when={runsServer()}>
               <div class="side-tools">
                 <button class="side-tool" type="button" onClick={() => setModal("new-channel")}>
                   + Channel
-                </button>
-                <button class="side-tool" type="button" onClick={() => setModal("people")}>
-                  + People
                 </button>
               </div>
             </Show>
@@ -424,10 +420,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         </Show>
       </main>
 
-      {/* ---- right: the open tile's chat, otherwise the people ---- */}
+      {/* ---- right: the open tile's chat, otherwise the people. It slides
+          out of the way; the strip at the screen's right edge brings it in. ---- */}
+      <div class="right-edge" aria-hidden="true" onMouseEnter={() => setEdgeHover(true)} />
       <Show when={server() && tileChat()}>
         {(chat) => (
-          <aside class="side-chat" aria-label={`# ${chat().name}`}>
+          <aside
+            class="side-chat"
+            aria-label={`# ${chat().name}`}
+            onMouseEnter={() => setEdgeHover(true)}
+            onMouseLeave={() => setEdgeHover(false)}
+          >
             <header class="side-chat-head">
               <span>
                 <span class="hash">#</span> {chat().name}
@@ -443,6 +446,11 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             </header>
             {/* who is online stays visible with a tile open, above its chat */}
             <div class="side-online">
+              <Show when={runsServer()}>
+                <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
+                  + People
+                </button>
+              </Show>
               <MemberGroup
                 label={`Online — ${onlineHere().length}`}
                 uids={onlineHere()}
@@ -450,6 +458,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                 nameOf={nameOf}
                 whereOf={whereOf}
                 online
+                onPick={openCard}
               />
             </div>
             <Chat
@@ -459,17 +468,30 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               profiles={profiles()}
               canModerate={runsServer()}
               compact
+              onNewMessage={pingRight}
+              onProfile={openCard}
             />
           </aside>
         )}
       </Show>
-      <aside class="members" aria-label="Members" classList={{ hidden: Boolean(tileChat()) }}>
+      <aside
+        class="members"
+        aria-label="Members"
+        classList={{ hidden: Boolean(tileChat()) }}
+        onMouseEnter={() => setEdgeHover(true)}
+        onMouseLeave={() => setEdgeHover(false)}
+      >
         <Show when={server()}>
           {(s) => {
             const online = () => s().memberUids.filter(isOnline);
             const offline = () => s().memberUids.filter((u) => !isOnline(u));
             return (
               <>
+                <Show when={runsServer()}>
+                  <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
+                    + People
+                  </button>
+                </Show>
                 <MemberGroup
                   label={`Online — ${online().length}`}
                   uids={online()}
@@ -477,13 +499,36 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                   nameOf={nameOf}
                   whereOf={whereOf}
                   online
+                  onPick={openCard}
                 />
-                <MemberGroup label={`Offline — ${offline().length}`} uids={offline()} profiles={profiles()} nameOf={nameOf} />
+                <MemberGroup
+                  label={`Offline — ${offline().length}`}
+                  uids={offline()}
+                  profiles={profiles()}
+                  nameOf={nameOf}
+                  onPick={openCard}
+                />
               </>
             );
           }}
         </Show>
       </aside>
+
+      <Show when={card()}>
+        {(c) => (
+          <ProfileCard
+            uid={c().uid}
+            x={c().x}
+            y={c().y}
+            profile={profiles().get(c().uid)}
+            name={nameOf(c().uid)}
+            online={isOnline(c().uid)}
+            where={whereOf(c().uid)}
+            owner={server()?.ownerUid === c().uid}
+            onClose={() => setCard(undefined)}
+          />
+        )}
+      </Show>
 
       {/* ---- dialogs ---- */}
       <NameDialog
@@ -534,41 +579,61 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   );
 }
 
-function ChannelGroup(props: {
-  label?: string;
-  channels: Channel[];
-  activeId?: string;
-  canEdit: boolean;
-  onPick: (id: string) => void;
-  onDelete: (id: string) => void;
+/**
+ * A person's profile card, like Discord's: their colour across the top, the
+ * big initials, name, @username, and whether (and where) they are online.
+ * Click outside it or press Esc to close.
+ */
+function ProfileCard(props: {
+  uid: string;
+  x: number;
+  y: number;
+  profile?: Profile;
+  name: string;
+  online: boolean;
+  where: string;
+  owner: boolean;
+  onClose: () => void;
 }) {
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+  });
+  // keep the whole card on screen, beside the click
+  const W = 300;
+  const H = 280;
+  const left = () => Math.max(12, Math.min(props.x - W - 16, window.innerWidth - W - 12));
+  const top = () => Math.max(12, Math.min(props.y - 40, window.innerHeight - H - 12));
+  const color = () => props.profile?.color ?? "#404040";
   return (
-    <Show when={props.channels.length}>
-      <Show when={props.label}>
-        <div class="group-label">{props.label}</div>
-      </Show>
-      <For each={props.channels}>
-        {(c) => (
-          <div class="chan-row" classList={{ active: c.id === props.activeId }}>
-            <button type="button" class="chan" onClick={() => props.onPick(c.id)}>
-              <span class="hash">{c.kind === "voice" ? "◉" : "#"}</span>
-              <span class="chan-name">{c.name}</span>
-            </button>
-            <Show when={props.canEdit}>
-              <button
-                class="icon-btn chan-del"
-                type="button"
-                title={`Delete ${c.name}`}
-                aria-label={`Delete ${c.name}`}
-                onClick={() => props.onDelete(c.id)}
-              >
-                ✕
-              </button>
+    <div class="card-backdrop" onClick={props.onClose}>
+      <article
+        class="profile-card"
+        style={{ left: `${left()}px`, top: `${top()}px` }}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`${props.name}'s profile`}
+      >
+        <div class="profile-banner" style={{ background: color() }} />
+        <span class="avatar profile-avatar" style={{ background: color() }}>
+          {initials(props.name)}
+          <i class="dot" classList={{ off: !props.online }} />
+        </span>
+        <div class="profile-body">
+          <h3>
+            {props.name}
+            <Show when={props.owner}>
+              <span class="profile-badge">Owner</span>
             </Show>
+          </h3>
+          <p class="profile-user">@{props.profile?.username || "member"}</p>
+          <div class="profile-section">
+            <span class="group-label">Status</span>
+            <p>{props.online ? props.where || "Online" : "Offline"}</p>
           </div>
-        )}
-      </For>
-    </Show>
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -580,13 +645,20 @@ function MemberGroup(props: {
   online?: boolean;
   /** where an online person is ("In Living Room", "Videochat · …") */
   whereOf?: (uid: string) => string;
+  /** clicked: show their profile card */
+  onPick?: (uid: string, at: MouseEvent) => void;
 }) {
   return (
     <Show when={props.uids.length}>
       <div class="group-label">{props.label}</div>
       <For each={props.uids}>
         {(uid) => (
-          <div class="member" classList={{ offline: !props.online }}>
+          <button
+            type="button"
+            class="member"
+            classList={{ offline: !props.online }}
+            onClick={(e) => props.onPick?.(uid, e)}
+          >
             <span class="avatar small" style={{ background: props.profiles.get(uid)?.color ?? "#404040" }}>
               {initials(props.nameOf(uid))}
               <Show when={props.online}>
@@ -599,7 +671,7 @@ function MemberGroup(props: {
                 {(where) => <small class="member-where">{where()}</small>}
               </Show>
             </span>
-          </div>
+          </button>
         )}
       </For>
     </Show>
@@ -658,7 +730,8 @@ function NewChannelDialog(props: {
   onClose: () => void;
   onSubmit: (name: string, kind: Channel["kind"], extra: { image?: string; url?: string }) => Promise<unknown>;
 }) {
-  const [kind, setKind] = createSignal<Channel["kind"]>("text");
+  // Picture tiles all the way: a new channel is a tile.
+  const [kind, setKind] = createSignal<Channel["kind"]>("room");
   const [image, setImage] = createSignal("");
   const [error, setError] = createSignal("");
 
@@ -675,7 +748,7 @@ function NewChannelDialog(props: {
   }
 
   const close = () => {
-    setKind("text");
+    setKind("room");
     setImage("");
     setError("");
     props.onClose();
@@ -710,20 +783,6 @@ function NewChannelDialog(props: {
           <span>Channel name</span>
           <input name="name" maxLength={40} required />
         </label>
-        <div class="kind-pick">
-          <label>
-            <input type="radio" name="kind" value="text" checked={kind() === "text"} onChange={() => setKind("text")} /> #
-            Text
-          </label>
-          <label>
-            <input type="radio" name="kind" value="voice" checked={kind() === "voice"} onChange={() => setKind("voice")} />{" "}
-            ◉ Voice / video
-          </label>
-          <label>
-            <input type="radio" name="kind" value="room" checked={kind() === "room"} onChange={() => setKind("room")} /> ▣
-            Room tile
-          </label>
-        </div>
         <Show when={kind() === "room"}>
           <p class="modal-text">
             A picture in the channel list. Clicking it opens a video chat, with a toggle to the room page at this link.

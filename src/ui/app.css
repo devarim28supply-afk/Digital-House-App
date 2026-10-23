@@ -1,20 +1,12 @@
-/* ---- layout: rail | side | main | members ------------------------------ */
+/* ---- layout: rail | side | main (the right sidebar slides over) ---------- */
 
 .shell {
   display: grid;
-  grid-template-columns: 72px 248px minmax(0, 1fr) 232px;
+  grid-template-columns: 72px 248px minmax(0, 1fr);
   height: 100%;
   background: var(--bg);
 }
 
-@media (max-width: 1100px) {
-  .shell {
-    grid-template-columns: 72px 248px minmax(0, 1fr);
-  }
-  .members {
-    display: none;
-  }
-}
 
 /* phones: rail + channels slide in over the chat */
 @media (max-width: 760px) {
@@ -398,8 +390,49 @@
 
 /* ---- a tile's chat in the right sidebar --------------------------------- */
 
-.shell.with-side-chat {
-  grid-template-columns: 72px 248px minmax(0, 1fr) 340px;
+/* The right sidebar (a tile's chat, or the people) slides out of the way:
+   a new message brings it in for 30 s, and so does the cursor at the
+   screen's right edge (.right-edge). Typing in it keeps it in. */
+.side-chat,
+.members {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  transform: translateX(105%);
+  transition: transform 240ms ease;
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.6);
+}
+
+.side-chat {
+  width: min(360px, 100vw);
+}
+
+.members {
+  width: min(260px, 100vw);
+}
+
+.right-open .side-chat,
+.right-open .members,
+.side-chat:has(textarea:focus),
+.members:has(input:focus) {
+  transform: none;
+}
+
+.right-edge {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 24;
+  width: 10px;
+}
+
+.people-btn {
+  width: 100%;
+  flex: none;
+  margin: 6px 0 4px;
 }
 
 .members.hidden {
@@ -474,23 +507,6 @@
 
 /* narrower screens: the tile's chat slides in from the right on demand */
 @media (max-width: 1100px) {
-  .shell.with-side-chat {
-    grid-template-columns: 72px 248px minmax(0, 1fr);
-  }
-  .side-chat {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 25;
-    width: min(360px, 100vw);
-    transform: translateX(105%);
-    transition: transform 200ms ease;
-    box-shadow: -20px 0 60px rgba(0, 0, 0, 0.6);
-  }
-  .side-chat-open .side-chat {
-    transform: none;
-  }
   .side-chat-btn,
   .side-chat-close {
     display: inline-grid !important;
@@ -1349,4 +1365,130 @@
   height: 20px;
   padding: 0 7px;
   font-size: 10px;
+}
+
+/* ---- clickable people + the profile card (like Discord's) ------------------ */
+
+button.member {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.member:hover {
+  background: var(--panel-2);
+}
+
+.avatar-btn {
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.msg-author {
+  cursor: pointer;
+}
+
+.msg-author:hover {
+  text-decoration: underline;
+}
+
+.card-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.profile-card {
+  position: fixed;
+  width: 300px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: #0b0b0b;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75);
+  animation: card-in 140ms ease-out;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.profile-banner {
+  height: 84px;
+  opacity: 0.85;
+}
+
+.avatar.profile-avatar {
+  position: absolute;
+  top: 40px;
+  left: 16px;
+  width: 84px;
+  height: 84px;
+  border: 6px solid #0b0b0b;
+  font-size: 28px;
+}
+
+.avatar.profile-avatar .dot {
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  border: 4px solid #0b0b0b;
+}
+
+.avatar .dot.off {
+  background: #555;
+}
+
+.profile-body {
+  padding: 48px 16px 16px;
+}
+
+.profile-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.profile-badge {
+  padding: 2px 7px;
+  border: 1px solid var(--green);
+  border-radius: 999px;
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.profile-user {
+  margin: 2px 0 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.profile-section {
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.profile-section .group-label {
+  margin: 0 0 4px;
+  padding: 0;
+}
+
+.profile-section p {
+  margin: 0;
+  font-size: 13px;
 }
