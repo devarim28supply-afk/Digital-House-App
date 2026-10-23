@@ -49,6 +49,8 @@ const SECOND_SCREEN = "screen-2";
 // the call grid: gap between tiles, and the small Room view's width (of a tile)
 const GAP = 10;
 const SMALL_ROOM_VIEW = 0.4;
+// double-click layout: this many small screens in the row under the big one
+const SPOT_ROW_MAX = 4;
 
 /** Where a Gestr room's live camera is watched from (store.roomCamOf). */
 /** wide: spans the call like a shared screen; otherwise a normal tile. */
@@ -601,22 +603,57 @@ export function VoiceRoom(props: {
     if (!big) return undefined;
     const rest = order().filter((k) => k !== big);
     const { w, h } = box();
-    const k = rest.length;
-    // the small ones: one row, each at most about a quarter of the width
-    const sw = k ? Math.floor(Math.min((w - (k - 1) * GAP) / k, w * 0.24)) : 0;
+    // The first 4 small ones sit in a row under the big one; from the 6th
+    // screen on, the 5th small one and later stack in a column on its right.
+    const row = rest.slice(0, SPOT_ROW_MAX);
+    const col = rest.slice(SPOT_ROW_MAX);
+    const r = row.length;
+    const c = col.length;
+    // one size for every small one: fits the row, at most about a quarter of
+    // the width, and (with a column) the column fits the height
+    let sw = r ? Math.min((w - (r - 1) * GAP) / r, w * 0.24) : 0;
+    if (c) sw = Math.min(sw, ((h - (c - 1) * GAP) / c) * (16 / 9));
+    // the big one takes what is left; then the small ones shrink until the
+    // row fits under the big one and the column fits down its side
+    const bigFor = (size: number) => {
+      const smallH = (size * 9) / 16;
+      const roomH = h - (r ? smallH + GAP : 0);
+      const roomW = w - (c ? size + GAP : 0);
+      return Math.min(roomW, (roomH * 16) / 9);
+    };
+    for (let i = 0; i < 12; i++) {
+      const bw = bigFor(sw);
+      const smallH = (sw * 9) / 16;
+      const tall = (bw * 9) / 16 + (r ? GAP + smallH : 0);
+      let next = sw;
+      if (r) next = Math.min(next, (bw - (r - 1) * GAP) / r);
+      if (c) next = Math.min(next, ((tall - (c - 1) * GAP) / c) * (16 / 9));
+      if (next >= sw - 0.5) break;
+      sw = next;
+    }
+    sw = Math.floor(sw);
     const sh = Math.floor((sw * 9) / 16);
-    const roomForBig = h - (k ? sh + GAP : 0);
-    const bigW = Math.floor(Math.min(w, (roomForBig * 16) / 9));
+    const bigW = Math.floor(bigFor(sw));
     const bigH = Math.floor((bigW * 9) / 16);
-    const top = Math.max(0, (h - bigH - (k ? GAP + sh : 0)) / 2);
+    const colH = c ? c * sh + (c - 1) * GAP : 0;
+    const totalH = Math.max(bigH + (r ? GAP + sh : 0), colH);
+    const totalW = bigW + (c ? GAP + sw : 0);
+    const top = Math.max(0, (h - totalH) / 2);
+    const left = Math.max(0, (w - totalW) / 2);
     const px = (n: number) => `${Math.round(n)}px`;
     const rects = new Map<string, JSX.CSSProperties>();
-    rects.set(big, { left: px((w - bigW) / 2), top: px(top), width: px(bigW), height: px(bigH) });
-    let x = (w - (k * sw + (k - 1) * GAP)) / 2;
-    const y = top + bigH + GAP;
-    for (const key of rest) {
-      rects.set(key, { left: px(x), top: px(y), width: px(sw), height: px(sh) });
+    rects.set(big, { left: px(left), top: px(top), width: px(bigW), height: px(bigH) });
+    // the row, centred under the big one
+    let x = left + (bigW - (r * sw + (r - 1) * GAP)) / 2;
+    for (const key of row) {
+      rects.set(key, { left: px(x), top: px(top + bigH + GAP), width: px(sw), height: px(sh) });
       x += sw + GAP;
+    }
+    // the column, down the big one's right side
+    let y = top;
+    for (const key of col) {
+      rects.set(key, { left: px(left + bigW + GAP), top: px(y), width: px(sw), height: px(sh) });
+      y += sh + GAP;
     }
     return rects;
   });
