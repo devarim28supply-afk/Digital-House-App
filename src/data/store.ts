@@ -41,6 +41,8 @@ export type Profile = {
   color: string;
   /** shown on your videochat tile instead of your name, if you set one */
   callName?: string;
+  /** your profile picture: a small JPEG (data URL), shrunk in the browser */
+  photo?: string;
 };
 export type Server = {
   id: string;
@@ -177,6 +179,11 @@ const toDate = (t: unknown) => ((t as Timestamp | null)?.toDate?.() ?? null);
 /** Keep your public face in step with your member record. */
 export async function saveProfile(uid: string, name: string, username: string) {
   await setDoc(doc(db, "profiles", uid), { uid, name, username, color: colorFor(uid) }, { merge: true });
+}
+
+/** Your profile picture, or null to go back to your initials. */
+export async function saveProfilePhoto(uid: string, photo: string | null) {
+  await setDoc(doc(db, "profiles", uid), { photo: photo ?? deleteField() }, { merge: true });
 }
 
 /** The name on your videochat tile; empty goes back to your normal name. */

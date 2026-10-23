@@ -2023,3 +2023,15 @@ button.msg-media {
   color: var(--muted);
   font-size: 12px;
 }
+
+.photo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar.photo-preview {
+  width: 56px;
+  height: 56px;
+  font-size: 18px;
+}

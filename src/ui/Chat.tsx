@@ -13,7 +13,7 @@ import {
   watchMessages,
 } from "../data/store";
 import { EmojiPicker, ImageViewer } from "./Emoji";
-import { initials } from "./Shell";
+import { faceStyle, faceText } from "./Shell";
 
 // Messages from the same person within this gap share one header.
 const GROUP_MS = 5 * 60_000;
@@ -342,11 +342,11 @@ export function Chat(props: {
                 <button
                   type="button"
                   class="avatar avatar-btn"
-                  style={{ background: props.profiles.get(m.authorUid)?.color ?? "#404040" }}
+                  style={faceStyle(props.profiles.get(m.authorUid))}
                   aria-label={`${nameOf(m.authorUid)}'s profile`}
                   onClick={(e) => props.onProfile?.(m.authorUid, e)}
                 >
-                  {initials(nameOf(m.authorUid))}
+                  {faceText(props.profiles.get(m.authorUid), nameOf(m.authorUid))}
                 </button>
               </Show>
               <Show when={!startsGroup(i())}>

@@ -13,7 +13,7 @@ import {
 import { type Channel, type Profile } from "../data/store";
 import { setInCall } from "../data/where";
 import { auth } from "../firebase";
-import { initials } from "./Shell";
+import { faceStyle, faceText } from "./Shell";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -531,7 +531,7 @@ export function VoiceRoom(props: {
                 tile={tile}
                 version={version()}
                 name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
-                color={props.profiles.get(tile.participant.identity)?.color ?? "#404040"}
+                profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
               />
@@ -670,7 +670,7 @@ function Tile(props: {
   tile: TileInfo;
   version: number;
   name: string;
-  color: string;
+  profile?: Profile;
   speaking: boolean;
   /** their webcam from the 3D room, shown while their call camera is off */
   roomFace?: RemoteTrack;
@@ -699,8 +699,8 @@ function Tile(props: {
       <video ref={video} autoplay playsinline muted classList={{ hidden: !track(), mirror: mirrored() }} />
       <Show when={!track()}>
         <div class="tile-empty">
-          <span class="avatar big" style={{ background: props.color }}>
-            {initials(props.name)}
+          <span class="avatar big" style={faceStyle(props.profile)}>
+            {faceText(props.profile, props.name)}
           </span>
         </div>
       </Show>

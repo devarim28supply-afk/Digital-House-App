@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, type JSX, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 
 import {
   type Channel,
@@ -26,6 +26,7 @@ import {
   startPresence,
   watchChannels,
   saveCallName,
+  saveProfilePhoto,
   watchEmojis,
   watchPresence,
   watchProfiles,
@@ -70,6 +71,16 @@ export function initials(name: string) {
   const parts = name.trim().split(/\s+/).slice(0, 2);
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
+
+/** A round picture: their profile picture if they have one, else their colour. */
+export function faceStyle(profile: Profile | undefined, fallback = "#404040"): JSX.CSSProperties {
+  const color = profile?.color ?? fallback;
+  return profile?.photo
+    ? { "background-color": color, "background-image": `url("${profile.photo}")`, "background-size": "cover", "background-position": "center" }
+    : { background: color };
+}
+/** The initials inside it, only when there is no picture. */
+export const faceText = (profile: Profile | undefined, name: string) => (profile?.photo ? "" : initials(name));
 
 /**
  * Darkwood Node once you are in: servers on the far left, the chosen
@@ -324,8 +335,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                       <span class="tile-people" title={peopleIn(c).map(nameOf).join(", ")}>
                         <For each={peopleIn(c).slice(0, TILE_FACES)}>
                           {(uid) => (
-                            <span class="avatar tile-face" style={{ background: profiles().get(uid)?.color ?? "#404040" }}>
-                              {initials(nameOf(uid))}
+                            <span class="avatar tile-face" style={faceStyle(profiles().get(uid))}>
+                              {faceText(profiles().get(uid), nameOf(uid))}
                             </span>
                           )}
                         </For>
@@ -383,8 +394,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           )}
         </Show>
         <footer class="me">
-          <span class="avatar" style={{ background: profiles().get(props.uid)?.color ?? "#4ADE80" }}>
-            {initials(props.name)}
+          <span class="avatar" style={faceStyle(profiles().get(props.uid), "#4ADE80")}>
+            {faceText(profiles().get(props.uid), props.name)}
           </span>
           <span class="me-names">
             <b>{props.name}</b>
@@ -639,6 +650,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         <p class="modal-text">
           Signed in as <b>{props.name}</b> (@{props.username || "member"}).
         </p>
+        <PhotoField uid={props.uid} name={props.name} profile={profiles().get(props.uid)} />
         <CallNameField uid={props.uid} name={props.name} current={profiles().get(props.uid)?.callName ?? ""} />
         <div class="field">
           <span>Right sidebar</span>
@@ -659,6 +671,59 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           </button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * Your profile picture: shown in chat, the Online list, room tiles, your
+ * card and your videochat tile (camera off). Shrunk to 256 px in the browser.
+ */
+function PhotoField(props: { uid: string; name: string; profile?: Profile }) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal("");
+  let picker: HTMLInputElement | undefined;
+  async function choose(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    try {
+      await saveProfilePhoto(props.uid, await shrinkImage(file, 256));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not use that picture");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div class="field photo-field">
+      <span>Profile picture</span>
+      <div class="photo-row">
+        <span class="avatar photo-preview" style={faceStyle(props.profile)}>
+          {faceText(props.profile, props.name)}
+        </span>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            void choose(e.currentTarget.files?.[0]);
+            e.currentTarget.value = "";
+          }}
+        />
+        <button class="btn" type="button" disabled={busy()} onClick={() => picker?.click()}>
+          {busy() ? "Saving…" : props.profile?.photo ? "Change picture" : "Upload picture"}
+        </button>
+        <Show when={props.profile?.photo}>
+          <button class="btn" type="button" disabled={busy()} onClick={() => void saveProfilePhoto(props.uid, null)}>
+            Remove
+          </button>
+        </Show>
+      </div>
+      <Show when={error()}>
+        <p class="form-error">{error()}</p>
+      </Show>
     </div>
   );
 }
@@ -762,8 +827,8 @@ function ProfileCard(props: {
         aria-label={`${props.name}'s profile`}
       >
         <div class="profile-banner" style={{ background: color() }} />
-        <span class="avatar profile-avatar" style={{ background: color() }}>
-          {initials(props.name)}
+        <span class="avatar profile-avatar" style={faceStyle(props.profile)}>
+          {faceText(props.profile, props.name)}
           <i class="dot" classList={{ off: !props.online }} />
         </span>
         <div class="profile-body">
@@ -806,8 +871,8 @@ function MemberGroup(props: {
             classList={{ offline: !props.online }}
             onClick={(e) => props.onPick?.(uid, e)}
           >
-            <span class="avatar small" style={{ background: props.profiles.get(uid)?.color ?? "#404040" }}>
-              {initials(props.nameOf(uid))}
+            <span class="avatar small" style={faceStyle(props.profiles.get(uid))}>
+              {faceText(props.profiles.get(uid), props.nameOf(uid))}
               <Show when={props.online}>
                 <i class="dot" />
               </Show>
@@ -1104,8 +1169,8 @@ function PeopleDialog(props: {
         <For each={everyone()}>
           {(p) => (
             <div class="person">
-              <span class="avatar small" style={{ background: p.color }}>
-                {initials(p.name || p.username)}
+              <span class="avatar small" style={faceStyle(p)}>
+                {faceText(p, p.name || p.username)}
               </span>
               <span class="member-name">
                 {p.name} <small>@{p.username}</small>
