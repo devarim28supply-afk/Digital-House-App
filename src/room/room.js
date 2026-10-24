@@ -248,10 +248,21 @@ function syncBigCams() {
     bigCams.append(tile.el); // keeps the order: you, then everyone else
   }
 }
-big.addEventListener("click", closeBig);
+// Leaving the big view puts the mouse straight back on looking around.
+// (The browser refuses this on Esc, which never counts as a user action:
+// then a click in the room takes the mouse back, as always.)
+function leaveBig() {
+  closeBig();
+  try {
+    view.requestPointerLock()?.catch?.(() => {});
+  } catch {
+    /* refused: a click in the room takes it */
+  }
+}
+big.addEventListener("click", leaveBig);
 addEventListener("keydown", (e) => {
-  if (e.code === "KeyF" && !e.repeat) big.hidden ? openBig(facedScreen()) : closeBig();
-  if (e.code === "Escape" && !big.hidden) closeBig();
+  if (e.code === "KeyF" && !e.repeat) big.hidden ? openBig(facedScreen()) : leaveBig();
+  if (e.code === "Escape" && !big.hidden) leaveBig();
 });
 
 const shareBtns = SCREENS.map((s) => {
