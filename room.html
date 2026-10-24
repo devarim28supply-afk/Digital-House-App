@@ -101,8 +101,33 @@
     background: #1c1c22;
     transition: clip-path .4s ease;
     clip-path: polygon(50% 0, 50% 0, 69.4% 50%, 50% 100%, 50% 100%, 30.6% 50%);
+    backface-visibility: hidden; /* the webcam shows on the front only */
   }
-  .avatar.hexagon .plate { clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%); }
+  /* the back: the same shape in black, with the username in the middle */
+  .plate-back {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: #000;
+    transform: rotateY(180deg);
+    backface-visibility: hidden;
+    transition: clip-path .4s ease;
+    clip-path: polygon(50% 0, 50% 0, 69.4% 50%, 50% 100%, 50% 100%, 30.6% 50%);
+  }
+  .plate-back span {
+    max-width: 210px; /* the diamond is ~248 px wide across its middle */
+    font-size: 40px;
+    font-weight: 600;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: max-width .4s ease;
+  }
+  .avatar.hexagon .plate,
+  .avatar.hexagon .plate-back { clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%); }
+  .avatar.hexagon .plate-back span { max-width: 520px; }
   /* face tracking slides and zooms the picture inside the plate */
   .plate video {
     width: 100%;
@@ -121,8 +146,6 @@
   }
   .avatar.live .off { display: none; }
   .avatar:not(.live) video { visibility: hidden; }
-  /* you see your own plate from behind: read it the right way round */
-  .avatar.mine .off { transform: scaleX(-1); }
   .tag {
     position: absolute;
     left: 0;
@@ -137,7 +160,9 @@
     white-space: nowrap;
     backface-visibility: hidden;
   }
-  .tag.back { transform: rotateY(180deg); }
+  /* each name needs its own 3D placement, or the browser loses it */
+  .tag.front { transform: translateZ(0.5px); }
+  .tag.back { transform: rotateY(180deg) translateZ(0.5px); }
 
   #bar {
     position: fixed;

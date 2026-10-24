@@ -64,7 +64,12 @@ function makeAvatar(mine) {
   off.className = "off";
   off.textContent = "Camera off";
   plate.append(video, off);
-  el.append(plate);
+  // the back: black, with the username in the middle (no webcam)
+  const back = document.createElement("div");
+  back.className = "plate-back";
+  const backName = document.createElement("span");
+  back.append(backName);
+  el.append(plate, back);
   const tags = [];
   if (!mine) {
     for (const side of ["front", "back"]) {
@@ -75,7 +80,7 @@ function makeAvatar(mine) {
     }
   }
   world.append(el);
-  return { el, video, tags };
+  return { el, video, tags, backName };
 }
 
 /** Where a plate stands and faces, and the face crop inside it. */
@@ -520,7 +525,7 @@ function addPerson(p) {
   getDoc(doc(db, "profiles", p.identity))
     .then((snap) => {
       const prof = snap.data();
-      if (prof) setName(person, prof.callName || prof.name || prof.username || p.name);
+      if (prof) setName(person, prof.username || prof.callName || prof.name || p.name);
     })
     .catch(() => {});
   updateCount();
@@ -528,6 +533,7 @@ function addPerson(p) {
 }
 function setName(person, name) {
   for (const tag of person.tags) tag.textContent = name;
+  person.backName.textContent = name;
 }
 function removePerson(identity) {
   const person = people.get(identity);
@@ -680,6 +686,10 @@ if (testPass) {
     }
     if (started) return;
     started = true;
+    // your own username on the back of your plate
+    getDoc(doc(db, "profiles", user.uid))
+      .then((snap) => { const prof = snap.data(); if (prof) setName(mine, prof.username || prof.name || ""); })
+      .catch(() => {});
     getPass(user).then(join).catch((err) => setStatus(err?.message || "Could not join the room.", true));
     getPass(user, true).then(watchCall).catch((err) => console.warn("[room] could not show the videochat:", err));
   });
