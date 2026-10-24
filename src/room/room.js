@@ -583,11 +583,11 @@ function peopleStep() {
 
 // ---- the tile's videochat, as small screens under the room
 // Watched with a hidden, watch-only pass (nobody sees it in the call). Shows
-// everyone in the call: their webcam, or their initial while it is off.
+// everyone in the call: their webcam, or their username on black while it is off.
 const strip = document.getElementById("strip");
 const side = document.getElementById("side");
 const ROW = 4; // small screens under the room; the rest go in the column
-const callers = new Map(); // identity -> { el, video, who, initial }
+const callers = new Map(); // identity -> { el, video, who, center }
 
 async function watchCall(pass) {
   const call = new Room({ adaptiveStream: false, dynacast: false });
@@ -595,7 +595,7 @@ async function watchCall(pass) {
     const tile = callers.get(p.identity);
     if (!tile) return;
     const cam = p.getTrackPublication(Track.Source.Camera);
-    tile.el.classList.toggle("live", Boolean(cam?.track && !cam.isMuted));
+    tile.el.classList.toggle("live", Boolean(cam?.track && cam.isSubscribed && !cam.isMuted));
   };
   call
     .on(RoomEvent.ParticipantConnected, (p) => addCaller(p))
@@ -604,7 +604,9 @@ async function watchCall(pass) {
       if (pub.source === Track.Source.Camera) track.attach(addCaller(p).video);
       refresh(p);
     })
-    .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => { track.detach(); refresh(p); })
+    // LiveKit drops the publication just after these events: look again after
+    .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => { track.detach(); setTimeout(() => refresh(p)); })
+    .on(RoomEvent.TrackUnpublished, (_pub, p) => setTimeout(() => refresh(p)))
     .on(RoomEvent.TrackMuted, (_pub, p) => refresh(p))
     .on(RoomEvent.TrackUnmuted, (_pub, p) => refresh(p))
     .on(RoomEvent.ParticipantNameChanged, (_name, p) => addCaller(p));
@@ -621,18 +623,18 @@ function addCaller(p) {
   video.autoplay = true;
   video.muted = true;
   video.playsInline = true;
-  const initial = document.createElement("div");
-  initial.className = "initial";
+  const center = document.createElement("div");
+  center.className = "name";
   const who = document.createElement("div");
   who.className = "who";
-  el.append(video, initial, who);
-  tile = { el, video, who, initial };
+  el.append(video, center, who);
+  tile = { el, video, who, center };
   callers.set(p.identity, tile);
-  const name = (n) => { who.textContent = n; initial.textContent = (n || "?").trim().charAt(0).toUpperCase(); };
+  const name = (n) => { who.textContent = n; center.textContent = n; };
   name(p.name || "Someone");
   // a person's identity is their uid; the call's other names are "uid:..."
   getDoc(doc(db, "profiles", p.identity.split(":")[0]))
-    .then((snap) => { const prof = snap.data(); if (prof) name(prof.callName || prof.name || prof.username || p.name); })
+    .then((snap) => { const prof = snap.data(); if (prof) name(prof.username || prof.callName || prof.name || p.name); })
     .catch(() => {});
   layoutCall();
   return tile;

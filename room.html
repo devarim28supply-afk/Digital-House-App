@@ -24,15 +24,16 @@
   body { font: 14px/1.4 system-ui, sans-serif; color: #fff; user-select: none; }
 
   /*
-   * The room is the big screen. The tile's videochat sits under it as small
-   * screens (up to 4 in a row); more than 4 stack in a column on the right,
-   * like the big-screen layout in the videochat.
+   * The room is the big screen, the whole window. The tile's videochat floats
+   * over its bottom edge as small screens (up to 4 in a row, no bar behind
+   * them); more than 4 stack in a column on the right, like the big-screen
+   * layout in the videochat. --strip is the room they take at the bottom.
    */
   :root { --strip: 0px; --tile-h: clamp(80px, 18vh, 180px); }
   body.calling { --strip: calc(var(--tile-h) + 16px); }
   #view {
     position: fixed;
-    inset: 0 0 var(--strip) 0;
+    inset: 0;
     cursor: grab;
     touch-action: none;
   }
@@ -186,7 +187,6 @@
     padding: 8px;
     box-sizing: border-box;
     justify-content: center;
-    background: #0b0b0e;
   }
   #side {
     top: 56px;
@@ -202,14 +202,23 @@
     flex: none;
     border-radius: 8px;
     overflow: hidden;
-    background: #1c1c22;
+    background: #000;
     display: grid;
     place-items: center;
   }
   .call-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   .call-tile:not(.live) video { display: none; }
-  .call-tile .initial { font-size: calc(var(--tile-h) * .3); font-weight: 700; color: #fff9; }
-  .call-tile.live .initial { display: none; }
+  /* camera off: black with their username in the middle */
+  .call-tile .name {
+    max-width: 90%;
+    font-size: clamp(12px, calc(var(--tile-h) * .14), 22px);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .call-tile.live .name { display: none; }
+  .call-tile:not(.live) .who { display: none; }
   .call-tile .who {
     position: absolute;
     left: 6px;
