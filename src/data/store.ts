@@ -128,7 +128,16 @@ export function imageSrc(image?: string) {
   return image;
 }
 
+/**
+ * Tiles open only their videochat for now: no tile has a room behind it, so
+ * the Room toggle shows greyed out and there is no Room view. The rooms are
+ * still listed above (GESTR_ROOMS) and in each tile; set this to true, or
+ * give a new room its own line, to bring the Room side back.
+ */
+const ROOMS_ATTACHED = false;
+
 export function roomUrlOf(channel: Channel) {
+  if (!ROOMS_ATTACHED) return "";
   const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
   if (room) return ON_THIS_PC() ? room.local : room.live;
   return channel.url ?? "";

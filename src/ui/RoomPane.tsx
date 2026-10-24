@@ -77,7 +77,7 @@ export function RoomPane(props: {
   // rules; a refusing site gets an "Open it in its own tab" button instead.
   // Our own 3D rooms (built-in tiles) always fit.
   const [embeddable] = createResource(
-    () => (props.channel.roomKey ? undefined : props.channel.url),
+    () => (props.channel.roomKey ? undefined : url() || undefined),
     async (link) => {
       try {
         const res = await fetch(`/api/frame-check?url=${encodeURIComponent(link)}`);
@@ -89,8 +89,9 @@ export function RoomPane(props: {
   );
   const blocked = () => embeddable() === false;
   // the 3D room's live camera, as the Room view in this videochat
+  // (none while the tile has no room attached)
   const roomView = () => {
-    const cam = roomCamOf(props.channel);
+    const cam = url() ? roomCamOf(props.channel) : null;
     return cam ? { ...cam, username: props.username } : undefined;
   };
 
