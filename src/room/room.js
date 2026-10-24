@@ -99,7 +99,9 @@ function cropTransform(cx, cy, zoom) {
 // You start somewhere near the back wall, facing the front wall.
 const me = { x: Math.round((Math.random() - 0.5) * 300), z: D / 4, yaw: 0, pitch: 0 };
 const mine = makeAvatar(true);
-let third = true; // you see your own plate walking around
+// Your sight starts at your webcam plate (first person). V steps out behind
+// it (third person) to see yourself.
+let third = false;
 
 // ---- FOV: horizontal degrees, the same at any window size
 let fov = Number(recall("room_fov")) || 90;
@@ -388,7 +390,7 @@ function setShape(hex) {
 function setThird(on) {
   third = on;
   povBtn.textContent = on ? "First person (V)" : "Third person (V)";
-  remember("room_pov", on ? "third" : "first");
+  remember("room_view", on ? "third" : "first");
   draw();
 }
 camBtn.addEventListener("click", () => setCamera(!stream));
@@ -580,7 +582,7 @@ function peopleStep() {
 // ---- start
 setFov(fov);
 setShape(recall("room_shape") === "hexagon");
-setThird(recall("room_pov") !== "first");
+setThird(recall("room_view") === "third");
 // You are here to be seen: the webcam starts on unless you turned it off.
 void setCamera(recall("room_cam") !== "0");
 
