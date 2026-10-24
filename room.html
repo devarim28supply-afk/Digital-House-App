@@ -58,7 +58,8 @@
       linear-gradient(to bottom, var(--trace) 0 1px, #23ff9a30 1px 4px, transparent 10px), /* ceiling seam */
       #000;
     box-shadow: inset 0 0 60px #23ff9a14;
-    overflow: hidden; /* the rain stays on its wall */
+    /* no overflow clipping: a clipped wall is drawn as one flat 600 x 300
+       picture, which blurs and blacks out what stands in front of it */
   }
   .side { width: var(--d); margin-left: calc(var(--d) / -2); }
   .front { transform: translateZ(calc(var(--d) / -2)); }
@@ -90,10 +91,11 @@
 
   /*
    * Matrix rain: each wall gets columns of characters (made once by
-   * room.js). A column slides from above the wall to below it, over and
-   * over, at its own speed: transform-only animation, so the browser moves
-   * it without repainting. The lowest character is the bright white head,
-   * the rest fade up into the dark.
+   * room.js). A column falls from the top of the wall to the bottom (it
+   * never leaves the wall), fading in and out, over and over at its own
+   * speed: transform and opacity only, so the browser moves it without
+   * repainting. The lowest character is the bright white head, the rest
+   * fade up into the dark.
    */
   .drop {
     position: absolute;
@@ -110,19 +112,21 @@
     will-change: transform;
   }
   @keyframes fall {
-    from { transform: translateY(-100%); }
-    to { transform: translateY(var(--h)); }
+    0% { transform: translateY(0); opacity: 0; }
+    15% { opacity: var(--o, 1); }
+    80% { opacity: var(--o, 1); }
+    100% { transform: translateY(var(--travel, 0px)); opacity: 0; }
   }
   @media (prefers-reduced-motion: reduce) { .drop { animation-play-state: paused; } }
 
-  /* a monitor on the wall (3.2 x 1.8 m), over the rain: shows a shared screen */
+  /* a monitor (4.5 x 2.5 m) just off the wall, centred on it: a shared screen */
   .monitor {
     position: absolute;
-    left: 76px;
-    top: 22px;
+    left: 50%;
+    top: 50%;
     width: 448px;
     height: 252px;
-    z-index: 1;
+    margin: -126px 0 0 -224px;
     box-sizing: border-box;
     border: 5px solid #0c0f0d;
     outline: 1px solid #23ff9a66;

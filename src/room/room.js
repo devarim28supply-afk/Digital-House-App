@@ -61,13 +61,14 @@ function makeRain() {
       if (Math.random() < 0.25) continue; // a few gaps, like the film
       const drop = document.createElement("div");
       drop.className = "drop";
-      const length = 8 + Math.floor(Math.random() * 22);
+      const length = 6 + Math.floor(Math.random() * 15); // at most 240 px: fits the 300 px wall
       drop.textContent = Array.from({ length }, pick).join("\n");
       const t = 4 + Math.random() * 8; // seconds to fall the wall
       drop.style.left = `${i * COLUMN}px`;
       drop.style.setProperty("--t", `${t.toFixed(2)}s`);
       drop.style.setProperty("--delay", `${(-Math.random() * t).toFixed(2)}s`); // already mid-fall
-      drop.style.opacity = (0.45 + Math.random() * 0.55).toFixed(2);
+      drop.style.setProperty("--travel", `${H - length * 12}px`); // its bottom reaches the floor
+      drop.style.setProperty("--o", (0.45 + Math.random() * 0.55).toFixed(2));
       wall.append(drop);
     }
   }
@@ -75,12 +76,15 @@ function makeRain() {
 makeRain();
 
 // ---- two monitors on opposite walls: share your screen onto one
-// Screen 1 hangs on the front wall, Screen 2 on the back wall. Sharing
+// Screen 1 hangs on the front wall, Screen 2 on the back wall. They stand
+// on their own just off the wall, never inside it: a wall is drawn as one
+// flat 600 x 300 picture (for the rain), which blurred a 1080p share into
+// blocks. On its own the video keeps its full resolution. Sharing
 // publishes your screen to the room as a track named "monitor-1" or
 // "monitor-2"; everyone shows it on that monitor. One person per monitor.
 const SCREENS = [
-  { id: 1, wall: ".wall.front" },
-  { id: 2, wall: ".wall.back" },
+  { id: 1, place: `translate3d(0, 0, ${-D / 2 + 2}px)` },
+  { id: 2, place: `translate3d(0, 0, ${D / 2 - 2}px) rotateY(180deg)` },
 ].map((s) => {
   const el = document.createElement("div");
   el.className = "monitor";
@@ -94,7 +98,8 @@ const SCREENS = [
   const label = document.createElement("div");
   label.className = "label";
   el.append(video, idle, label);
-  document.querySelector(s.wall).append(el);
+  el.style.transform = s.place;
+  world.append(el);
   return { ...s, el, video, label, owner: null, mine: null };
 });
 const CAN_SHARE = Boolean(navigator.mediaDevices?.getDisplayMedia);
