@@ -185,7 +185,7 @@ async function stopShare(screen) {
 // ---- big view: F opens the screen you face full size, F or Esc closes
 const big = document.getElementById("bigscreen");
 const bigVideo = big.querySelector("video");
-const bigLabel = big.querySelector(".label");
+const bigCams = document.getElementById("bigcams");
 function facedScreen() {
   const on = SCREENS.filter((s) => s.el.classList.contains("on"));
   if (on.length < 2) return on[0];
@@ -195,13 +195,58 @@ function facedScreen() {
 function openBig(screen) {
   if (!screen) return;
   bigVideo.srcObject = screen.video.srcObject;
-  bigLabel.textContent = screen.label.textContent;
   big.hidden = false;
+  document.body.classList.add("big");
   if (document.pointerLockElement) document.exitPointerLock();
+  syncBigCams();
+  bigTimer = setInterval(syncBigCams, 1000); // people come, go, turn cameras on and off
 }
 function closeBig() {
   big.hidden = true;
+  document.body.classList.remove("big");
   bigVideo.srcObject = null;
+  clearInterval(bigTimer);
+  for (const tile of bigTiles.values()) tile.video.srcObject = null;
+  bigTiles.clear();
+  bigCams.replaceChildren();
+}
+
+// Everyone in the room under the big screen (you first): their whole
+// webcam picture, or black with their username while it is off.
+let bigTimer = 0;
+const bigTiles = new Map(); // "me" or identity -> { el, video, center, who }
+function syncBigCams() {
+  const everyone = [
+    ["me", mine.video.srcObject, Boolean(stream), mine.name || "you"],
+    ...[...people.entries()].map(([id, p]) => [id, p.video.srcObject, p.el.classList.contains("live"), p.name || "someone"]),
+  ];
+  const keep = new Set(everyone.map(([id]) => id));
+  for (const [id, tile] of bigTiles) {
+    if (!keep.has(id)) { tile.video.srcObject = null; tile.el.remove(); bigTiles.delete(id); }
+  }
+  for (const [id, src, live, name] of everyone) {
+    let tile = bigTiles.get(id);
+    if (!tile) {
+      const el = document.createElement("div");
+      el.className = "call-tile";
+      const video = document.createElement("video");
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      const center = document.createElement("div");
+      center.className = "name";
+      const who = document.createElement("div");
+      who.className = "who";
+      el.append(video, center, who);
+      tile = { el, video, center, who };
+      bigTiles.set(id, tile);
+    }
+    if (tile.video.srcObject !== src) tile.video.srcObject = src ?? null;
+    tile.el.classList.toggle("live", Boolean(live && src));
+    tile.center.textContent = name;
+    tile.who.textContent = name;
+    bigCams.append(tile.el); // keeps the order: you, then everyone else
+  }
 }
 big.addEventListener("click", closeBig);
 addEventListener("keydown", (e) => {

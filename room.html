@@ -158,26 +158,31 @@
   }
   .monitor .label:empty { display: none; }
 
-  /* F: the screen you face, full size */
+  /*
+   * F: the screen you face, full size, and nothing else of the room: only
+   * the shared screen, with everyone's webcam in a row under it.
+   */
   #bigscreen {
     position: fixed;
     inset: 0;
     z-index: 10;
-    background: #000e;
-    display: grid;
-    place-items: center;
+    background: #000;
+    display: flex;
+    flex-direction: column;
     cursor: zoom-out;
   }
   #bigscreen[hidden] { display: none; }
-  #bigscreen video { width: 100%; height: 100%; object-fit: contain; }
-  #bigscreen .label {
-    position: absolute;
-    left: 12px;
-    bottom: 12px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: #000b;
+  #bigscreen > video { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+  body.big #bar, body.big #fov, body.big #hint, body.big #status,
+  body.big #strip, body.big #side { display: none; }
+  #bigcams {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
   }
+  #bigcams:empty { display: none; }
+  #bigcams .call-tile { height: clamp(70px, 16vh, 160px); }
 
   /*
    * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
@@ -420,7 +425,7 @@
 <label id="fov">FOV <input type="range" min="60" max="120" step="1" value="90"> <output>90</output>°</label>
 <div id="strip"></div>
 <div id="side"></div>
-<div id="bigscreen" hidden><video autoplay muted playsinline></video><div class="label"></div></div>
+<div id="bigscreen" hidden><video autoplay muted playsinline></video><div id="bigcams"></div></div>
 <div id="status"></div>
 <div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · 1 / 2 share your screen · F view a screen big · [ and ] FOV · on a phone, drag to look</div>
 <script type="module" src="/src/room/room.js"></script>
