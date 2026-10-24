@@ -50,6 +50,30 @@ function setStatus(text, problem = false, link) {
   }
 }
 
+// ---- Matrix rain on every wall, made once; CSS animates it (room.html .drop)
+const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789Z:.=*+-<>¦";
+const COLUMN = 12; // px, one character wide
+function makeRain() {
+  const pick = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+  for (const wall of document.querySelectorAll(".wall")) {
+    const columns = Math.floor(wall.offsetWidth / COLUMN);
+    for (let i = 0; i < columns; i++) {
+      if (Math.random() < 0.25) continue; // a few gaps, like the film
+      const drop = document.createElement("div");
+      drop.className = "drop";
+      const length = 8 + Math.floor(Math.random() * 22);
+      drop.textContent = Array.from({ length }, pick).join("\n");
+      const t = 4 + Math.random() * 8; // seconds to fall the wall
+      drop.style.left = `${i * COLUMN}px`;
+      drop.style.setProperty("--t", `${t.toFixed(2)}s`);
+      drop.style.setProperty("--delay", `${(-Math.random() * t).toFixed(2)}s`); // already mid-fall
+      drop.style.opacity = (0.45 + Math.random() * 0.55).toFixed(2);
+      wall.append(drop);
+    }
+  }
+}
+makeRain();
+
 // ---- a person on a plate (you, or someone else)
 function makeAvatar(mine) {
   const el = document.createElement("div");
@@ -535,14 +559,6 @@ function setName(person, name) {
   person.name = name;
   for (const tag of person.tags) tag.textContent = name;
   person.backName.textContent = name;
-  showWho();
-}
-
-// The terminal on the front wall: `who` lists everyone in the room.
-const whoList = document.getElementById("who");
-function showWho() {
-  const names = [mine.name || "you", ...[...people.values()].map((p) => p.name || "someone")];
-  whoList.textContent = names.map((n) => `  ${n}`).join("\n");
 }
 function removePerson(identity) {
   const person = people.get(identity);
@@ -552,7 +568,6 @@ function removePerson(identity) {
   updateCount();
 }
 function updateCount() {
-  showWho();
   if (statusBox.classList.contains("problem") || !room) return;
   const n = people.size;
   setStatus(n ? `${n + 1} people in the room` : "Only you here for now");
