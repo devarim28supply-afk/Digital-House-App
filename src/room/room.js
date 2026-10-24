@@ -108,6 +108,7 @@ function showOnScreen(screen, track, p) {
   updateShareButtons();
 }
 function clearScreen(screen) {
+  if (!big.hidden && bigVideo.srcObject === screen.video.srcObject) closeBig();
   screen.owner = null;
   screen.video.srcObject = null;
   screen.el.classList.remove("on");
@@ -130,7 +131,11 @@ async function toggleShare(screen) {
   for (const s of SCREENS) if (s.mine) await stopShare(s);
   let media;
   try {
-    media = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+    // 1080p: text stays readable on the wall and in the big view (F)
+    media = await navigator.mediaDevices.getDisplayMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 15, max: 30 } },
+      audio: false,
+    });
   } catch {
     return; // picker closed
   }
@@ -149,7 +154,9 @@ async function toggleShare(screen) {
       name: `monitor-${screen.id}`,
       source: Track.Source.ScreenShare,
       simulcast: false,
-      videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 15 },
+      videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 15 },
+      // short on upload: keep the 1080p sharpness, drop frames instead
+      degradationPreference: "maintain-resolution",
     });
   } catch (err) {
     console.warn("[room] could not share the screen:", err);
@@ -164,6 +171,33 @@ async function stopShare(screen) {
   local.mediaStreamTrack.stop();
   clearScreen(screen);
 }
+
+// ---- big view: F opens the screen you face full size, F or Esc closes
+const big = document.getElementById("bigscreen");
+const bigVideo = big.querySelector("video");
+const bigLabel = big.querySelector(".label");
+function facedScreen() {
+  const on = SCREENS.filter((s) => s.el.classList.contains("on"));
+  if (on.length < 2) return on[0];
+  // Screen 1 is ahead (-z) when cos(yaw) > 0, Screen 2 behind
+  return Math.cos((me.yaw * Math.PI) / 180) >= 0 ? on[0] : on[1];
+}
+function openBig(screen) {
+  if (!screen) return;
+  bigVideo.srcObject = screen.video.srcObject;
+  bigLabel.textContent = screen.label.textContent;
+  big.hidden = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function closeBig() {
+  big.hidden = true;
+  bigVideo.srcObject = null;
+}
+big.addEventListener("click", closeBig);
+addEventListener("keydown", (e) => {
+  if (e.code === "KeyF" && !e.repeat) big.hidden ? openBig(facedScreen()) : closeBig();
+  if (e.code === "Escape" && !big.hidden) closeBig();
+});
 
 const shareBtns = SCREENS.map((s) => {
   const b = document.createElement("button");
