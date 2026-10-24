@@ -415,12 +415,14 @@ const serverId = params.get("s") ?? "";
 const channelId = params.get("c") ?? "";
 let room = null;
 
-async function getPass(user) {
+/** A LiveKit pass: for this room, or (call) to watch the tile's videochat. */
+async function getPass(user, call = false) {
   const idToken = await user.getIdToken();
   const res = await fetch("/api/dh-token", {
     method: "POST",
     headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ serverId, channelId, room: true }),
+    // wall: the hidden, watch-only pass the 3D rooms use to show the call
+    body: JSON.stringify(call ? { serverId, channelId, wall: true } : { serverId, channelId, room: true }),
   });
   const pass = await res.json().catch(() => ({}));
   if (!res.ok || !pass.url || !pass.token) throw new Error(pass.error || "Could not join the room.");
@@ -579,6 +581,76 @@ function peopleStep() {
   else peopleGliding = false;
 }
 
+// ---- the tile's videochat, as small screens under the room
+// Watched with a hidden, watch-only pass (nobody sees it in the call). Shows
+// everyone in the call: their webcam, or their initial while it is off.
+const strip = document.getElementById("strip");
+const side = document.getElementById("side");
+const ROW = 4; // small screens under the room; the rest go in the column
+const callers = new Map(); // identity -> { el, video, who, initial }
+
+async function watchCall(pass) {
+  const call = new Room({ adaptiveStream: false, dynacast: false });
+  const refresh = (p) => {
+    const tile = callers.get(p.identity);
+    if (!tile) return;
+    const cam = p.getTrackPublication(Track.Source.Camera);
+    tile.el.classList.toggle("live", Boolean(cam?.track && !cam.isMuted));
+  };
+  call
+    .on(RoomEvent.ParticipantConnected, (p) => addCaller(p))
+    .on(RoomEvent.ParticipantDisconnected, (p) => removeCaller(p.identity))
+    .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+      if (pub.source === Track.Source.Camera) track.attach(addCaller(p).video);
+      refresh(p);
+    })
+    .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => { track.detach(); refresh(p); })
+    .on(RoomEvent.TrackMuted, (_pub, p) => refresh(p))
+    .on(RoomEvent.TrackUnmuted, (_pub, p) => refresh(p))
+    .on(RoomEvent.ParticipantNameChanged, (_name, p) => addCaller(p));
+  await call.connect(pass.url, pass.token);
+  for (const p of call.remoteParticipants.values()) { addCaller(p); refresh(p); }
+}
+
+function addCaller(p) {
+  let tile = callers.get(p.identity);
+  if (tile) return tile;
+  const el = document.createElement("div");
+  el.className = "call-tile";
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  const initial = document.createElement("div");
+  initial.className = "initial";
+  const who = document.createElement("div");
+  who.className = "who";
+  el.append(video, initial, who);
+  tile = { el, video, who, initial };
+  callers.set(p.identity, tile);
+  const name = (n) => { who.textContent = n; initial.textContent = (n || "?").trim().charAt(0).toUpperCase(); };
+  name(p.name || "Someone");
+  // a person's identity is their uid; the call's other names are "uid:..."
+  getDoc(doc(db, "profiles", p.identity.split(":")[0]))
+    .then((snap) => { const prof = snap.data(); if (prof) name(prof.callName || prof.name || prof.username || p.name); })
+    .catch(() => {});
+  layoutCall();
+  return tile;
+}
+function removeCaller(identity) {
+  const tile = callers.get(identity);
+  if (!tile) return;
+  tile.video.srcObject = null;
+  tile.el.remove();
+  callers.delete(identity);
+  layoutCall();
+}
+function layoutCall() {
+  const tiles = [...callers.values()];
+  tiles.forEach((t, i) => (i < ROW ? strip : side).append(t.el));
+  document.body.classList.toggle("calling", tiles.length > 0);
+}
+
 // ---- start
 setFov(fov);
 setShape(recall("room_shape") === "hexagon");
@@ -592,6 +664,8 @@ const testPass = import.meta.env.DEV && params.get("token") ? { url: params.get(
 
 if (testPass) {
   join(testPass).catch((err) => setStatus(err?.message || "Could not join the room.", true));
+  // ?calltoken=<pass> watches a test call the same way
+  if (params.get("calltoken")) watchCall({ url: params.get("lk"), token: params.get("calltoken") }).catch((err) => console.warn("[room] call:", err));
 } else if (!serverId || !channelId) {
   setStatus("Open this room from its tile in Darkwood Node.", true, { href: import.meta.env.BASE_URL, text: "Go to Darkwood Node" });
 } else {
@@ -604,5 +678,6 @@ if (testPass) {
     if (started) return;
     started = true;
     getPass(user).then(join).catch((err) => setStatus(err?.message || "Could not join the room.", true));
+    getPass(user, true).then(watchCall).catch((err) => console.warn("[room] could not show the videochat:", err));
   });
 }
