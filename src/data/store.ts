@@ -139,8 +139,23 @@ const DARKWOOD_ROOM_TILES = new Set(["gestr-living"]);
 
 export const hasDarkwoodRoom = (channel: Channel) => DARKWOOD_ROOM_TILES.has(channel.roomKey ?? "");
 
+/**
+ * Link tiles whose Room side is on: their link opens there. Other link tiles
+ * (Don't Lie, White Torture) stay videochat only, Room greyed out.
+ */
+const ROOM_LINK_SITES = new Set(["viperoneone.com"]); // VIPER 11 theater
+
+function linkSite(url?: string) {
+  try {
+    return new URL(url ?? "").hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 /** The page a tile's Room side shows, or "" when it has none. */
 export function roomUrlOf(channel: Channel, serverId: string) {
+  if (!channel.roomKey && ROOM_LINK_SITES.has(linkSite(channel.url))) return channel.url!;
   if (!hasDarkwoodRoom(channel)) return "";
   const q = new URLSearchParams({ s: serverId, c: channel.id });
   return `${import.meta.env.BASE_URL}room.html?${q}`;
