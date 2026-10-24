@@ -47,6 +47,7 @@ import "./app.css";
 const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
 const RIGHT_MODE_KEY = "dh_right_mode";
+const LEFT_MODE_KEY = "dh_left_mode";
 // a tile shows up to this many faces, then "+N"
 const TILE_FACES = 5;
 // other names a tile's room goes by in people's "where"
@@ -257,6 +258,28 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   // A file dragged in from a folder slides it in too, so it can be dropped on the chat.
   const [fileDrag, setFileDrag] = createSignal(false);
   const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card()) || fileDrag();
+
+  // The left side (servers + room tiles) slides out of the way while you are
+  // in your videochat or room, to give it the room (Kaalob). The cursor at
+  // the left edge brings it in; it stays 5 s after the mouse leaves; the pin
+  // keeps it always showing. Outside a call it stays as it is.
+  const [leftPinned, setLeftPinned] = createSignal(recall(LEFT_MODE_KEY) === "pinned");
+  function pinLeft(on: boolean) {
+    setLeftPinned(on);
+    remember(LEFT_MODE_KEY, on ? "pinned" : "slide");
+  }
+  const [leftHover, setLeftHover] = createSignal(false);
+  let leftTimer = 0;
+  function enterLeft() {
+    window.clearTimeout(leftTimer);
+    setLeftHover(true);
+  }
+  function leaveLeft() {
+    window.clearTimeout(leftTimer);
+    leftTimer = window.setTimeout(() => setLeftHover(false), RIGHT_LINGER_MS);
+  }
+  onCleanup(() => window.clearTimeout(leftTimer));
+  const leftSlides = () => inThisCall() && !leftPinned();
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.
   const [rightPinned, setRightPinned] = createSignal(recall(RIGHT_MODE_KEY) === "pinned");
@@ -337,10 +360,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   return (
     <div
       class="shell"
-      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned() }}
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "left-slide": leftSlides(), "left-open": leftSlides() && leftHover() }}
     >
       {/* ---- servers ---- */}
-      <nav class="rail" aria-label="Servers">
+      {/* in a call: the strip at the left edge brings the left side in */}
+      <Show when={leftSlides()}>
+        <div class="left-edge" aria-hidden="true" onMouseEnter={enterLeft} />
+      </Show>
+      <nav class="rail" aria-label="Servers" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
         <For each={servers()}>
           {(s) => (
             <button
@@ -362,13 +389,17 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       </nav>
 
       {/* ---- channels ---- */}
-      <aside class="side">
+      <aside class="side" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
         {/* the banner on its own, the name in the row under it */}
         <Show when={server()?.banner}>
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
         </Show>
         <header class="side-head">
           <span class="side-title">{server()?.name ?? "Darkwood Node"}</span>
+          {/* in a call: keep the left side showing, or let it slide away */}
+          <Show when={inThisCall()}>
+            <PinButton pinned={leftPinned()} onPin={pinLeft} />
+          </Show>
           <Show when={runsServer()}>
             <button
               class="icon-btn"
@@ -553,6 +584,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
                 profiles={profiles()}
                 canModerate={runsServer()}
               emojis={emojis()}
+              members={server()?.memberUids}
               />
             )}
           </Match>
@@ -656,6 +688,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               profiles={profiles()}
               canModerate={runsServer()}
               emojis={emojis()}
+              members={server()?.memberUids}
               compact
               onNewMessage={pingRight}
               catchPageDrops

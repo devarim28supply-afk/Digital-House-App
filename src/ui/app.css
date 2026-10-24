@@ -2566,3 +2566,118 @@ img.live-tile-still {
     opacity: 1;
   }
 }
+
+/* ---- the left side slides away while you are in a videochat or room ------- */
+/* Desktop only (phones already slide it in from the ☰ button). The strip at
+   the left edge brings it in; it stays 5 s after the mouse leaves (Shell). */
+@media (min-width: 761px) {
+  .shell.left-slide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .left-slide .rail,
+  .left-slide .side {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 26;
+    transform: translateX(calc(-100% - 80px));
+    transition: transform 240ms ease;
+  }
+  .left-slide .rail {
+    left: 0;
+    width: 72px;
+  }
+  .left-slide .side {
+    left: 72px;
+    width: 248px;
+    box-shadow: 20px 0 60px rgba(0, 0, 0, 0.6);
+  }
+  .left-open .rail,
+  .left-open .side {
+    transform: none;
+  }
+  .left-edge {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 24;
+    width: 10px;
+  }
+}
+
+@media (min-width: 1101px) {
+  .shell.left-slide.right-pinned {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+  .shell.left-slide.right-pinned.with-side-chat {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+
+.side-head .pin-btn {
+  margin-left: auto;
+}
+
+/* ---- @mentions ---------------------------------------------------------------- */
+
+.mention {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(88, 101, 242, 0.25);
+  color: #c9cdfb;
+  font-weight: 600;
+}
+
+.mention.me {
+  background: rgba(250, 204, 21, 0.25);
+  color: #fde68a;
+}
+
+/* a message that mentions you (or @everyone) lights up, like Discord */
+.msg.mentions-me {
+  border-left: 3px solid #facc15;
+  background: rgba(250, 204, 21, 0.07);
+}
+
+.msg.mentions-me:hover {
+  background: rgba(250, 204, 21, 0.11);
+}
+
+/* typing @: the people to pick from, above the message box */
+.mention-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 12px 6px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #0b0b0b;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6);
+}
+
+.mention-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mention-list button.picked,
+.mention-list button:hover {
+  background: var(--panel-2);
+}
+
+.mention-list small {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}

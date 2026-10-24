@@ -88,7 +88,35 @@ function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
  * Plain text with links made clickable and :name: shown as the server's
  * emoji. Nothing is parsed as HTML.
  */
-function Text(props: { text: string; emojis: Map<string, Emoji> }) {
+const MENTION = /(@[A-Za-z0-9_.-]{2,32})/g;
+
+/** One run of plain text: server emojis as pictures, @mentions highlighted. */
+function Bits(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<string>; me: string }) {
+  return (
+    <For each={props.text.split(EMOJI_TOKEN)}>
+      {(bit) => {
+        const emoji = /^:[a-z0-9_]{2,32}:$/.test(bit) ? props.emojis.get(bit.slice(1, -1)) : undefined;
+        if (emoji) return <img class="emoji" src={emoji.url} alt={bit} title={bit} />;
+        return (
+          <For each={bit.split(MENTION)}>
+            {(word) => {
+              const name = word.startsWith("@") ? word.slice(1).toLowerCase() : "";
+              return name && (name === "everyone" || props.usernames.has(name)) ? (
+                <span class="mention" classList={{ me: name === "everyone" || name === props.me }}>
+                  {word}
+                </span>
+              ) : (
+                word
+              );
+            }}
+          </For>
+        );
+      }}
+    </For>
+  );
+}
+
+function Text(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<string>; me: string }) {
   const parts = () => props.text.split(URL_RE);
   return (
     <For each={parts()}>
@@ -98,12 +126,7 @@ function Text(props: { text: string; emojis: Map<string, Emoji> }) {
             {part}
           </a>
         ) : (
-          <For each={part.split(EMOJI_TOKEN)}>
-            {(bit) => {
-              const emoji = /^:[a-z0-9_]{2,32}:$/.test(bit) ? props.emojis.get(bit.slice(1, -1)) : undefined;
-              return emoji ? <img class="emoji" src={emoji.url} alt={bit} title={bit} /> : bit;
-            }}
-          </For>
+          <Bits text={part} emojis={props.emojis} usernames={props.usernames} me={props.me} />
         )
       }
     </For>
@@ -131,6 +154,8 @@ export function Chat(props: {
   onDragging?: (on: boolean) => void;
   /** the server's own emojis (:name:) */
   emojis?: Emoji[];
+  /** who is in this server: the people @ can mention */
+  members?: string[];
 }) {
   const emojiMap = createMemo(
     () => new Map((props.emojis ?? []).filter((e) => e.kind !== "sticker").map((e) => [e.name, e])),
@@ -272,7 +297,74 @@ export function Chat(props: {
     });
   }
 
+  // ---- @mentions -----------------------------------------------------------
+  // my own username (lowercase): messages naming me (or @everyone) light up
+  const me = () => (props.profiles.get(props.uid)?.username ?? "").toLowerCase();
+  const usernames = createMemo(
+    () => new Set([...props.profiles.values()].map((p) => (p.username ?? "").toLowerCase()).filter(Boolean)),
+  );
+  const mentionsMe = (m: Message) => {
+    if (m.authorUid === props.uid) return false;
+    // every @word in the message, whole words only
+    const named: string[] = m.text.toLowerCase().match(/@[a-z0-9_.-]+/g) ?? [];
+    return named.includes("@everyone") || (me() !== "" && named.includes(`@${me()}`));
+  };
+  // typing "@na…": the people to pick from
+  const [mentionQuery, setMentionQuery] = createSignal<string | undefined>();
+  const [mentionPick, setMentionPick] = createSignal(0);
+  const mentionList = createMemo(() => {
+    const q = mentionQuery();
+    if (q === undefined) return [];
+    const people = (props.members ?? [...props.profiles.keys()])
+      .filter((uid) => uid !== props.uid)
+      .map((uid) => props.profiles.get(uid))
+      .filter((p): p is Profile => Boolean(p?.username))
+      .map((p) => ({ username: p.username, label: p.name || p.username, profile: p as Profile | undefined }));
+    const all = [{ username: "everyone", label: "Everyone here", profile: undefined }, ...people];
+    const query = q.toLowerCase();
+    return all.filter((x) => x.username.toLowerCase().startsWith(query) || x.label.toLowerCase().includes(query)).slice(0, 8);
+  });
+  function findMention() {
+    const el = input;
+    if (!el) return setMentionQuery(undefined);
+    const before = el.value.slice(0, el.selectionStart ?? el.value.length);
+    const found = /(?:^|\s)@([A-Za-z0-9_.-]{0,32})$/.exec(before);
+    setMentionQuery(found ? found[1] : undefined);
+    setMentionPick(0);
+  }
+  function insertMention(username: string) {
+    const el = input;
+    if (!el) return;
+    const at = el.selectionStart ?? el.value.length;
+    const before = el.value.slice(0, at).replace(/@([A-Za-z0-9_.-]{0,32})$/, `@${username} `);
+    const next = before + el.value.slice(at);
+    setDraft(next);
+    setMentionQuery(undefined);
+    queueMicrotask(() => {
+      el.focus();
+      el.setSelectionRange(before.length, before.length);
+    });
+  }
+
   function onKey(e: KeyboardEvent) {
+    // the @ list is open: arrows pick, Enter or Tab puts it in, Esc closes
+    if (mentionList().length) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const n = mentionList().length;
+        setMentionPick((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+        e.preventDefault();
+        insertMention(mentionList()[mentionPick()].username);
+        return;
+      }
+      if (e.key === "Escape") {
+        setMentionQuery(undefined);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
       void send();
@@ -360,7 +452,7 @@ export function Chat(props: {
         </Show>
         <For each={messages()}>
           {(m, i) => (
-            <article class="msg" classList={{ grouped: !startsGroup(i()) }}>
+            <article class="msg" classList={{ grouped: !startsGroup(i()), "mentions-me": mentionsMe(m) }}>
               <Show when={startsGroup(i())}>
                 <button
                   type="button"
@@ -392,7 +484,7 @@ export function Chat(props: {
                     <>
                       <Show when={m.text}>
                         <p class="msg-text" classList={{ jumbo: jumbo(m.text) }}>
-                          <Text text={m.text} emojis={emojiMap()} />
+                          <Text text={m.text} emojis={emojiMap()} usernames={usernames()} me={me()} />
                           <Show when={m.editedAt}>
                             <small class="edited"> (edited)</small>
                           </Show>
@@ -520,6 +612,30 @@ export function Chat(props: {
           onClose={() => setPicker(false)}
         />
       </Show>
+      <Show when={mentionList().length}>
+        <div class="mention-list" role="listbox" aria-label="Mention someone">
+          <For each={mentionList()}>
+            {(x, i) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={i() === mentionPick()}
+                classList={{ picked: i() === mentionPick() }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(x.username);
+                }}
+              >
+                <span class="avatar small" style={faceStyle(x.profile)}>
+                  {x.profile ? faceText(x.profile, x.label) : "@"}
+                </span>
+                <b>{x.label}</b>
+                <small>@{x.username}</small>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={reactingTo()}>
         {(mid) => (
           <EmojiPicker
@@ -576,7 +692,12 @@ export function Chat(props: {
           value={draft()}
           placeholder={`Message #${props.channel.name}`}
           aria-label={`Message #${props.channel.name}`}
-          onInput={(e) => setDraft(e.currentTarget.value)}
+          onInput={(e) => {
+            setDraft(e.currentTarget.value);
+            findMention();
+          }}
+          onClick={findMention}
+          onBlur={() => window.setTimeout(() => setMentionQuery(undefined), 150)}
           onKeyDown={onKey}
           onPaste={(e) => {
             const files = e.clipboardData?.files;
