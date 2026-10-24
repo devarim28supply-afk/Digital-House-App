@@ -88,6 +88,10 @@ export function RoomPane(props: {
     },
   );
   const blocked = () => embeddable() === false;
+  // Last time this tile showed its room, but it has none now: the videochat.
+  createEffect(() => {
+    if (pane() === "room" && !url()) setPane("video");
+  });
   // the 3D room's live camera, as the Room view in this videochat
   // (none while the tile has no room attached)
   const roomView = () => {
