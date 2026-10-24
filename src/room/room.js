@@ -138,7 +138,7 @@ async function toggleShare(screen) {
   try {
     // 1080p: text stays readable on the wall and in the big view (F)
     media = await navigator.mediaDevices.getDisplayMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 15, max: 30 } },
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 10, max: 15 } },
       audio: false,
     });
   } catch {
@@ -159,7 +159,12 @@ async function toggleShare(screen) {
       name: `monitor-${screen.id}`,
       source: Track.Source.ScreenShare,
       simulcast: false,
-      videoEncoding: { maxBitrate: 2_500_000, maxFramerate: 15 },
+      // H.264: the graphics card encodes it (a game keeps the CPU busy).
+      // A home upload is ~2 Mbps for everything you send, so the share gets
+      // 1.5 Mbps at 10 frames a second: about twice the detail per frame
+      // of 15 fps, which is what keeps text readable.
+      videoCodec: "h264",
+      videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 10 },
       // short on upload: keep the 1080p sharpness, drop frames instead
       degradationPreference: "maintain-resolution",
     });
