@@ -316,7 +316,14 @@ export function VoiceRoom(props: {
       // The wall in a 3D room (viewOnly) is a page turned in 3D space: LiveKit's
       // "is this video on screen?" check misjudges it and paused the wall's
       // videos (black). The wall gets every video as it is; tiles here keep it.
-      const next = new Room({ adaptiveStream: !props.viewOnly, dynacast: true });
+      // H.264 for everything we send: Chrome hands it to the graphics card's own
+      // video encoder (NVENC), so a game holding the GPU's 3D engine near 100%
+      // no longer starves the webcam and the stream (Kaalob's slow webcam).
+      const next = new Room({
+        adaptiveStream: !props.viewOnly,
+        dynacast: true,
+        publishDefaults: { videoCodec: "h264" },
+      });
       next
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
           if (track.kind === Track.Kind.Audio) audioHost.appendChild(track.attach());
