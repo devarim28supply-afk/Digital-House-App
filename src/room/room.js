@@ -80,10 +80,11 @@ function makeAvatar(mine) {
 
 /** Where a plate stands and faces, and the face crop inside it. */
 function placeAvatar(av, p) {
-  // Its face turned where its person looks, left/right and up/down.
+  // Worn like a body: it turns left/right with where its person looks, but
+  // stays upright (never tips up or down when they look up or down).
   av.el.style.transform =
     `translate3d(${p.x}px, ${EYE_Y}px, ${p.z}px) rotateY(${180 - p.yaw}deg) ` +
-    `rotateX(${p.pitch}deg) scale(${PLATE_H / 360})`;
+    `scale(${PLATE_H / 360})`;
   av.video.style.transform = cropTransform(p.cx, p.cy, p.zoom);
 }
 
