@@ -56,12 +56,16 @@ const STREAM_AUDIO = "stream-audio";
 // sharpness) and goes first; the stream gives way.
 const CAMERA_PUBLISH: TrackPublishOptions = {
   degradationPreference: "maintain-framerate",
-  videoEncoding: { maxBitrate: 1_700_000, maxFramerate: 30, priority: "high" },
+  // 1 Mbps is plenty for signing; a home upload (Kaalob's measured ~2 Mbps
+  // while streaming) cannot carry much more next to a stream
+  videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
 };
 // stream mode sizes: full 1080p, or a lighter 720p (about half the work and upload)
+// Sized for a home upload: every extra copy (simulcast layer) is sent too, so
+// only one small 360p copy goes with the stream, for the LIVE tile previews.
 const STREAM_QUALITY = {
-  "1080": { width: 1920, height: 1080, maxBitrate: 4_500_000, layers: [VideoPresets.h360, VideoPresets.h720] },
-  "720": { width: 1280, height: 720, maxBitrate: 2_000_000, layers: [VideoPresets.h360] },
+  "1080": { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] },
+  "720": { width: 1280, height: 720, maxBitrate: 1_500_000, layers: [VideoPresets.h360] },
 } as const;
 type StreamQuality = keyof typeof STREAM_QUALITY;
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
