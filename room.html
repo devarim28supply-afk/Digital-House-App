@@ -264,7 +264,7 @@
     left: 50%;
     top: 50%;
     transform-style: preserve-3d;
-    transition: transform .4s ease; /* R: turns smoothly */
+    transition: transform .4s ease; /* R: turns smoothly, sides and all */
   }
   .chair-face {
     position: absolute;
@@ -278,7 +278,7 @@
   }
   .chair-face.top { background: #072414; }
   /* covered sides: the panel and its glowing outline are one picture (room.js) */
-  .chair-face.side { background: no-repeat; border: 0; box-shadow: none; }
+  .chair-face.flank { background: no-repeat; border: 0; box-shadow: none; }
   .chair-face.rear { background: #020a06; }
 
   /*

@@ -121,21 +121,18 @@ function makeChair(x, z, turn = 0) {
     `translate3d(${w / 2}px, ${-tall}px, ${d / 2 - backTop}px) rotateY(180deg) rotateX(${Math.atan2(lean, rise)}rad)`,
     "front",
   );
-  // the two covered sides: the drawn side profile, cut out of a d x tall
-  // panel, filled like the other faces and outlined in glowing green (a
-  // clipped panel loses its border, so the outline is drawn in the picture)
-  // Both sides are the same panel turned the same way (+x), one at each
-  // edge: a panel shows from both sides, and the browser dropped a side
-  // built turned the other way (rotateY(-90deg)).
+  // the two covered sides: the drawn side profile, painted as a picture on
+  // a d x tall panel (filled like the other faces, outlined in glowing
+  // green; outside the shape the picture is see-through). Not cut out with
+  // clip-path: a cut-out panel was left behind when the chair turned, and
+  // some went missing, so the sides are plain panels like the rest.
   const profile = [[d, tall], [d, tall - seat], [backBase, tall - seat], [backTop, 0], [0, 0], [0, tall]];
-  const poly = (pts) => `polygon(${pts.map(([px, py]) => `${px}px ${py}px`).join(", ")})`;
-  const panel = (pts) =>
-    `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${d}' height='${tall}'><polygon points='${pts.join(" ")}' fill='#072414' stroke='#23ff9a' stroke-opacity='.85' stroke-width='2'/></svg>`,
-    )}")`;
+  const panel = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='${d}' height='${tall}'><polygon points='${profile.join(" ")}' fill='#072414' stroke='#23ff9a' stroke-opacity='.85' stroke-width='2'/></svg>`,
+  )}")`;
   for (const sx of [w / 2, -w / 2]) {
-    chairFace(chair, d, tall, `translate3d(${sx}px, ${-tall}px, ${d / 2}px) rotateY(90deg)`, "side", poly(profile));
-    chair.lastChild.style.backgroundImage = panel(profile);
+    chairFace(chair, d, tall, `translate3d(${sx}px, ${-tall}px, ${d / 2}px) rotateY(90deg)`, "flank"); // not "side": that class is the room's side walls
+    chair.lastChild.style.backgroundImage = panel;
   }
   world.append(chair);
   const c = { x, z, el: chair, turn: 0, turnAt: 0, half: 0, halfZ: 0 };
