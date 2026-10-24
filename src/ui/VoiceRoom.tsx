@@ -19,7 +19,7 @@ import { auth } from "../firebase";
 import { faceStyle, faceText } from "./Shell";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
-async function fetchPass(serverId: string, channelId: string, wall = false) {
+export async function fetchPass(serverId: string, channelId: string, wall = false) {
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error("Log in first.");
   const res = await fetch("/api/dh-token", {

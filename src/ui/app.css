@@ -690,6 +690,75 @@
   pointer-events: none;
 }
 
+/* the tile's videochat over the bottom of a linked page (CallStrip):
+   up to 4 small screens in a row, the rest in a column on the right */
+.room-layer {
+  position: relative;
+  --strip-h: clamp(70px, 16vh, 160px);
+}
+.call-strip,
+.call-strip-side {
+  position: absolute;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 2;
+}
+.call-strip {
+  left: 14px;
+  right: 14px;
+  bottom: 22px;
+  justify-content: center;
+}
+.call-strip-side {
+  top: 20px;
+  right: 22px;
+  bottom: calc(var(--strip-h) + 30px);
+  flex-direction: column;
+  overflow: hidden;
+}
+.strip-tile {
+  position: relative;
+  height: var(--strip-h);
+  aspect-ratio: 16 / 9;
+  flex: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.strip-tile video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.strip-tile:not(.live) video,
+.strip-tile.live .name,
+.strip-tile:not(.live) .who {
+  display: none;
+}
+.strip-tile .name {
+  max-width: 90%;
+  font-size: clamp(12px, calc(var(--strip-h) * 0.14), 22px);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strip-tile .who {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #000a;
+  font-size: 12px;
+}
+
 .room-layer iframe {
   flex: 1;
   width: 100%;

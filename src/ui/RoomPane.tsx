@@ -2,6 +2,7 @@ import { Show, createEffect, createResource, createSignal, on, onCleanup } from 
 
 import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
 import { setInRoom, watchRequest } from "../data/where";
+import { CallStrip } from "./CallStrip";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -134,6 +135,11 @@ export function RoomPane(props: {
             title={`${props.channel.name} room`}
             allow="camera; microphone; fullscreen; display-capture; autoplay; xr-spatial-tracking"
           />
+        </Show>
+        {/* the tile's videochat as small screens over the bottom of the page
+            (the Darkwood Room shows its own, inside room.html) */}
+        <Show when={pane() === "room" && url() && !blocked() && !hasDarkwoodRoom(props.channel)}>
+          <CallStrip serverId={props.serverId} channelId={props.channel.id} profiles={props.profiles} />
         </Show>
         <Show when={blocked()}>
           <div class="room-blocked">
