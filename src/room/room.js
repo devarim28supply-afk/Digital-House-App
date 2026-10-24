@@ -13,6 +13,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { LocalVideoTrack, Room, RoomEvent, Track } from "livekit-client";
 
 import { auth, db } from "../firebase";
+import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
 // ---- room size, matching room.html (px, 100 px = 1 m)
 const W = 600, D = 600, H = 300;
@@ -94,13 +95,19 @@ const SCREENS = [
   video.playsInline = true;
   const idle = document.createElement("div");
   idle.className = "idle";
-  idle.textContent = `SCREEN ${s.id}\npress ${s.id} to share your screen`;
+  idle.textContent = `SCREEN ${s.id}\npress ${s.id} to share your screen\nor T for TV`;
   const label = document.createElement("div");
   label.className = "label";
-  el.append(video, idle, label);
+  // TV plays in its own <video> (hls.js feeds it), so a share never fights it
+  const tvVideo = document.createElement("video");
+  tvVideo.className = "tv-video";
+  tvVideo.autoplay = true;
+  tvVideo.muted = true;
+  tvVideo.playsInline = true;
+  el.append(video, tvVideo, idle, label);
   el.style.transform = s.place;
   world.append(el);
-  return { ...s, el, video, label, owner: null, mine: null };
+  return { ...s, el, video, tvVideo, label, owner: null, mine: null, tv: null, tvAt: 0, tvPlayer: null, tvPlaying: null };
 });
 const CAN_SHARE = Boolean(navigator.mediaDevices?.getDisplayMedia);
 const screenOfTrack = (name) => SCREENS.find((s) => name === `monitor-${s.id}`);
@@ -111,14 +118,16 @@ function showOnScreen(screen, track, p) {
   screen.el.classList.add("on");
   screen.label.textContent = `Screen ${screen.id} · ${people.get(p.identity)?.name || p.name || "someone"}`;
   updateShareButtons();
+  refreshTv(screen);
 }
 function clearScreen(screen) {
-  if (!big.hidden && bigVideo.srcObject === screen.video.srcObject) closeBig();
+  if (!big.hidden && bigScreen === screen) closeBig();
   screen.owner = null;
   screen.video.srcObject = null;
   screen.el.classList.remove("on");
   screen.label.textContent = "";
   updateShareButtons();
+  refreshTv(screen); // a TV channel under the share comes back
 }
 function clearScreensOf(identity) {
   for (const s of SCREENS) if (s.owner === identity) clearScreen(s);
@@ -152,6 +161,7 @@ async function toggleShare(screen) {
   screen.video.srcObject = new MediaStream([track]);
   screen.el.classList.add("on");
   screen.label.textContent = `Screen ${screen.id} · you`;
+  refreshTv(screen);
   track.addEventListener("ended", () => stopShare(screen)); // the browser's own Stop sharing
   updateShareButtons();
   try {
@@ -186,15 +196,19 @@ async function stopShare(screen) {
 const big = document.getElementById("bigscreen");
 const bigVideo = big.querySelector("video");
 const bigCams = document.getElementById("bigcams");
+let bigScreen = null;
+let bigPlayer = null; // TV in the big view: its own player, captions on
 function facedScreen() {
-  const on = SCREENS.filter((s) => s.el.classList.contains("on"));
+  const on = SCREENS.filter((s) => s.el.classList.contains("on") || s.el.classList.contains("tv"));
   if (on.length < 2) return on[0];
   // Screen 1 is ahead (-z) when cos(yaw) > 0, Screen 2 behind
   return Math.cos((me.yaw * Math.PI) / 180) >= 0 ? on[0] : on[1];
 }
 function openBig(screen) {
   if (!screen) return;
-  bigVideo.srcObject = screen.video.srcObject;
+  bigScreen = screen;
+  if (screen.owner) bigVideo.srcObject = screen.video.srcObject;
+  else if (screen.tv) bigPlayer = playChannel(bigVideo, screen.tv.url, { muted: !tvSound });
   big.hidden = false;
   document.body.classList.add("big");
   if (document.pointerLockElement) document.exitPointerLock();
@@ -204,6 +218,9 @@ function openBig(screen) {
 function closeBig() {
   big.hidden = true;
   document.body.classList.remove("big");
+  bigPlayer?.destroy();
+  bigPlayer = null;
+  bigScreen = null;
   bigVideo.srcObject = null;
   clearInterval(bigTimer);
   for (const tile of bigTiles.values()) tile.video.srcObject = null;
@@ -263,6 +280,188 @@ big.addEventListener("click", leaveBig);
 addEventListener("keydown", (e) => {
   if (e.code === "KeyF" && !e.repeat) big.hidden ? openBig(facedScreen()) : leaveBig();
   if (e.code === "Escape" && !big.hidden) leaveBig();
+});
+
+// ---- TV on a monitor: same channel for everyone, played by each browser
+// The channel (name + stream address) travels as a small reliable "tv"
+// message; newer wins (at = when it was chosen). Newcomers are told by
+// everyone (ParticipantConnected). A share on the same monitor covers the
+// TV; the channel stops loading meanwhile and comes back after.
+let tvSound = false; // TV sound is yours alone (M), off to start
+function refreshTv(screen) {
+  const want = screen.tv && !screen.owner ? screen.tv.url : null;
+  if (screen.tvPlaying !== want) {
+    screen.tvPlayer?.destroy();
+    screen.tvPlayer = null;
+    screen.tvPlaying = want;
+    screen.el.classList.remove("tv-failed");
+    if (want) {
+      screen.tvPlayer = playChannel(screen.tvVideo, want, {
+        muted: !tvSound,
+        onFail: (why) => {
+          console.warn("[room] TV channel will not play here:", screen.tv?.name, why);
+          screen.el.classList.add("tv-failed");
+          if (!screen.owner && screen.tv) screen.label.textContent = `TV · ${screen.tv.name} · can't play here, pick another (T)`;
+        },
+      });
+    }
+  }
+  screen.el.classList.toggle("tv", Boolean(want));
+  if (!screen.owner && !screen.el.classList.contains("tv-failed")) {
+    screen.label.textContent = screen.tv ? `TV · ${screen.tv.name}` : "";
+  }
+  // the big view follows a channel change on the screen it shows
+  if (!big.hidden && bigScreen === screen && !screen.owner && bigPlayer && bigPlayer.url !== want) {
+    closeBig();
+    if (want) openBig(screen);
+  }
+}
+function setTv(screen, tv, at = Date.now(), send = true) {
+  if (at < screen.tvAt) return;
+  screen.tv = tv;
+  screen.tvAt = at;
+  refreshTv(screen);
+  if (send) sendTv(screen);
+}
+function sendTv(screen, to) {
+  if (!room || room.state !== "connected") return;
+  const msg = JSON.stringify({ screen: screen.id, tv: screen.tv, at: screen.tvAt });
+  room.localParticipant
+    .publishData(new TextEncoder().encode(msg), { reliable: true, topic: "tv", destinationIdentities: to })
+    .catch(() => {});
+}
+function onTv(data) {
+  let msg;
+  try {
+    msg = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return;
+  }
+  const screen = SCREENS.find((s) => s.id === msg.screen);
+  if (!screen) return;
+  const tv =
+    msg.tv && typeof msg.tv.url === "string" && /^https:\/\//.test(msg.tv.url)
+      ? { name: String(msg.tv.name || "TV").slice(0, 80), url: msg.tv.url }
+      : null;
+  if (msg.tv && !tv) return;
+  setTv(screen, tv, Number(msg.at) || 0, false);
+}
+function toggleTvSound() {
+  tvSound = !tvSound;
+  for (const s of SCREENS) s.tvVideo.muted = !tvSound;
+  if (bigPlayer) bigVideo.muted = !tvSound;
+  setStatus(tvSound ? "TV sound on (M)" : "TV sound off (M)");
+  setTimeout(updateCount, 2000);
+}
+
+// ---- the channel picker (T): for the monitor you face
+const picker = document.getElementById("tvpicker");
+const pickerTitle = picker.querySelector(".title");
+const pickerTabs = picker.querySelector(".tabs");
+const pickerSearch = picker.querySelector("input");
+const pickerList = picker.querySelector(".list");
+let pickerScreen = null;
+let pickerSource = "free";
+function facingScreen() {
+  // Screen 1 is ahead (-z) when cos(yaw) > 0, Screen 2 behind
+  return Math.cos((me.yaw * Math.PI) / 180) >= 0 ? SCREENS[0] : SCREENS[1];
+}
+function openPicker(screen) {
+  pickerScreen = screen;
+  pickerTitle.textContent = `TV on Screen ${screen.id}${screen.tv ? " · now: " + screen.tv.name : ""}`;
+  picker.hidden = false;
+  if (document.pointerLockElement) document.exitPointerLock();
+  pickerSearch.value = "";
+  pickerSearch.focus();
+  showSource(pickerSource);
+}
+function closePicker(relock) {
+  picker.hidden = true;
+  pickerScreen = null;
+  if (relock) {
+    try {
+      view.requestPointerLock()?.catch?.(() => {});
+    } catch {
+      /* refused: a click in the room takes it */
+    }
+  }
+}
+pickerTabs.replaceChildren(
+  ...SOURCES.map((src) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = src.name;
+    b.dataset.source = src.id;
+    b.addEventListener("click", () => showSource(src.id));
+    return b;
+  }),
+);
+let pickerChannels = [];
+async function showSource(id) {
+  pickerSource = id;
+  for (const b of pickerTabs.children) b.setAttribute("aria-pressed", String(b.dataset.source === id));
+  pickerList.textContent = "Loading channels…";
+  try {
+    pickerChannels = await loadChannels(id);
+  } catch {
+    pickerList.textContent = "Could not load the channel list. Try again in a moment.";
+    return;
+  }
+  if (pickerSource === id) renderChannels();
+}
+const LIST_MAX = 300; // more than this: type to narrow it down
+const isUs = (c) => /^(usa|united states)/i.test(c.group);
+function renderChannels() {
+  const q = pickerSearch.value.trim().toLowerCase();
+  const found = pickerChannels.filter((c) => !q || c.name.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
+  // the USA first, and channels that did not play here last
+  const failed = failedChannels();
+  found.sort((a, b) => Number(isUs(b)) - Number(isUs(a)) || Number(failed.has(a.url)) - Number(failed.has(b.url)));
+  const rows = found.slice(0, LIST_MAX).map((c) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "channel";
+    if (pickerScreen?.tv?.url === c.url) b.classList.add("now");
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.alt = "";
+    if (c.logo.startsWith("https://")) img.src = c.logo;
+    img.onerror = () => (img.style.visibility = "hidden");
+    const name = document.createElement("span");
+    name.textContent = c.name;
+    const group = document.createElement("small");
+    group.textContent = failed.has(c.url) ? `${c.group} · didn't play here` : c.group;
+    if (failed.has(c.url)) b.classList.add("bad");
+    b.append(img, name, group);
+    b.addEventListener("click", () => {
+      if (pickerScreen) setTv(pickerScreen, { name: c.name, url: c.url });
+      closePicker(true);
+    });
+    return b;
+  });
+  pickerList.replaceChildren(...rows);
+  if (!rows.length) pickerList.textContent = "No channel by that name.";
+  else if (found.length > LIST_MAX) {
+    const more = document.createElement("p");
+    more.textContent = `${found.length - LIST_MAX} more: type to find them`;
+    pickerList.append(more);
+  }
+}
+pickerSearch.addEventListener("input", renderChannels);
+picker.querySelector(".off").addEventListener("click", () => {
+  if (pickerScreen) setTv(pickerScreen, null);
+  closePicker(true);
+});
+picker.querySelector(".close").addEventListener("click", () => closePicker(true));
+// typing in the picker never walks or toggles anything in the room
+picker.addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.code === "Escape") closePicker(false);
+});
+addEventListener("keydown", (e) => {
+  if (e.repeat || !picker.hidden || !big.hidden) return;
+  if (e.code === "KeyT") openPicker(facingScreen());
+  if (e.code === "KeyM") toggleTvSound();
 });
 
 const shareBtns = SCREENS.map((s) => {
@@ -676,7 +875,11 @@ async function join(pass) {
   // normal video tile is, so LiveKit must not pause videos it thinks hidden.
   room = new Room({ adaptiveStream: false, dynacast: true });
   room
-    .on(RoomEvent.ParticipantConnected, (p) => { addPerson(p); sendPose(true); })
+    .on(RoomEvent.ParticipantConnected, (p) => {
+      addPerson(p);
+      sendPose(true);
+      for (const s of SCREENS) if (s.tvAt) sendTv(s, [p.identity]); // what is on TV
+    })
     .on(RoomEvent.ParticipantDisconnected, (p) => { removePerson(p.identity); clearScreensOf(p.identity); })
     .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
       const screen = screenOfTrack(pub.trackName);
@@ -690,6 +893,7 @@ async function join(pass) {
     })
     .on(RoomEvent.DataReceived, (data, p, _kind, topic) => {
       if (topic === "pose" && p) onPose(p, data);
+      if (topic === "tv") onTv(data);
     })
     .on(RoomEvent.Disconnected, () => setStatus("Left the room. Reload to come back in.", true));
   await room.connect(pass.url, pass.token);
