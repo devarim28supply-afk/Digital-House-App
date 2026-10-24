@@ -258,6 +258,27 @@
   #tvpicker .channel small { opacity: .55; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #bigcams .call-tile { height: clamp(70px, 16vh, 160px); }
 
+  /* chairs (room.js makeChair): dark board with glowing green edges */
+  .chair {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform-style: preserve-3d;
+  }
+  .chair-face {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    transform-origin: 0 0;
+    background: #04140b;
+    border: 1px solid #23ff9acc;
+    box-shadow: inset 0 0 14px #23ff9a40;
+  }
+  .chair-face.top { background: #072414; }
+  .chair-face.side { background: #031009; border: 0; }
+  .chair-face.rear { background: #020a06; }
+
   /*
    * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
    * a hexagon by clip-path. Both shapes have the same six corners in the

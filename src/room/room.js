@@ -76,6 +76,72 @@ function makeRain() {
 }
 makeRain();
 
+const SCREEN_X = 150; // each screen's centre, left or right of the wall's middle
+
+// ---- chairs (Kaalob's drawing): a wide armless box seat, and a back that
+// is thick at the seat and thin at the top, leaning back, its rear edge
+// straight down to the floor. Built from flat CSS faces like the room.
+// Chair space: origin on the floor at its middle, y up is negative (CSS),
+// the seat's front edge toward -z.
+const CHAIR = {
+  w: 90,        // width
+  d: 85,        // depth, front edge to the back's rear
+  seat: 38,     // seat height
+  tall: 90,     // top of the back
+  backTop: 10,  // the back's thickness at the top...
+  backBase: 27, // ...and where it meets the seat
+};
+function chairFace(chair, w, h, transform, cls = "", clip = "") {
+  const f = document.createElement("div");
+  f.className = `chair-face ${cls}`;
+  f.style.width = `${w}px`;
+  f.style.height = `${h}px`;
+  f.style.transform = transform;
+  if (clip) f.style.clipPath = clip;
+  chair.append(f);
+}
+function makeChair(x, z, turn = 0) {
+  const { w, d, seat, tall, backTop, backBase } = CHAIR;
+  const chair = document.createElement("div");
+  chair.className = "chair";
+  chair.style.transform = `translate3d(${x}px, ${H / 2}px, ${z}px) rotateY(${turn}deg)`;
+  const seatDepth = d - backBase; // seat top, front edge to the back
+  // A face starts flat at its corner (0,0,0), facing +z; each is moved and
+  // turned into place. rotateY(90) faces +x, rotateX(90) faces up.
+  chairFace(chair, w, tall, `translate3d(${-w / 2}px, ${-tall}px, ${d / 2}px)`, "rear");
+  chairFace(chair, w, seat, `translate3d(${w / 2}px, ${-seat}px, ${-d / 2}px) rotateY(180deg)`, "front");
+  chairFace(chair, w, seatDepth, `translate3d(${-w / 2}px, ${-seat}px, ${-d / 2}px) rotateX(90deg)`, "top");
+  chairFace(chair, w, backTop, `translate3d(${-w / 2}px, ${-tall}px, ${d / 2 - backTop}px) rotateX(90deg)`, "top");
+  // the back's slanted front, from the seat up to the top
+  const rise = tall - seat, lean = backBase - backTop;
+  chairFace(
+    chair,
+    w,
+    Math.hypot(rise, lean),
+    `translate3d(${w / 2}px, ${-tall}px, ${d / 2 - backTop}px) rotateY(180deg) rotateX(${Math.atan2(lean, rise)}rad)`,
+    "front",
+  );
+  // the two sides: the drawn side profile, cut out of a d x tall panel
+  const right = [[d, tall], [d, tall - seat], [backBase, tall - seat], [backTop, 0], [0, 0], [0, tall]];
+  const left = right.map(([px, py]) => [d - px, py]);
+  const poly = (pts) => `polygon(${pts.map(([px, py]) => `${px}px ${py}px`).join(", ")})`;
+  chairFace(chair, d, tall, `translate3d(${w / 2}px, ${-tall}px, ${d / 2}px) rotateY(90deg)`, "side", poly(right));
+  chairFace(chair, d, tall, `translate3d(${-w / 2}px, ${-tall}px, ${-d / 2}px) rotateY(-90deg)`, "side", poly(left));
+  world.append(chair);
+  return { x, z, half: turn % 180 ? d / 2 : w / 2, halfZ: turn % 180 ? w / 2 : d / 2 };
+}
+// one chair per screen, 1.5 m in front of it and facing it: screens 1 and 2
+// on the front wall, 3 and 4 on the back wall (turned around)
+const CHAIRS = [
+  makeChair(-SCREEN_X, -D / 4),
+  makeChair(SCREEN_X, -D / 4),
+  makeChair(SCREEN_X, D / 4, 180),
+  makeChair(-SCREEN_X, D / 4, 180),
+];
+const CHAIR_GAP = 18; // how close you can walk to a chair
+const inChair = (x, z) =>
+  CHAIRS.some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
+
 // ---- four monitors, two on each of the opposite walls, at eye level
 // Screens 1 and 2 hang side by side on the front wall, 3 and 4 on the back
 // wall, numbered left to right as you face each wall. They stand on their
@@ -84,7 +150,6 @@ makeRain();
 // blocks. On its own the video keeps its full resolution. Sharing
 // publishes your screen to the room as a track named "monitor-<n>";
 // everyone shows it on that monitor. One person per monitor.
-const SCREEN_X = 150; // each screen's centre, left or right of the wall's middle
 const SCREENS = [
   // front wall (-z), facing it your left is -x
   { id: 1, x: -SCREEN_X, z: -D / 2 + 2, place: `translate3d(${-SCREEN_X}px, 0, ${-D / 2 + 2}px)` },
@@ -548,8 +613,9 @@ function cropTransform(cx, cy, zoom) {
 }
 
 // ---- you
-// You start somewhere near the back wall, facing the front wall.
-const me = { x: Math.round((Math.random() - 0.5) * 300), z: D / 4, yaw: 0, pitch: 0 };
+// You start in the aisle between the two rows of chairs, facing the front
+// wall (somewhere left to right, so people do not land on each other).
+const me = { x: Math.round((Math.random() - 0.5) * 300), z: 0, yaw: 0, pitch: 0 };
 const mine = makeAvatar(true);
 // Your sight starts at your webcam plate (first person). V steps out behind
 // it (third person) to see yourself.
@@ -656,10 +722,11 @@ function walk(now) {
   const len = Math.hypot(side, ahead) || 1;
   const a = (me.yaw * Math.PI) / 180;
   // ahead = (sin yaw, -cos yaw), right = (cos yaw, sin yaw) on the floor
-  me.x += ((Math.sin(a) * ahead + Math.cos(a) * side) / len) * step;
-  me.z += ((-Math.cos(a) * ahead + Math.sin(a) * side) / len) * step;
-  me.x = clamp(me.x, -W / 2 + MARGIN, W / 2 - MARGIN);
-  me.z = clamp(me.z, -D / 2 + MARGIN, D / 2 - MARGIN);
+  const nx = clamp(me.x + ((Math.sin(a) * ahead + Math.cos(a) * side) / len) * step, -W / 2 + MARGIN, W / 2 - MARGIN);
+  const nz = clamp(me.z + ((-Math.cos(a) * ahead + Math.sin(a) * side) / len) * step, -D / 2 + MARGIN, D / 2 - MARGIN);
+  // chairs block you; slide along them (each direction checked on its own)
+  if (!inChair(nx, me.z)) me.x = nx;
+  if (!inChair(me.x, nz)) me.z = nz;
   draw();
   requestAnimationFrame(walk);
 }
