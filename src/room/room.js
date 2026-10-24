@@ -74,6 +74,114 @@ function makeRain() {
 }
 makeRain();
 
+// ---- two monitors on opposite walls: share your screen onto one
+// Screen 1 hangs on the front wall, Screen 2 on the back wall. Sharing
+// publishes your screen to the room as a track named "monitor-1" or
+// "monitor-2"; everyone shows it on that monitor. One person per monitor.
+const SCREENS = [
+  { id: 1, wall: ".wall.front" },
+  { id: 2, wall: ".wall.back" },
+].map((s) => {
+  const el = document.createElement("div");
+  el.className = "monitor";
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  const idle = document.createElement("div");
+  idle.className = "idle";
+  idle.textContent = `SCREEN ${s.id}\npress ${s.id} to share your screen`;
+  const label = document.createElement("div");
+  label.className = "label";
+  el.append(video, idle, label);
+  document.querySelector(s.wall).append(el);
+  return { ...s, el, video, label, owner: null, mine: null };
+});
+const CAN_SHARE = Boolean(navigator.mediaDevices?.getDisplayMedia);
+const screenOfTrack = (name) => SCREENS.find((s) => name === `monitor-${s.id}`);
+
+function showOnScreen(screen, track, p) {
+  screen.owner = p.identity;
+  track.attach(screen.video);
+  screen.el.classList.add("on");
+  screen.label.textContent = `Screen ${screen.id} · ${people.get(p.identity)?.name || p.name || "someone"}`;
+  updateShareButtons();
+}
+function clearScreen(screen) {
+  screen.owner = null;
+  screen.video.srcObject = null;
+  screen.el.classList.remove("on");
+  screen.label.textContent = "";
+  updateShareButtons();
+}
+function clearScreensOf(identity) {
+  for (const s of SCREENS) if (s.owner === identity) clearScreen(s);
+}
+
+async function toggleShare(screen) {
+  if (screen.mine) return stopShare(screen);
+  if (!CAN_SHARE || !room) return;
+  if (screen.owner) {
+    setStatus(`Screen ${screen.id} is in use. Try the other one.`);
+    setTimeout(updateCount, 3000);
+    return;
+  }
+  // one screen at a time: sharing to the other monitor moves it
+  for (const s of SCREENS) if (s.mine) await stopShare(s);
+  let media;
+  try {
+    media = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+  } catch {
+    return; // picker closed
+  }
+  const track = media.getVideoTracks()[0];
+  track.contentHint = "detail"; // keep text sharp
+  const local = new LocalVideoTrack(track, undefined, true);
+  screen.mine = local;
+  screen.owner = room.localParticipant.identity;
+  screen.video.srcObject = new MediaStream([track]);
+  screen.el.classList.add("on");
+  screen.label.textContent = `Screen ${screen.id} · you`;
+  track.addEventListener("ended", () => stopShare(screen)); // the browser's own Stop sharing
+  updateShareButtons();
+  try {
+    await room.localParticipant.publishTrack(local, {
+      name: `monitor-${screen.id}`,
+      source: Track.Source.ScreenShare,
+      simulcast: false,
+      videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 15 },
+    });
+  } catch (err) {
+    console.warn("[room] could not share the screen:", err);
+    await stopShare(screen);
+  }
+}
+async function stopShare(screen) {
+  const local = screen.mine;
+  if (!local) return;
+  screen.mine = null;
+  await room?.localParticipant.unpublishTrack(local, false).catch(() => {});
+  local.mediaStreamTrack.stop();
+  clearScreen(screen);
+}
+
+const shareBtns = SCREENS.map((s) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.addEventListener("click", () => toggleShare(s));
+  if (CAN_SHARE) document.getElementById("bar").append(b);
+  return b;
+});
+function updateShareButtons() {
+  SCREENS.forEach((s, i) => {
+    const b = shareBtns[i];
+    b.textContent = s.mine ? `Stop screen ${s.id} (${s.id})` : `Share to screen ${s.id} (${s.id})`;
+    b.setAttribute("aria-pressed", String(Boolean(s.mine)));
+    b.disabled = Boolean(s.owner && !s.mine);
+  });
+}
+updateShareButtons();
+
 // ---- a person on a plate (you, or someone else)
 function makeAvatar(mine) {
   const el = document.createElement("div");
@@ -431,6 +539,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyC") setCamera(!stream);
   if (e.code === "KeyG") setShape(!isHex());
   if (e.code === "KeyV") setThird(!third);
+  if (e.code === "Digit1") toggleShare(SCREENS[0]);
+  if (e.code === "Digit2") toggleShare(SCREENS[1]);
   if (e.code === "BracketLeft") setFov(fov - 5);
   if (e.code === "BracketRight") setFov(fov + 5);
 });
@@ -467,11 +577,17 @@ async function join(pass) {
   room = new Room({ adaptiveStream: false, dynacast: true });
   room
     .on(RoomEvent.ParticipantConnected, (p) => { addPerson(p); sendPose(true); })
-    .on(RoomEvent.ParticipantDisconnected, (p) => removePerson(p.identity))
-    .on(RoomEvent.TrackSubscribed, (track, _pub, p) => {
-      if (track.kind === Track.Kind.Video) track.attach(addPerson(p).video);
+    .on(RoomEvent.ParticipantDisconnected, (p) => { removePerson(p.identity); clearScreensOf(p.identity); })
+    .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+      const screen = screenOfTrack(pub.trackName);
+      if (screen) showOnScreen(screen, track, p);
+      else if (pub.source === Track.Source.Camera) track.attach(addPerson(p).video);
     })
-    .on(RoomEvent.TrackUnsubscribed, (track) => track.detach())
+    .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
+      track.detach();
+      const screen = screenOfTrack(pub.trackName);
+      if (screen && screen.owner === p.identity) clearScreen(screen);
+    })
     .on(RoomEvent.DataReceived, (data, p, _kind, topic) => {
       if (topic === "pose" && p) onPose(p, data);
     })

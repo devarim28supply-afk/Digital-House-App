@@ -115,6 +115,45 @@
   }
   @media (prefers-reduced-motion: reduce) { .drop { animation-play-state: paused; } }
 
+  /* a monitor on the wall (3.2 x 1.8 m), over the rain: shows a shared screen */
+  .monitor {
+    position: absolute;
+    left: 140px;
+    top: 50px;
+    width: 320px;
+    height: 180px;
+    z-index: 1;
+    box-sizing: border-box;
+    border: 5px solid #0c0f0d;
+    outline: 1px solid #23ff9a66;
+    border-radius: 4px;
+    background: #000;
+    box-shadow: 0 0 30px #23ff9a40;
+    display: grid;
+    place-items: center;
+  }
+  .monitor video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .monitor:not(.on) video { display: none; }
+  .monitor .idle {
+    font: 11px/1.6 ui-monospace, Consolas, monospace;
+    color: var(--trace);
+    text-align: center;
+    white-space: pre;
+    opacity: .7;
+  }
+  .monitor.on .idle { display: none; }
+  .monitor .label {
+    position: absolute;
+    left: 4px;
+    bottom: 4px;
+    padding: 0 4px;
+    border-radius: 2px;
+    background: #000b;
+    font-size: 7px;
+    color: #cfe;
+  }
+  .monitor .label:empty { display: none; }
+
   /*
    * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
    * a hexagon by clip-path. Both shapes have the same six corners in the
@@ -221,6 +260,7 @@
     text-decoration: none;
   }
   #bar button[aria-pressed="true"] { border-color: #7fe0b4; color: #7fe0b4; }
+  #bar button:disabled { opacity: .45; cursor: default; }
 
   #fov {
     position: fixed;
@@ -356,7 +396,7 @@
 <div id="strip"></div>
 <div id="side"></div>
 <div id="status"></div>
-<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · [ and ] FOV · on a phone, drag to look</div>
+<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · 1 / 2 share your screen · [ and ] FOV · on a phone, drag to look</div>
 <script type="module" src="/src/room/room.js"></script>
 </body>
 </html>
