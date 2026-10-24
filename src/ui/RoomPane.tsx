@@ -1,6 +1,6 @@
-import { Show, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { Show, createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
 
-import { type Channel, type Profile, roomCamOf, roomUrlOf } from "../data/store";
+import { type Channel, type Profile, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
 import { setInRoom, watchRequest } from "../data/where";
 import { VoiceRoom } from "./VoiceRoom";
 
@@ -72,6 +72,22 @@ export function RoomPane(props: {
   }
 
   const url = () => roomUrlOf(props.channel);
+  // A tile linking to someone else's site: some sites refuse to be shown
+  // inside another page (White Torture does). The server reads the site's
+  // rules; a refusing site gets an "Open it in its own tab" button instead.
+  // Our own 3D rooms (built-in tiles) always fit.
+  const [embeddable] = createResource(
+    () => (props.channel.roomKey ? undefined : props.channel.url),
+    async (link) => {
+      try {
+        const res = await fetch(`/api/frame-check?url=${encodeURIComponent(link)}`);
+        return res.ok ? Boolean(((await res.json()) as { embeddable?: boolean }).embeddable) : true;
+      } catch {
+        return true;
+      }
+    },
+  );
+  const blocked = () => embeddable() === false;
   // the 3D room's live camera, as the Room view in this videochat
   const roomView = () => {
     const cam = roomCamOf(props.channel);
@@ -106,14 +122,24 @@ export function RoomPane(props: {
       </div>
 
       <div class="pane-layer room-layer" classList={{ hidden: pane() !== "room" }}>
-        <Show when={roomLoaded() && url()}>
-          {(src) => (
-            <iframe
-              src={src()}
-              title={`${props.channel.name} room`}
-              allow="camera; microphone; fullscreen; display-capture; autoplay; xr-spatial-tracking"
-            />
-          )}
+        <Show when={roomLoaded() && url() && !blocked()}>
+          <iframe
+            src={url()!}
+            title={`${props.channel.name} room`}
+            allow="camera; microphone; fullscreen; display-capture; autoplay; xr-spatial-tracking"
+          />
+        </Show>
+        <Show when={blocked()}>
+          <div class="room-blocked">
+            <img src={imageSrc(props.channel.image)} alt="" />
+            <p>
+              <b>{props.channel.name}</b> can't open inside Darkwood Node (its site does not allow it).
+            </p>
+            <button class="btn primary" type="button" onClick={() => window.open(url()!, "_blank", "noopener")}>
+              Open {props.channel.name} ↗
+            </button>
+            <small>The videochat and the chat here keep going.</small>
+          </div>
         </Show>
       </div>
     </div>

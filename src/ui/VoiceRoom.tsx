@@ -313,7 +313,10 @@ export function VoiceRoom(props: {
     setJoining(true);
     try {
       const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
-      const next = new Room({ adaptiveStream: true, dynacast: true });
+      // The wall in a 3D room (viewOnly) is a page turned in 3D space: LiveKit's
+      // "is this video on screen?" check misjudges it and paused the wall's
+      // videos (black). The wall gets every video as it is; tiles here keep it.
+      const next = new Room({ adaptiveStream: !props.viewOnly, dynacast: true });
       next
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
           if (track.kind === Track.Kind.Audio) audioHost.appendChild(track.attach());
