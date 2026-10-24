@@ -76,16 +76,22 @@ function makeRain() {
 }
 makeRain();
 
-// ---- two monitors on opposite walls: share your screen onto one
-// Screen 1 hangs on the front wall, Screen 2 on the back wall. They stand
-// on their own just off the wall, never inside it: a wall is drawn as one
-// flat 600 x 300 picture (for the rain), which blurred a 1080p share into
+// ---- four monitors, two on each of the opposite walls, at eye level
+// Screens 1 and 2 hang side by side on the front wall, 3 and 4 on the back
+// wall, numbered left to right as you face each wall. They stand on their
+// own just off the wall, never inside it: a wall is drawn as one flat
+// 600 x 300 picture (for the rain), which blurred a 1080p share into
 // blocks. On its own the video keeps its full resolution. Sharing
-// publishes your screen to the room as a track named "monitor-1" or
-// "monitor-2"; everyone shows it on that monitor. One person per monitor.
+// publishes your screen to the room as a track named "monitor-<n>";
+// everyone shows it on that monitor. One person per monitor.
+const SCREEN_X = 150; // each screen's centre, left or right of the wall's middle
 const SCREENS = [
-  { id: 1, place: `translate3d(0, 0, ${-D / 2 + 2}px)` },
-  { id: 2, place: `translate3d(0, 0, ${D / 2 - 2}px) rotateY(180deg)` },
+  // front wall (-z), facing it your left is -x
+  { id: 1, x: -SCREEN_X, z: -D / 2 + 2, place: `translate3d(${-SCREEN_X}px, 0, ${-D / 2 + 2}px)` },
+  { id: 2, x: SCREEN_X, z: -D / 2 + 2, place: `translate3d(${SCREEN_X}px, 0, ${-D / 2 + 2}px)` },
+  // back wall (+z), facing it your left is +x
+  { id: 3, x: SCREEN_X, z: D / 2 - 2, place: `translate3d(${SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
+  { id: 4, x: -SCREEN_X, z: D / 2 - 2, place: `translate3d(${-SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
 ].map((s) => {
   const el = document.createElement("div");
   el.className = "monitor";
@@ -95,7 +101,7 @@ const SCREENS = [
   video.playsInline = true;
   const idle = document.createElement("div");
   idle.className = "idle";
-  idle.textContent = `SCREEN ${s.id}\npress ${s.id} to share your screen\nor T for TV`;
+  idle.textContent = `SCREEN ${s.id}\n${s.id} share · T TV`;
   const label = document.createElement("div");
   label.className = "label";
   // TV plays in its own <video> (hls.js feeds it), so a share never fights it
@@ -198,11 +204,21 @@ const bigVideo = big.querySelector("video");
 const bigCams = document.getElementById("bigcams");
 let bigScreen = null;
 let bigPlayer = null; // TV in the big view: its own player, captions on
+/** Of these screens, the one nearest the middle of your view. */
+function nearestInView(screens) {
+  const a = (me.yaw * Math.PI) / 180;
+  const fx = Math.sin(a), fz = -Math.cos(a); // the way you look, on the floor
+  let best = null, bestCos = -Infinity;
+  for (const s of screens) {
+    const dx = s.x - me.x, dz = s.z - me.z;
+    const cos = (dx * fx + dz * fz) / (Math.hypot(dx, dz) || 1);
+    if (cos > bestCos) { bestCos = cos; best = s; }
+  }
+  return best;
+}
+// F: the showing screen (a share or TV) you look at most directly
 function facedScreen() {
-  const on = SCREENS.filter((s) => s.el.classList.contains("on") || s.el.classList.contains("tv"));
-  if (on.length < 2) return on[0];
-  // Screen 1 is ahead (-z) when cos(yaw) > 0, Screen 2 behind
-  return Math.cos((me.yaw * Math.PI) / 180) >= 0 ? on[0] : on[1];
+  return nearestInView(SCREENS.filter((s) => s.el.classList.contains("on") || s.el.classList.contains("tv")));
 }
 function openBig(screen) {
   if (!screen) return;
@@ -362,10 +378,8 @@ const pickerSearch = picker.querySelector("input");
 const pickerList = picker.querySelector(".list");
 let pickerScreen = null;
 let pickerSource = "free";
-function facingScreen() {
-  // Screen 1 is ahead (-z) when cos(yaw) > 0, Screen 2 behind
-  return Math.cos((me.yaw * Math.PI) / 180) >= 0 ? SCREENS[0] : SCREENS[1];
-}
+// T: whichever screen you look at most directly, showing or not
+const facingScreen = () => nearestInView(SCREENS);
 function openPicker(screen) {
   pickerScreen = screen;
   pickerTitle.textContent = `TV on Screen ${screen.id}${screen.tv ? " · now: " + screen.tv.name : ""}`;
@@ -474,7 +488,8 @@ const shareBtns = SCREENS.map((s) => {
 function updateShareButtons() {
   SCREENS.forEach((s, i) => {
     const b = shareBtns[i];
-    b.textContent = s.mine ? `Stop screen ${s.id} (${s.id})` : `Share to screen ${s.id} (${s.id})`;
+    b.textContent = s.mine ? `Stop ${s.id}` : `Share ${s.id}`;
+    b.title = s.mine ? `Stop sharing on screen ${s.id} (key ${s.id})` : `Share your screen to screen ${s.id} (key ${s.id})`;
     b.setAttribute("aria-pressed", String(Boolean(s.mine)));
     b.disabled = Boolean(s.owner && !s.mine);
   });
@@ -838,8 +853,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyC") setCamera(!stream);
   if (e.code === "KeyG") setShape(!isHex());
   if (e.code === "KeyV") setThird(!third);
-  if (e.code === "Digit1") toggleShare(SCREENS[0]);
-  if (e.code === "Digit2") toggleShare(SCREENS[1]);
+  const n = /^Digit([1-4])$/.exec(e.code);
+  if (n) toggleShare(SCREENS[Number(n[1]) - 1]);
   if (e.code === "BracketLeft") setFov(fov - 5);
   if (e.code === "BracketRight") setFov(fov + 5);
 });
