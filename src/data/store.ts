@@ -1,5 +1,6 @@
 import {
   type Timestamp,
+  FieldPath,
   addDoc,
   arrayRemove,
   arrayUnion,
@@ -165,6 +166,8 @@ export type Message = {
   text: string;
   files: ChatFile[];
   sticker?: Sticker;
+  /** emoji (or :name: for a server emoji) -> who reacted with it */
+  reactions: Record<string, string[]>;
   createdAt: Date | null;
   editedAt: Date | null;
 };
@@ -492,6 +495,7 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
         text: (data.text as string) ?? "",
         files: Array.isArray(data.files) ? (data.files as ChatFile[]) : [],
         sticker: data.sticker?.url ? (data.sticker as Sticker) : undefined,
+        reactions: data.reactions && typeof data.reactions === "object" ? (data.reactions as Record<string, string[]>) : {},
         // a message we just sent has no server time yet: show it as now
         createdAt: toDate(data.createdAt) ?? new Date(),
         editedAt: toDate(data.editedAt),
@@ -516,6 +520,14 @@ export const sendMessage = (
     ...(sticker ? { sticker } : {}),
     createdAt: serverTimestamp(),
   });
+
+/** Add (on) or take back your reaction on a message, like Discord. */
+export const reactToMessage = (sid: string, cid: string, mid: string, uid: string, emoji: string, on: boolean) =>
+  updateDoc(
+    doc(db, "servers", sid, "channels", cid, "messages", mid),
+    new FieldPath("reactions", emoji),
+    on ? arrayUnion(uid) : arrayRemove(uid),
+  );
 
 export const editMessage = (sid: string, cid: string, mid: string, authorUid: string, text: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid, "messages", mid), {

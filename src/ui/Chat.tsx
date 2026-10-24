@@ -10,6 +10,7 @@ import {
   type Sticker,
   deleteMessage,
   editMessage,
+  reactToMessage,
   sendMessage,
   watchMessages,
 } from "../data/store";
@@ -147,6 +148,14 @@ export function Chat(props: {
   }
   const [viewing, setViewing] = createSignal<ChatFile | undefined>();
   const [picker, setPicker] = createSignal(false);
+  // the message a reaction is being picked for (the ☺+ button)
+  const [reactingTo, setReactingTo] = createSignal<string | undefined>();
+  const react = (m: Message, emoji: string) => {
+    const mine = (m.reactions[emoji] ?? []).includes(props.uid);
+    void reactToMessage(props.serverId, props.channel.id, m.id, props.uid, emoji, !mine).catch(() =>
+      setError("Could not react. Check your connection."),
+    );
+  };
   const jumbo = (text: string) => ONLY_EMOJI.test(text) && [...text.replace(/\s/g, "")].length <= 54;
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -394,6 +403,40 @@ export function Chat(props: {
                           <img class="msg-sticker" src={sticker().url} alt={sticker().name} title={sticker().name} loading="lazy" />
                         )}
                       </Show>
+                      <Show when={Object.values(m.reactions).some((who) => who.length)}>
+                        <div class="msg-reactions">
+                          <For each={Object.entries(m.reactions).filter(([, who]) => who.length)}>
+                            {([emoji, who]) => (
+                              <button
+                                type="button"
+                                class="reaction"
+                                classList={{ mine: who.includes(props.uid) }}
+                                title={who.map(nameOf).join(", ")}
+                                onClick={() => react(m, emoji)}
+                              >
+                                <Show
+                                  when={/^:[a-z0-9_]{2,32}:$/.test(emoji) && emojiMap().get(emoji.slice(1, -1))}
+                                  fallback={<span>{emoji}</span>}
+                                >
+                                  {(custom) => <img class="emoji" src={custom().url} alt={emoji} />}
+                                </Show>
+                                <small>{who.length}</small>
+                              </button>
+                            )}
+                          </For>
+                          <button
+                            type="button"
+                            class="reaction add"
+                            title="Add a reaction"
+                            onClick={() => {
+                              setPicker(false);
+                              setReactingTo(m.id);
+                            }}
+                          >
+                            ☺+
+                          </button>
+                        </div>
+                      </Show>
                       <Show when={m.files.length}>
                         <div class="msg-files">
                           <For each={m.files}>{(file) => <FileView file={file} onOpen={setViewing} />}</For>
@@ -412,22 +455,36 @@ export function Chat(props: {
                   />
                 </Show>
               </div>
-              <Show when={editing() !== m.id && (m.authorUid === props.uid || props.canModerate)}>
+              <Show when={editing() !== m.id}>
                 <div class="msg-tools">
+                  <button
+                    class="icon-btn"
+                    type="button"
+                    title="Add a reaction"
+                    aria-label="Add a reaction"
+                    onClick={() => {
+                      setPicker(false);
+                      setReactingTo(m.id);
+                    }}
+                  >
+                    ☺+
+                  </button>
                   <Show when={m.authorUid === props.uid}>
                     <button class="icon-btn" type="button" title="Edit" aria-label="Edit message" onClick={() => setEditing(m.id)}>
                       ✎
                     </button>
                   </Show>
-                  <button
-                    class="icon-btn"
-                    type="button"
-                    title="Delete"
-                    aria-label="Delete message"
-                    onClick={() => void deleteMessage(props.serverId, props.channel.id, m.id)}
-                  >
-                    🗑
-                  </button>
+                  <Show when={m.authorUid === props.uid || props.canModerate}>
+                    <button
+                      class="icon-btn"
+                      type="button"
+                      title="Delete"
+                      aria-label="Delete message"
+                      onClick={() => void deleteMessage(props.serverId, props.channel.id, m.id)}
+                    >
+                      🗑
+                    </button>
+                  </Show>
                 </div>
               </Show>
             </article>
@@ -462,6 +519,23 @@ export function Chat(props: {
           onSticker={(sticker) => void sendSticker(sticker)}
           onClose={() => setPicker(false)}
         />
+      </Show>
+      <Show when={reactingTo()}>
+        {(mid) => (
+          <EmojiPicker
+            serverId={props.serverId}
+            uid={props.uid}
+            emojis={props.emojis ?? []}
+            canModerate={props.canModerate}
+            reactOnly
+            onPick={(emoji) => {
+              const m = messages().find((x) => x.id === mid());
+              setReactingTo(undefined);
+              if (m && !(m.reactions[emoji] ?? []).includes(props.uid)) react(m, emoji);
+            }}
+            onClose={() => setReactingTo(undefined)}
+          />
+        )}
       </Show>
       <Show when={viewing()}>
         {(file) => <ImageViewer url={file().url} name={file().name} onClose={() => setViewing(undefined)} />}

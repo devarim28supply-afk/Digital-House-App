@@ -2499,3 +2499,70 @@ img.live-tile-still {
 .room-blocked small {
   color: var(--dim);
 }
+
+/* ---- reactions under a message (like Discord) ------------------------------ */
+
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reaction img.emoji {
+  width: 18px;
+  height: 18px;
+  vertical-align: 0;
+}
+
+.reaction small {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* your own reaction */
+.reaction.mine {
+  border-color: var(--green);
+  background: #0d2a18;
+}
+
+.reaction.mine small {
+  color: var(--green);
+}
+
+.reaction:hover {
+  border-color: #3a3a3a;
+}
+
+.reaction.add {
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0;
+}
+
+.msg:hover .reaction.add {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .reaction.add {
+    opacity: 1;
+  }
+}

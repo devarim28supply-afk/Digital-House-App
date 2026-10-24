@@ -57,7 +57,9 @@ export function EmojiPicker(props: {
   canModerate: boolean;
   onPick: (text: string) => void;
   /** a sticker was picked: it is sent on its own right away */
-  onSticker: (sticker: Sticker) => void;
+  onSticker?: (sticker: Sticker) => void;
+  /** picking a reaction: emojis only (no Stickers tab) */
+  reactOnly?: boolean;
   onClose: () => void;
 }) {
   const [tab, setTab] = createSignal<"emoji" | "sticker">("emoji");
@@ -119,9 +121,11 @@ export function EmojiPicker(props: {
         <button type="button" role="tab" aria-selected={tab() === "emoji"} onClick={() => setTab("emoji")}>
           Emojis
         </button>
-        <button type="button" role="tab" aria-selected={tab() === "sticker"} onClick={() => setTab("sticker")}>
-          Stickers
-        </button>
+        <Show when={!props.reactOnly}>
+          <button type="button" role="tab" aria-selected={tab() === "sticker"} onClick={() => setTab("sticker")}>
+            Stickers
+          </button>
+        </Show>
       </div>
       <div class="emoji-top">
         <input
@@ -178,7 +182,7 @@ export function EmojiPicker(props: {
                     title={tab() === "sticker" ? emoji.name : `:${emoji.name}:`}
                     onClick={() =>
                       tab() === "sticker"
-                        ? props.onSticker({ url: emoji.url, name: emoji.name })
+                        ? props.onSticker?.({ url: emoji.url, name: emoji.name })
                         : props.onPick(`:${emoji.name}:`)
                     }
                   >
