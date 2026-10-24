@@ -690,30 +690,32 @@
   pointer-events: none;
 }
 
-/* the tile's videochat over the bottom of a linked page (CallStrip):
-   up to 4 small screens in a row, the rest in a column on the right */
+/* the tile's videochat next to a linked page (CallStrip), never over it:
+   the page shrinks, up to 4 small screens sit in a row under it, the rest
+   in a column on its right */
 .room-layer {
-  position: relative;
   --strip-h: clamp(70px, 16vh, 160px);
+}
+.room-layer:has(.call-strip) {
+  display: grid;
+  grid-template: "page side" minmax(0, 1fr) "strip strip" auto / minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.room-layer:has(.call-strip) iframe {
+  grid-area: page;
+  height: 100%;
 }
 .call-strip,
 .call-strip-side {
-  position: absolute;
   display: flex;
   gap: 8px;
-  pointer-events: none;
-  z-index: 2;
 }
 .call-strip {
-  left: 14px;
-  right: 14px;
-  bottom: 22px;
+  grid-area: strip;
   justify-content: center;
 }
 .call-strip-side {
-  top: 20px;
-  right: 22px;
-  bottom: calc(var(--strip-h) + 30px);
+  grid-area: side;
   flex-direction: column;
   overflow: hidden;
 }
