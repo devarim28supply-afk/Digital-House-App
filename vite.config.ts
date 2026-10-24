@@ -30,5 +30,11 @@ function apiDev(): Plugin {
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/app/" : "/",
   plugins: [apiDev(), solid()],
-  build: { target: "es2022", outDir: "dist/app", emptyOutDir: true },
+  // two pages: the app, and room.html (the Darkwood Room a tile opens)
+  build: {
+    target: "es2022",
+    outDir: "dist/app",
+    emptyOutDir: true,
+    rollupOptions: { input: { main: resolve(__dirname, "index.html"), room: resolve(__dirname, "room.html") } },
+  },
 }));

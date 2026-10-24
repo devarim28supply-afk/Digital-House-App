@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Darkwood Room</title>
+<style>
+  /*
+   * A room made of six flat HTML boxes turned in 3D by CSS: no WebGL, no
+   * canvas, no animation loop. The page only moves when someone does.
+   * Room size in px (100 px = 1 m): 6 m wide, 6 m deep, 3 m high.
+   * Everyone in it is their webcam on a diamond (or hexagon) plate.
+   */
+  :root {
+    --w: 600px;
+    --d: 600px;
+    --h: 300px;
+    --wall: #d9d4cb;
+    --wall-dark: #c9c3b8;
+    --floor: #8a6a4f;
+    --ceiling: #ecebe7;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+  body { font: 14px/1.4 system-ui, sans-serif; color: #fff; user-select: none; }
+
+  #view {
+    position: fixed;
+    inset: 0;
+    cursor: grab;
+    touch-action: none;
+  }
+  #view.locked { cursor: none; }
+  #world, .face {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform-style: preserve-3d;
+  }
+  .face { box-sizing: border-box; }
+
+  /* walls face inward; each is centred on the room's middle, then pushed out */
+  .wall {
+    width: var(--w);
+    height: var(--h);
+    margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
+    background:
+      linear-gradient(to top, #6b5a4a 0 10px, #fff3 10px 11px, transparent 11px), /* skirting board */
+      linear-gradient(to bottom, var(--wall), var(--wall-dark));
+  }
+  .side { width: var(--d); margin-left: calc(var(--d) / -2); }
+  .front { transform: translateZ(calc(var(--d) / -2)); }
+  .back  { transform: translateZ(calc(var(--d) / 2)) rotateY(180deg); }
+  .left  { transform: translateX(calc(var(--w) / -2)) rotateY(90deg); }
+  .right { transform: translateX(calc(var(--w) / 2)) rotateY(-90deg); }
+
+  .floor, .ceiling {
+    width: var(--w);
+    height: var(--d);
+    margin: calc(var(--d) / -2) 0 0 calc(var(--w) / -2);
+  }
+  .floor {
+    transform: translateY(calc(var(--h) / 2)) rotateX(90deg);
+    background:
+      repeating-linear-gradient(to right, #0000 0 59px, #0003 59px 60px), /* planks */
+      linear-gradient(var(--floor), var(--floor));
+  }
+  .ceiling {
+    transform: translateY(calc(var(--h) / -2)) rotateX(-90deg);
+    background: radial-gradient(circle at center, #fff 0 40px, var(--ceiling) 41px, #d8d6d0 100%);
+  }
+
+  /*
+   * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
+   * a hexagon by clip-path. Both shapes have the same six corners in the
+   * same order (the diamond's flat top and bottom squeezed to a point), so
+   * the browser slides every corner from one shape to the other.
+   * The name floats above, readable from the front and from behind.
+   */
+  .avatar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 640px;
+    height: 360px;
+    margin: -180px 0 0 -320px;
+    transform-style: preserve-3d;
+  }
+  .avatar.hidden { display: none; }
+  .plate {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #1c1c22;
+    transition: clip-path .4s ease;
+    clip-path: polygon(50% 0, 50% 0, 69.4% 50%, 50% 100%, 50% 100%, 30.6% 50%);
+  }
+  .avatar.hexagon .plate { clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%); }
+  /* face tracking slides and zooms the picture inside the plate */
+  .plate video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform-origin: 0 0;
+  }
+  .plate .off {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 40px;
+    color: #fff8;
+  }
+  .avatar.live .off { display: none; }
+  .avatar:not(.live) video { visibility: hidden; }
+  /* you see your own plate from behind: read it the right way round */
+  .avatar.mine .off { transform: scaleX(-1); }
+  .tag {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 14px;
+    text-align: center;
+    font-size: 52px;
+    font-weight: 600;
+    color: #fff;
+    text-shadow: 0 2px 6px #000c;
+    white-space: nowrap;
+    backface-visibility: hidden;
+  }
+  .tag.back { transform: rotateY(180deg); }
+
+  #bar {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #bar button, #status a {
+    font: inherit;
+    color: #fff;
+    background: #000a;
+    border: 1px solid #fff3;
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  #bar button[aria-pressed="true"] { border-color: #7fe0b4; color: #7fe0b4; }
+
+  #fov {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #000a;
+  }
+  #fov input { width: 120px; }
+  #fov output { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+  #status {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #000a;
+  }
+  #status:empty { display: none; }
+  #status.problem {
+    left: 50%;
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    padding: 16px 20px;
+    text-align: center;
+    max-width: min(420px, calc(100vw - 32px));
+    box-sizing: border-box;
+  }
+  #status.problem a { display: inline-block; margin-top: 10px; }
+
+  #hint {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: #000a;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity .3s;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
+  }
+  #view.locked ~ #hint { opacity: 0; }
+  @media (max-width: 700px) { #hint { display: none; } }
+</style>
+</head>
+<body>
+<div id="view">
+  <div id="world">
+    <div class="face wall front"></div>
+    <div class="face wall back"></div>
+    <div class="face wall side left"></div>
+    <div class="face wall side right"></div>
+    <div class="face floor"></div>
+    <div class="face ceiling"></div>
+  </div>
+</div>
+<div id="bar">
+  <button type="button" id="cam" aria-pressed="false">Camera (C)</button>
+  <button type="button" id="shape">Hexagon (G)</button>
+  <button type="button" id="pov">First person (V)</button>
+</div>
+<label id="fov">FOV <input type="range" min="60" max="120" step="1" value="90"> <output>90</output>°</label>
+<div id="status"></div>
+<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · [ and ] FOV · on a phone, drag to look</div>
+<script type="module" src="/src/room/room.js"></script>
+</body>
+</html>

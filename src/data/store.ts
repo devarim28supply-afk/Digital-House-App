@@ -129,18 +129,21 @@ export function imageSrc(image?: string) {
 }
 
 /**
- * Tiles open only their videochat for now: no tile has a room behind it, so
- * the Room toggle shows greyed out and there is no Room view. The rooms are
- * still listed above (GESTR_ROOMS) and in each tile; set this to true, or
- * give a new room its own line, to bring the Room side back.
+ * The tiles whose Room side is the Darkwood Room (room.html, this app's own
+ * CSS 3D room where everyone walks around as their webcam). Every other
+ * tile opens only its videochat for now: its Room toggle shows greyed out.
+ * The older 3D rooms are still listed above (GESTR_ROOMS) but no tile opens
+ * them.
  */
-const ROOMS_ATTACHED = false;
+const DARKWOOD_ROOM_TILES = new Set(["gestr-living"]);
 
-export function roomUrlOf(channel: Channel) {
-  if (!ROOMS_ATTACHED) return "";
-  const room = channel.roomKey ? GESTR_ROOMS[channel.roomKey] : undefined;
-  if (room) return ON_THIS_PC() ? room.local : room.live;
-  return channel.url ?? "";
+export const hasDarkwoodRoom = (channel: Channel) => DARKWOOD_ROOM_TILES.has(channel.roomKey ?? "");
+
+/** The page a tile's Room side shows, or "" when it has none. */
+export function roomUrlOf(channel: Channel, serverId: string) {
+  if (!hasDarkwoodRoom(channel)) return "";
+  const q = new URLSearchParams({ s: serverId, c: channel.id });
+  return `${import.meta.env.BASE_URL}room.html?${q}`;
 }
 
 export const LIVING_TILE: Omit<Channel, "id" | "position"> = {

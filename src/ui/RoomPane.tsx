@@ -1,6 +1,6 @@
 import { Show, createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
 
-import { type Channel, type Profile, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
+import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
 import { setInRoom, watchRequest } from "../data/where";
 import { VoiceRoom } from "./VoiceRoom";
 
@@ -71,7 +71,7 @@ export function RoomPane(props: {
     }
   }
 
-  const url = () => roomUrlOf(props.channel);
+  const url = () => roomUrlOf(props.channel, props.serverId);
   // A tile linking to someone else's site: some sites refuse to be shown
   // inside another page (White Torture does). The server reads the site's
   // rules; a refusing site gets an "Open it in its own tab" button instead.
@@ -93,9 +93,10 @@ export function RoomPane(props: {
     if (pane() === "room" && !url()) setPane("video");
   });
   // the 3D room's live camera, as the Room view in this videochat
-  // (none while the tile has no room attached)
+  // (none while the tile has no room attached, and none from the Darkwood
+  // Room, which has no room camera)
   const roomView = () => {
-    const cam = url() ? roomCamOf(props.channel) : null;
+    const cam = url() && !hasDarkwoodRoom(props.channel) ? roomCamOf(props.channel) : null;
     return cam ? { ...cam, username: props.username } : undefined;
   };
 

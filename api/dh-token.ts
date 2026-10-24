@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
  *
  *   POST /api/dh-token   Authorization: Bearer <Firebase ID token>
  *   body { serverId, channelId }
+ *   body { serverId, channelId, room: true }   the tile's Darkwood Room
  *
  * The check is done by Firestore itself: we read servers/{serverId} with the
  * caller's own ID token, so the security rules decide (approved member AND
@@ -104,7 +105,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
   if (!channelRes.ok) return send(res, 404, { error: "That channel is gone" });
 
-  const room = `dh-${serverId}-${channelId}`;
+  // The tile's 3D room (room.html) is its own LiveKit room, apart from the
+  // videochat, so walking around in it never shows up as a call tile.
+  const room = `dh-${serverId}-${channelId}${body.room === true ? "--room" : ""}`;
   // The wall in a 3D room watches the call: invisible and watch-only, under
   // its own name so it never knocks your own app tab out of the same call.
   const wall = body.wall === true;
