@@ -732,6 +732,9 @@ export function VoiceRoom(props: {
     { equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
   );
   const teamKey = (members: string) => `team:${members}`;
+  // teamed-up players: their streams show only in the team screen, so their
+  // own tiles show just the webcam (Kaalob)
+  const inTeam = createMemo(() => new Set(teamScreens().flatMap((members) => members.split(","))));
   // a member's stream track (theirs, or your own)
   const streamFor = (uid: string) => {
     const here = room();
@@ -891,6 +894,13 @@ export function VoiceRoom(props: {
   createEffect(() => {
     const uid = watchRequest();
     if (!uid) return;
+    // a teamed-up player: their stream lives in the team screen, show that big
+    const team = teamScreens().find((members) => members.split(",").includes(uid));
+    if (team) {
+      setFocus(teamKey(team));
+      setWatchRequest(undefined);
+      return;
+    }
     const tile = tiles().find((t) => !t.screen && t.participant.identity === uid);
     if (!tile || !streamOf(tile.participant)) return;
     setFocus(tile.key);
@@ -941,7 +951,7 @@ export function VoiceRoom(props: {
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
-                stream={tile.screen ? undefined : streamOf(tile.participant)}
+                stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant)}
                 swapped={swapped().has(tile.participant.identity)}
                 onSwap={() => swap(tile.participant.identity)}
                 corner={corners().get(tile.participant.identity) ?? "tl"}
