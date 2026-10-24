@@ -121,14 +121,35 @@ function makeChair(x, z, turn = 0) {
     `translate3d(${w / 2}px, ${-tall}px, ${d / 2 - backTop}px) rotateY(180deg) rotateX(${Math.atan2(lean, rise)}rad)`,
     "front",
   );
-  // the two sides: the drawn side profile, cut out of a d x tall panel
-  const right = [[d, tall], [d, tall - seat], [backBase, tall - seat], [backTop, 0], [0, 0], [0, tall]];
-  const left = right.map(([px, py]) => [d - px, py]);
+  // the two covered sides: the drawn side profile, cut out of a d x tall
+  // panel, filled like the other faces and outlined in glowing green (a
+  // clipped panel loses its border, so the outline is drawn in the picture)
+  // Both sides are the same panel turned the same way (+x), one at each
+  // edge: a panel shows from both sides, and the browser dropped a side
+  // built turned the other way (rotateY(-90deg)).
+  const profile = [[d, tall], [d, tall - seat], [backBase, tall - seat], [backTop, 0], [0, 0], [0, tall]];
   const poly = (pts) => `polygon(${pts.map(([px, py]) => `${px}px ${py}px`).join(", ")})`;
-  chairFace(chair, d, tall, `translate3d(${w / 2}px, ${-tall}px, ${d / 2}px) rotateY(90deg)`, "side", poly(right));
-  chairFace(chair, d, tall, `translate3d(${-w / 2}px, ${-tall}px, ${-d / 2}px) rotateY(-90deg)`, "side", poly(left));
+  const panel = (pts) =>
+    `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${d}' height='${tall}'><polygon points='${pts.join(" ")}' fill='#072414' stroke='#23ff9a' stroke-opacity='.85' stroke-width='2'/></svg>`,
+    )}")`;
+  for (const sx of [w / 2, -w / 2]) {
+    chairFace(chair, d, tall, `translate3d(${sx}px, ${-tall}px, ${d / 2}px) rotateY(90deg)`, "side", poly(profile));
+    chair.lastChild.style.backgroundImage = panel(profile);
+  }
   world.append(chair);
-  return { x, z, half: turn % 180 ? d / 2 : w / 2, halfZ: turn % 180 ? w / 2 : d / 2 };
+  const c = { x, z, el: chair, turn: 0, turnAt: 0, half: 0, halfZ: 0 };
+  turnChair(c, turn);
+  return c;
+}
+/** Turns a chair to face `turn` degrees (0 = the front wall), a quarter at a time. */
+function turnChair(c, turn) {
+  c.turn = ((turn % 360) + 360) % 360;
+  c.el.style.transform = `translate3d(${c.x}px, ${H / 2}px, ${c.z}px) rotateY(${c.turn}deg)`;
+  // what blocks walking: its width and depth swap when it is side-on
+  const sideOn = c.turn % 180 !== 0;
+  c.half = (sideOn ? CHAIR.d : CHAIR.w) / 2;
+  c.halfZ = (sideOn ? CHAIR.w : CHAIR.d) / 2;
 }
 // one chair per screen, 1.5 m in front of it and facing it: screens 1 and 2
 // on the front wall, 3 and 4 on the back wall (turned around)
@@ -543,6 +564,54 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyM") toggleTvSound();
 });
 
+// ---- turning chairs (R): the chair you look at turns a quarter, for
+// everyone. Like TV, a small reliable "chair" message, newest wins, and
+// newcomers are told the turns on arrival.
+const CHAIR_REACH = 300; // you can turn a chair up to 3 m away
+function chairInView() {
+  const near = CHAIRS.filter((c) => Math.hypot(c.x - me.x, c.z - me.z) < CHAIR_REACH);
+  return near.length ? nearestInView(near) : null;
+}
+function turnChairBy(c) {
+  turnChair(c, c.turn + 90);
+  c.turnAt = Date.now();
+  sendChair(c);
+}
+function sendChair(c, to) {
+  if (!room || room.state !== "connected") return;
+  const msg = JSON.stringify({ chair: CHAIRS.indexOf(c), turn: c.turn, at: c.turnAt });
+  room.localParticipant
+    .publishData(new TextEncoder().encode(msg), { reliable: true, topic: "chair", destinationIdentities: to })
+    .catch(() => {});
+}
+function onChair(data) {
+  let msg;
+  try {
+    msg = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return;
+  }
+  const c = CHAIRS[msg.chair];
+  const at = Number(msg.at) || 0;
+  if (!c || at <= c.turnAt || ![0, 90, 180, 270].includes(msg.turn)) return;
+  turnChair(c, msg.turn);
+  c.turnAt = at;
+}
+const chairBtn = document.createElement("button");
+chairBtn.type = "button";
+chairBtn.textContent = "Turn chair (R)";
+chairBtn.title = "Turn the chair you look at by 90 degrees";
+chairBtn.addEventListener("click", () => {
+  const c = chairInView();
+  if (c) turnChairBy(c);
+});
+document.getElementById("bar").append(chairBtn);
+addEventListener("keydown", (e) => {
+  if (e.repeat || !picker.hidden || !big.hidden || e.code !== "KeyR") return;
+  const c = chairInView();
+  if (c) turnChairBy(c);
+});
+
 const shareBtns = SCREENS.map((s) => {
   const b = document.createElement("button");
   b.type = "button";
@@ -724,9 +793,11 @@ function walk(now) {
   // ahead = (sin yaw, -cos yaw), right = (cos yaw, sin yaw) on the floor
   const nx = clamp(me.x + ((Math.sin(a) * ahead + Math.cos(a) * side) / len) * step, -W / 2 + MARGIN, W / 2 - MARGIN);
   const nz = clamp(me.z + ((-Math.cos(a) * ahead + Math.sin(a) * side) / len) * step, -D / 2 + MARGIN, D / 2 - MARGIN);
-  // chairs block you; slide along them (each direction checked on its own)
-  if (!inChair(nx, me.z)) me.x = nx;
-  if (!inChair(me.x, nz)) me.z = nz;
+  // chairs block you; slide along them (each direction checked on its own).
+  // Standing inside one (it was turned onto you), you can walk out.
+  const stuck = inChair(me.x, me.z);
+  if (stuck || !inChair(nx, me.z)) me.x = nx;
+  if (stuck || !inChair(me.x, nz)) me.z = nz;
   draw();
   requestAnimationFrame(walk);
 }
@@ -961,6 +1032,7 @@ async function join(pass) {
       addPerson(p);
       sendPose(true);
       for (const s of SCREENS) if (s.tvAt) sendTv(s, [p.identity]); // what is on TV
+      for (const c of CHAIRS) if (c.turnAt) sendChair(c, [p.identity]); // how chairs are turned
     })
     .on(RoomEvent.ParticipantDisconnected, (p) => { removePerson(p.identity); clearScreensOf(p.identity); })
     .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
@@ -976,6 +1048,7 @@ async function join(pass) {
     .on(RoomEvent.DataReceived, (data, p, _kind, topic) => {
       if (topic === "pose" && p) onPose(p, data);
       if (topic === "tv") onTv(data);
+      if (topic === "chair") onChair(data);
     })
     .on(RoomEvent.Disconnected, () => setStatus("Left the room. Reload to come back in.", true));
   await room.connect(pass.url, pass.token);
