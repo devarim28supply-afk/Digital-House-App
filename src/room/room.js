@@ -532,8 +532,17 @@ function addPerson(p) {
   return person;
 }
 function setName(person, name) {
+  person.name = name;
   for (const tag of person.tags) tag.textContent = name;
   person.backName.textContent = name;
+  showWho();
+}
+
+// The terminal on the front wall: `who` lists everyone in the room.
+const whoList = document.getElementById("who");
+function showWho() {
+  const names = [mine.name || "you", ...[...people.values()].map((p) => p.name || "someone")];
+  whoList.textContent = names.map((n) => `  ${n}`).join("\n");
 }
 function removePerson(identity) {
   const person = people.get(identity);
@@ -543,6 +552,7 @@ function removePerson(identity) {
   updateCount();
 }
 function updateCount() {
+  showWho();
   if (statusBox.classList.contains("problem") || !room) return;
   const n = people.size;
   setStatus(n ? `${n + 1} people in the room` : "Only you here for now");

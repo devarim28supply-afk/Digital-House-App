@@ -10,17 +10,20 @@
    * canvas, no animation loop. The page only moves when someone does.
    * Room size in px (100 px = 1 m): 6 m wide, 6 m deep, 3 m high.
    * Everyone in it is their webcam on a diamond (or hexagon) plate.
+   * The look: inside a circuit board. Dark walls with green traces and
+   * solder pads (one small SVG tile, repeated), a glowing grid floor and
+   * ceiling, and a terminal on the front wall listing who is here.
    */
   :root {
     --w: 600px;
     --d: 600px;
     --h: 300px;
-    --wall: #d9d4cb;
-    --wall-dark: #c9c3b8;
-    --floor: #8a6a4f;
-    --ceiling: #ecebe7;
+    --board: #03110a;
+    --board-dark: #010805;
+    --trace: #23ff9a;
+    --circuit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cg fill='none' stroke='%2323ff9a' stroke-opacity='.32' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M0 30H70L90 50H140L160 30H200'/%3E%3Cpath d='M30 0V60L50 80V200'/%3E%3Cpath d='M120 0V20L140 40V90L160 110H200'/%3E%3Cpath d='M0 110H40L60 130H100L120 150V200'/%3E%3Cpath d='M175 0V70M175 200V150'/%3E%3Cpath d='M90 50V95L105 110H118'/%3E%3C/g%3E%3Cg fill='%2303110a' stroke='%2323ff9a' stroke-opacity='.65' stroke-width='2'%3E%3Ccircle cx='175' cy='70' r='4'/%3E%3Ccircle cx='175' cy='150' r='4'/%3E%3Ccircle cx='122' cy='110' r='4'/%3E%3Ccircle cx='50' cy='80' r='3'/%3E%3Ccircle cx='140' cy='90' r='3'/%3E%3C/g%3E%3Crect x='58' y='150' width='34' height='20' rx='2' fill='%23062214' stroke='%2323ff9a' stroke-opacity='.45'/%3E%3C/svg%3E");
   }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
   body { font: 14px/1.4 system-ui, sans-serif; color: #fff; user-select: none; }
 
   /*
@@ -52,8 +55,11 @@
     height: var(--h);
     margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
     background:
-      linear-gradient(to top, #6b5a4a 0 10px, #fff3 10px 11px, transparent 11px), /* skirting board */
-      linear-gradient(to bottom, var(--wall), var(--wall-dark));
+      linear-gradient(to top, var(--trace) 0 2px, #23ff9a40 2px 6px, transparent 14px), /* glowing floor seam */
+      linear-gradient(to bottom, var(--trace) 0 1px, #23ff9a30 1px 4px, transparent 10px), /* ceiling seam */
+      var(--circuit) 0 0 / 200px 200px,
+      linear-gradient(to bottom, var(--board), var(--board-dark));
+    box-shadow: inset 0 0 60px #23ff9a14;
   }
   .side { width: var(--d); margin-left: calc(var(--d) / -2); }
   .front { transform: translateZ(calc(var(--d) / -2)); }
@@ -69,13 +75,42 @@
   .floor {
     transform: translateY(calc(var(--h) / 2)) rotateX(90deg);
     background:
-      repeating-linear-gradient(to right, #0000 0 59px, #0003 59px 60px), /* planks */
-      linear-gradient(var(--floor), var(--floor));
+      radial-gradient(circle at center, #23ff9a1f, transparent 60%),
+      repeating-linear-gradient(to right, #23ff9a38 0 1px, transparent 1px 50px),
+      repeating-linear-gradient(to bottom, #23ff9a38 0 1px, transparent 1px 50px),
+      var(--board-dark);
   }
   .ceiling {
     transform: translateY(calc(var(--h) / -2)) rotateX(-90deg);
-    background: radial-gradient(circle at center, #fff 0 40px, var(--ceiling) 41px, #d8d6d0 100%);
+    background:
+      radial-gradient(circle at center, #23ff9a55 0 30px, #23ff9a22 31px 34px, transparent 70px), /* light panel */
+      repeating-linear-gradient(to right, #23ff9a1c 0 1px, transparent 1px 100px),
+      repeating-linear-gradient(to bottom, #23ff9a1c 0 1px, transparent 1px 100px),
+      var(--board-dark);
   }
+
+  /* the terminal on the front wall */
+  .terminal {
+    position: absolute;
+    left: 150px;
+    top: 46px;
+    width: 300px;
+    height: 170px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #23ff9a80;
+    border-radius: 4px;
+    background: #010604ee;
+    box-shadow: 0 0 24px #23ff9a33;
+    font: 9px/1.45 ui-monospace, Consolas, monospace;
+    color: var(--trace);
+    text-shadow: 0 0 4px #23ff9a99;
+    white-space: pre;
+    overflow: hidden;
+  }
+  .terminal .dim { opacity: .55; }
+  .terminal .cursor { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
 
   /*
    * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
@@ -301,7 +336,16 @@
 <body>
 <div id="view">
   <div id="world">
-    <div class="face wall front"></div>
+    <div class="face wall front">
+      <div class="terminal"><span class="dim">DARKWOOD NODE  //  room link established</span>
+[ ok ] livekit ........ connected
+[ ok ] webcam plates .. online
+[ ok ] face tracking .. ready
+
+guest@darkwood-node:~$ who
+<span id="who">...</span>
+guest@darkwood-node:~$ <span class="cursor">_</span></div>
+    </div>
     <div class="face wall back"></div>
     <div class="face wall side left"></div>
     <div class="face wall side right"></div>
