@@ -1227,6 +1227,13 @@
   place-items: center;
 }
 
+/* camera off: the icon 10% bigger than .avatar.big */
+.tile-empty .avatar.big {
+  width: 79px;
+  height: 79px;
+  font-size: 26px;
+}
+
 .tile.room-view {
   border-color: #1f3b2a;
 }

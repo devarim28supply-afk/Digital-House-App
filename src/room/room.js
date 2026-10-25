@@ -10,7 +10,7 @@
 
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { LocalVideoTrack, Room, RoomEvent, Track } from "livekit-client";
+import { Room, RoomEvent, Track } from "livekit-client";
 
 import { auth, db } from "../firebase";
 import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
@@ -157,11 +157,10 @@ const CHAIRS = [
   makeChair(SCREEN_X, D / 4, 180),
   makeChair(-SCREEN_X, D / 4, 180),
 ];
-// ---- the table: dining height, in the middle of the room between the two
-// rows of chairs, its long side left to right (parallel to the TV walls),
-// long enough to reach past both chairs of each row (Kaalob's floor plan).
-// Same look as the chairs: a top slab on four square legs.
-const TABLE = { w: 400, d: 80, tall: 75, slab: 5, leg: 6 };
+// ---- a small desk against the wall under each small TV (screens 1 to 4).
+// Same look as the chairs: a top slab on four square legs. Its top stays
+// under the TV's bottom edge (0.87 m up).
+const DESK = { w: 140, d: 50, tall: 75, slab: 4, leg: 5 };
 /** A box of CSS faces in `parent`: x0..x1 left to right, z0..z1 front to back,
  *  from `top` (px above the floor) down `h` px. No bottom face. */
 function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {
@@ -172,34 +171,37 @@ function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {
   chairFace(parent, sz, h, `translate3d(${x0}px, ${y}px, ${z0}px) rotateY(-90deg)`);
   chairFace(parent, sx, sz, `translate3d(${x0}px, ${y}px, ${z0}px) rotateX(90deg)`, topCls);
 }
-function makeTable() {
-  const { w, d, tall, slab, leg } = TABLE;
-  const table = document.createElement("div");
-  table.className = "chair"; // same 3D holder as a chair
-  table.style.transform = `translate3d(0px, ${H / 2}px, 0px)`;
-  boxFaces(table, -w / 2, w / 2, -d / 2, d / 2, tall, slab);
-  const lx = w / 2 - leg - 4, lz = d / 2 - leg - 4; // legs set in a little
-  // a leg at each corner and a pair in the middle of the long sides
-  for (const [x, z] of [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz], [0, -lz], [0, lz]]) {
-    boxFaces(table, x - leg / 2, x + leg / 2, z - leg / 2, z + leg / 2, tall - slab, tall - slab, "");
+function makeDesk(x, z) {
+  const { w, d, tall, slab, leg } = DESK;
+  const desk = document.createElement("div");
+  desk.className = "chair"; // same 3D holder as a chair
+  desk.style.transform = `translate3d(${x}px, ${H / 2}px, ${z}px)`;
+  boxFaces(desk, -w / 2, w / 2, -d / 2, d / 2, tall, slab);
+  const lx = w / 2 - leg - 3, lz = d / 2 - leg - 3; // legs set in a little
+  for (const [px, pz] of [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]]) {
+    boxFaces(desk, px - leg / 2, px + leg / 2, pz - leg / 2, pz + leg / 2, tall - slab, tall - slab, "");
   }
-  world.append(table);
-  return { x: 0, z: 0, half: w / 2, halfZ: d / 2 };
+  world.append(desk);
+  return { x, z, half: w / 2, halfZ: d / 2 };
 }
-const THE_TABLE = makeTable();
+// its back against the front wall (-z) or the back wall (+z)
+const DESKS = [-SCREEN_X, SCREEN_X].flatMap((x) => [
+  makeDesk(x, -D / 2 + DESK.d / 2),
+  makeDesk(x, D / 2 - DESK.d / 2),
+]);
 
-const CHAIR_GAP = 18; // how close you can walk to a chair (or the table)
+const CHAIR_GAP = 18; // how close you can walk to a chair (or a desk)
 const inChair = (x, z) =>
-  [...CHAIRS, THE_TABLE].some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
+  [...CHAIRS, ...DESKS].some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
 
 // ---- four monitors, two on each of the opposite walls, at eye level
 // Screens 1 and 2 hang side by side on the front wall, 3 and 4 on the back
 // wall, numbered left to right as you face each wall. They stand on their
 // own just off the wall, never inside it: a wall is drawn as one flat
 // 600 x 300 picture (for the rain), which blurred a 1080p share into
-// blocks. On its own the video keeps its full resolution. Sharing
-// publishes your screen to the room as a track named "monitor-<n>";
-// everyone shows it on that monitor. One person per monitor.
+// blocks. On its own the video keeps its full resolution. Each of screens
+// 1 to 4 belongs to the desk under it: it shows what that desk's person
+// shares or streams in the videochat (Kaalob).
 const SCREENS = [
   // front wall (-z), facing it your left is -x
   { id: 1, x: -SCREEN_X, z: -D / 2 + 2, place: `translate3d(${-SCREEN_X}px, 0, ${-D / 2 + 2}px)` },
@@ -208,8 +210,8 @@ const SCREENS = [
   { id: 3, x: SCREEN_X, z: D / 2 - 2, place: `translate3d(${SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
   { id: 4, x: -SCREEN_X, z: D / 2 - 2, place: `translate3d(${-SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
   // Screens 5 and 6: one whole wall each, the two side walls between the TV
-  // walls, floor to ceiling in 16:9 (5.3 x 3 m). Screen sharing only, no TV.
-  // Their shares go out at a higher rate so the 1080p stays sharp this big.
+  // walls, floor to ceiling in 16:9 (5.3 x 3 m). Nothing shows on them for
+  // now: shares go to the desks' own screens.
   { id: 5, big: true, x: -W / 2 + 2, z: 0, place: `translate3d(${-W / 2 + 2}px, 0, 0) rotateY(90deg)` },
   { id: 6, big: true, x: W / 2 - 2, z: 0, place: `translate3d(${W / 2 - 2}px, 0, 0) rotateY(-90deg)` },
 ].map((s) => {
@@ -221,7 +223,7 @@ const SCREENS = [
   video.playsInline = true;
   const idle = document.createElement("div");
   idle.className = "idle";
-  idle.textContent = s.big ? `SCREEN ${s.id}\npress ${s.id} to share your screen` : `SCREEN ${s.id}\n${s.id} share · T TV`;
+  idle.textContent = s.big ? `SCREEN ${s.id}` : `SCREEN ${s.id}\nT TV`;
   const label = document.createElement("div");
   label.className = "label";
   // TV plays in its own <video> (hls.js feeds it), so a share never fights it
@@ -233,90 +235,32 @@ const SCREENS = [
   el.append(video, tvVideo, idle, label);
   el.style.transform = s.place;
   world.append(el);
-  return { ...s, el, video, tvVideo, label, owner: null, mine: null, tv: null, tvAt: 0, tvPlayer: null, tvPlaying: null };
+  return { ...s, el, video, tvVideo, label, owner: null, tv: null, tvAt: 0, tvPlayer: null, tvPlaying: null };
 });
-const CAN_SHARE = Boolean(navigator.mediaDevices?.getDisplayMedia);
-const screenOfTrack = (name) => SCREENS.find((s) => name === `monitor-${s.id}`);
 
-function showOnScreen(screen, track, p) {
-  screen.owner = p.identity;
-  track.attach(screen.video);
+/** A desk's screen shows its person's share from the videochat (a MediaStreamTrack). */
+function showOnScreen(screen, track, identity, name) {
+  if (screen.video.srcObject?.getVideoTracks()[0] !== track) {
+    screen.video.srcObject = new MediaStream([track]);
+    if (!big.hidden && bigScreen === screen) bigVideo.srcObject = screen.video.srcObject;
+  }
+  screen.owner = identity;
   screen.el.classList.add("on");
-  screen.label.textContent = `Screen ${screen.id} · ${people.get(p.identity)?.name || p.name || "someone"}`;
-  updateShareButtons();
+  screen.label.textContent = `Screen ${screen.id} · ${identity === myUid ? "you" : name}`;
   refreshTv(screen);
 }
 function clearScreen(screen) {
+  if (!screen.owner) return;
   if (!big.hidden && bigScreen === screen) closeBig();
   screen.owner = null;
   screen.video.srcObject = null;
   screen.el.classList.remove("on");
   screen.label.textContent = "";
-  updateShareButtons();
   refreshTv(screen); // a TV channel under the share comes back
 }
-function clearScreensOf(identity) {
-  for (const s of SCREENS) if (s.owner === identity) clearScreen(s);
-}
-
-async function toggleShare(screen) {
-  if (screen.mine) return stopShare(screen);
-  if (!CAN_SHARE || !room) return;
-  if (screen.owner) {
-    setStatus(`Screen ${screen.id} is in use. Try the other one.`);
-    setTimeout(updateCount, 3000);
-    return;
-  }
-  // one screen at a time: sharing to the other monitor moves it
-  for (const s of SCREENS) if (s.mine) await stopShare(s);
-  let media;
-  try {
-    // 1080p: text stays readable on the wall and in the big view (F)
-    media = await navigator.mediaDevices.getDisplayMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 10, max: 15 } },
-      audio: false,
-    });
-  } catch {
-    return; // picker closed
-  }
-  const track = media.getVideoTracks()[0];
-  track.contentHint = "detail"; // keep text sharp
-  const local = new LocalVideoTrack(track, undefined, true);
-  screen.mine = local;
-  screen.owner = room.localParticipant.identity;
-  screen.video.srcObject = new MediaStream([track]);
-  screen.el.classList.add("on");
-  screen.label.textContent = `Screen ${screen.id} · you`;
-  refreshTv(screen);
-  track.addEventListener("ended", () => stopShare(screen)); // the browser's own Stop sharing
-  updateShareButtons();
-  try {
-    await room.localParticipant.publishTrack(local, {
-      name: `monitor-${screen.id}`,
-      source: Track.Source.ScreenShare,
-      simulcast: false,
-      // H.264: the graphics card encodes it (a game keeps the CPU busy).
-      // A home upload is ~2 Mbps for everything you send, so the share gets
-      // 1.5 Mbps at 10 frames a second: about twice the detail per frame
-      // of 15 fps, which is what keeps text readable.
-      videoCodec: "h264",
-      // the whole-wall screens get more: the same 1080p, twice the detail
-      videoEncoding: screen.big ? { maxBitrate: 3_000_000, maxFramerate: 15 } : { maxBitrate: 1_500_000, maxFramerate: 10 },
-      // short on upload: keep the 1080p sharpness, drop frames instead
-      degradationPreference: "maintain-resolution",
-    });
-  } catch (err) {
-    console.warn("[room] could not share the screen:", err);
-    await stopShare(screen);
-  }
-}
-async function stopShare(screen) {
-  const local = screen.mine;
-  if (!local) return;
-  screen.mine = null;
-  await room?.localParticipant.unpublishTrack(local, false).catch(() => {});
-  local.mediaStreamTrack.stop();
-  clearScreen(screen);
+/** Ask Darkwood Node (the page around the room) to do something in the videochat. */
+function tellCall(msg) {
+  if (parent !== window) parent.postMessage(msg, location.origin);
 }
 
 // ---- big view: F opens the screen you face full size, F or Esc closes
@@ -638,6 +582,9 @@ function onChair(data) {
 // ---- sitting (E): your plate sits on the chair you look at, facing the
 // way the chair faces; walking (or E again) stands you up in front of it.
 // Others see it from your pose (eye height and seat). One person a chair.
+// The chairs are the desks the videochat hands out (data/seats.ts): you
+// start at yours, sitting or standing tells the videochat, and the desk
+// stays yours while you are up only if you are sharing.
 const SEAT_Z = -6; // where you sit, from the chair's middle (toward its front)
 /** A point in a chair's own space (lz toward its back) on the floor. */
 function chairPoint(c, lz) {
@@ -645,7 +592,7 @@ function chairPoint(c, lz) {
   return { x: c.x + lz * Math.sin(t), z: c.z + lz * Math.cos(t) };
 }
 function seatTaken(i) {
-  for (const person of people.values()) if (person.seat === i) return true;
+  for (const [id, c] of callers) if (id !== myUid && c.seat === i) return true;
   return false;
 }
 /**
@@ -669,10 +616,11 @@ function placeSeated() {
   draw();
   sendPose(true);
 }
-function sitDown(c) {
+/** fromCall: the videochat put you there (your desk), so it need not be told */
+function sitDown(c, fromCall = false) {
   const i = CHAIRS.indexOf(c);
-  if (seatTaken(i)) {
-    setStatus("Someone is sitting there");
+  if (!fromCall && seatTaken(i)) {
+    setStatus("That desk is someone else's");
     setTimeout(updateCount, 2500);
     return;
   }
@@ -680,10 +628,12 @@ function sitDown(c) {
   me.pitch = 0;
   placeSeated();
   updateSitButton();
+  if (!fromCall) tellCall({ type: "dh-seat-sit", seat: i });
 }
-function standUp() {
+function standUp(fromCall = false) {
   const c = CHAIRS[me.seat];
   me.seat = -1;
+  if (!fromCall) tellCall({ type: "dh-seat-stand" });
   me.eye = EYE;
   // step out in front of the chair
   const p = chairPoint(c, -CHAIR.d / 2 - 30);
@@ -719,7 +669,7 @@ feedbackBtn.textContent = "Feedback";
 feedbackBtn.title = "Send feedback to the developers";
 feedbackBtn.addEventListener("click", () => {
   if (document.pointerLockElement) document.exitPointerLock();
-  if (parent !== window) parent.postMessage({ type: "dh-feedback", where: "Darkwood Room" }, location.origin);
+  if (parent !== window) tellCall({ type: "dh-feedback", where: "Darkwood Room" });
   else location.href = `${import.meta.env.BASE_URL}?feedback`;
 });
 
@@ -738,23 +688,25 @@ addEventListener("keydown", (e) => {
   if (c) turnChairBy(c);
 });
 
-const shareBtns = SCREENS.map((s) => {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.addEventListener("click", () => toggleShare(s));
-  if (CAN_SHARE) document.getElementById("bar").append(b);
-  return b;
-});
-function updateShareButtons() {
-  SCREENS.forEach((s, i) => {
-    const b = shareBtns[i];
-    b.textContent = s.mine ? `Stop ${s.id}` : `Share ${s.id}`;
-    b.title = s.mine ? `Stop sharing on screen ${s.id} (key ${s.id})` : `Share your screen to screen ${s.id} (key ${s.id})`;
-    b.setAttribute("aria-pressed", String(Boolean(s.mine)));
-    b.disabled = Boolean(s.owner && !s.mine);
-  });
+// Share: the videochat's own screen share, so it shows there and on your
+// desk's screen. Only with a desk (the middle has no screen).
+const shareBtn = document.createElement("button");
+shareBtn.type = "button";
+shareBtn.hidden = true;
+shareBtn.addEventListener("click", () => tellCall({ type: "dh-share" }));
+document.getElementById("bar").append(shareBtn);
+function updateShareButton() {
+  const c = callers.get(myUid);
+  shareBtn.hidden = !c || c.seat < 0;
+  if (shareBtn.hidden) return;
+  shareBtn.textContent = c.sharing ? "Stop sharing (P)" : `Share to screen ${c.seat + 1} (P)`;
+  shareBtn.title = "Your screen share in the videochat, shown on your desk's screen";
+  shareBtn.setAttribute("aria-pressed", String(c.sharing));
 }
-updateShareButtons();
+addEventListener("keydown", (e) => {
+  if (e.repeat || !picker.hidden || !big.hidden || e.code !== "KeyP" || shareBtn.hidden) return;
+  tellCall({ type: "dh-share" });
+});
 
 // ---- a person on a plate (you, or someone else)
 function makeAvatar(mine) {
@@ -810,7 +762,7 @@ function cropTransform(cx, cy, zoom) {
 // ---- you
 // You start in the aisle between the two rows of chairs, facing the front
 // wall (somewhere left to right, so people do not land on each other).
-// (beside the table's end, not in it: 2.4 to 2.7 m left or right of the middle)
+// (2.4 to 2.7 m left or right of the middle)
 const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(240 + Math.random() * 30), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
 const mine = makeAvatar(true);
 updateSitButton(); // its label needs you (me) to exist
@@ -913,6 +865,7 @@ addEventListener("blur", () => held.clear());
 function walk(now) {
   if (!held.size) return;
   if (me.seat >= 0) standUp();
+  moved = true; // walked off: no longer placed in the middle to wait
   const step = SPEED * Math.min(0.05, (now - last) / 1000);
   last = now;
   let side = 0, ahead = 0;
@@ -1069,34 +1022,27 @@ async function detect() {
 }
 
 // ---- your webcam, shape and view
-let stream = null;
-let camTrack = null; // the webcam as published to the room
-async function setCamera(on) {
-  if (on && !stream) {
-    try {
-      // 16:9, a size a home upload can carry to everyone
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 960 }, height: { ideal: 540 }, aspectRatio: 16 / 9, frameRate: { ideal: 24 } },
-        audio: false,
-      });
-    } catch {
-      camBtn.textContent = "Camera blocked (C)";
-      return;
-    }
+// One camera for the videochat and the room (Kaalob): your plate shows your
+// videochat webcam, and the Camera button here turns that one on and off.
+let stream = null; // your videochat webcam, as the room sees it
+function setCamera(on) {
+  if (on !== Boolean(stream)) tellCall({ type: "dh-camera" });
+}
+/** Your videochat webcam came on, changed or went off (a MediaStreamTrack or null). */
+function showMyCam(track) {
+  if ((stream?.getVideoTracks()[0] ?? null) === track) return;
+  if (track) {
+    stream = new MediaStream([track]);
     mine.video.srcObject = stream;
     startTracking();
-    void publishCamera();
-  } else if (!on && stream) {
+  } else {
     stopTracking();
-    void unpublishCamera();
-    stream.getTracks().forEach((t) => t.stop());
     stream = null;
     mine.video.srcObject = null;
   }
   mine.el.classList.toggle("live", Boolean(stream));
   camBtn.setAttribute("aria-pressed", String(Boolean(stream)));
   camBtn.textContent = stream ? "Camera on (C)" : "Camera off (C)";
-  remember("room_cam", stream ? "1" : "0");
   sendPose(true);
 }
 function setShape(hex) {
@@ -1120,14 +1066,8 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyC") setCamera(!stream);
   if (e.code === "KeyG") setShape(!isHex());
   if (e.code === "KeyV") setThird(!third);
-  const n = /^Digit([1-6])$/.exec(e.code);
-  if (n) toggleShare(SCREENS[Number(n[1]) - 1]);
   if (e.code === "BracketLeft") setFov(fov - 5);
   if (e.code === "BracketRight") setFov(fov + 5);
-});
-// Darkwood Node's "Camera off" turns it off here too.
-addEventListener("message", (e) => {
-  if (e.source === parent && e.origin === location.origin && e.data?.type === "dh-camera-off") setCamera(false);
 });
 
 // ---- the room on LiveKit
@@ -1135,6 +1075,7 @@ const params = new URLSearchParams(location.search);
 const serverId = params.get("s") ?? "";
 const channelId = params.get("c") ?? "";
 let room = null;
+let myUid = ""; // your LiveKit identity in the call and the room
 
 /** A LiveKit pass: for this room, or (call) to watch the tile's videochat. */
 async function getPass(user, call = false) {
@@ -1158,21 +1099,16 @@ async function join(pass) {
   room = new Room({ adaptiveStream: false, dynacast: true });
   room
     .on(RoomEvent.ParticipantConnected, (p) => {
-      addPerson(p);
+      addPerson(p, "room");
       sendPose(true);
       for (const s of SCREENS) if (s.tvAt) sendTv(s, [p.identity]); // what is on TV
       for (const c of CHAIRS) if (c.turnAt) sendChair(c, [p.identity]); // how chairs are turned
     })
-    .on(RoomEvent.ParticipantDisconnected, (p) => { removePerson(p.identity); clearScreensOf(p.identity); })
-    .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
-      const screen = screenOfTrack(pub.trackName);
-      if (screen) showOnScreen(screen, track, p);
-      else if (pub.source === Track.Source.Camera) track.attach(addPerson(p).video);
-    })
-    .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => {
-      track.detach();
-      const screen = screenOfTrack(pub.trackName);
-      if (screen && screen.owner === p.identity) clearScreen(screen);
+    .on(RoomEvent.ParticipantDisconnected, (p) => {
+      const person = people.get(p.identity);
+      if (person) person.poseAt = 0; // in the call still: back to their desk (or the middle)
+      dropPerson(p.identity, "room");
+      syncCall();
     })
     .on(RoomEvent.DataReceived, (data, p, _kind, topic) => {
       if (topic === "pose" && p) onPose(p, data);
@@ -1181,34 +1117,12 @@ async function join(pass) {
     })
     .on(RoomEvent.Disconnected, () => setStatus("Left the room. Reload to come back in.", true));
   await room.connect(pass.url, pass.token);
-  for (const p of room.remoteParticipants.values()) addPerson(p);
+  myUid ||= room.localParticipant.identity;
+  for (const p of room.remoteParticipants.values()) addPerson(p, "room");
   setStatus("");
   updateCount();
-  if (stream) await publishCamera();
   sendPose(true);
   setInterval(() => sendPose(true), 2000); // newcomers learn where you are
-}
-
-async function publishCamera() {
-  if (!room || !stream || camTrack) return;
-  const track = new LocalVideoTrack(stream.getVideoTracks()[0], undefined, true);
-  camTrack = track;
-  try {
-    await room.localParticipant.publishTrack(track, {
-      source: Track.Source.Camera,
-      simulcast: false,
-      videoEncoding: { maxBitrate: 600_000, maxFramerate: 24 },
-      degradationPreference: "maintain-framerate",
-    });
-  } catch (err) {
-    camTrack = null;
-    console.warn("[room] could not send the webcam:", err);
-  }
-}
-async function unpublishCamera() {
-  const track = camTrack;
-  camTrack = null;
-  if (room && track) await room.localParticipant.unpublishTrack(track, false).catch(() => {});
 }
 
 // Your pose, at most 10 times a second and only when it changed (plus a
@@ -1238,25 +1152,34 @@ function sendPose(force = false) {
 }
 
 // ---- everyone else
-const people = new Map(); // identity -> { el, video, tags, at, to }
+// Everyone in the tile's videochat has a plate (Kaalob), whether or not they
+// opened the Room side: their videochat webcam, at their desk or waiting in
+// the middle of the room. Those in the room too walk where their poses say.
+const people = new Map(); // identity -> { el, video, tags, at, to, inRoom, inCall, poseAt }
+const POSE_FRESH = 6000; // ms: an older room pose no longer places them (poses come every 2 s)
 
-function addPerson(p) {
+/** from: "room" (in the 3D room) or "call" (in the videochat) */
+function addPerson(p, from) {
   let person = people.get(p.identity);
-  if (person) return person;
-  person = makeAvatar(false);
-  const start = { x: 0, z: 0, yaw: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
-  person.at = { ...start };
-  person.to = { ...start };
-  person.el.classList.add("hidden"); // until their first pose says where they are
-  people.set(p.identity, person);
-  setName(person, p.name || "Someone");
-  // the name they use in Darkwood Node (the one on their webcam, if set)
-  getDoc(doc(db, "profiles", p.identity))
-    .then((snap) => {
-      const prof = snap.data();
-      if (prof) setName(person, prof.username || prof.callName || prof.name || p.name);
-    })
-    .catch(() => {});
+  if (!person) {
+    person = makeAvatar(false);
+    const start = { x: 0, z: 0, yaw: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
+    person.at = { ...start };
+    person.to = { ...start };
+    person.poseAt = 0;
+    person.el.classList.add("hidden"); // until a pose or their desk says where they are
+    people.set(p.identity, person);
+    setName(person, p.name || "Someone");
+    // the name they use in Darkwood Node (the one on their webcam, if set)
+    getDoc(doc(db, "profiles", p.identity))
+      .then((snap) => {
+        const prof = snap.data();
+        if (prof) setName(person, prof.username || prof.callName || prof.name || p.name);
+      })
+      .catch(() => {});
+  }
+  if (from === "room") person.inRoom = true;
+  else person.inCall = true;
   updateCount();
   return person;
 }
@@ -1265,9 +1188,14 @@ function setName(person, name) {
   for (const tag of person.tags) tag.textContent = name;
   person.backName.textContent = name;
 }
-function removePerson(identity) {
+/** Gone from the room or the call; the plate goes when they are in neither. */
+function dropPerson(identity, from) {
   const person = people.get(identity);
   if (!person) return;
+  if (from === "room") person.inRoom = false;
+  else person.inCall = false;
+  if (person.inRoom || person.inCall) return;
+  person.video.srcObject = null;
   person.el.remove();
   people.delete(identity);
   updateCount();
@@ -1275,23 +1203,22 @@ function removePerson(identity) {
 function updateCount() {
   if (statusBox.classList.contains("problem") || !room) return;
   const n = people.size;
-  setStatus(n ? `${n + 1} people in the room` : "Only you here for now");
+  setStatus(n ? `${n + 1} people here` : "Only you here for now");
 }
 
 function onPose(p, data) {
   let pose;
   try { pose = JSON.parse(new TextDecoder().decode(data)); } catch { return; }
-  const person = addPerson(p);
+  const person = addPerson(p, "room");
   const first = person.el.classList.contains("hidden");
   person.el.classList.remove("hidden");
   person.el.classList.toggle("hexagon", Boolean(pose.hex));
-  person.el.classList.toggle("live", Boolean(pose.cam));
   Object.assign(person.to, {
     x: +pose.x || 0, z: +pose.z || 0, yaw: +pose.yaw || 0, pitch: +pose.pitch || 0,
     eye: clamp(+pose.eye || EYE, 60, 200),
     cx: +pose.cx || SET_W / 2, cy: +pose.cy || SET_H / 2, zoom: +pose.zoom || 1,
   });
-  person.seat = Number.isInteger(pose.seat) ? pose.seat : -1;
+  person.poseAt = performance.now();
   if (first) Object.assign(person.at, person.to);
   glidePeople();
 }
@@ -1320,37 +1247,43 @@ function peopleStep() {
   else peopleGliding = false;
 }
 
-// ---- the tile's videochat, as small screens under the room
-// Watched with a hidden, watch-only pass (nobody sees it in the call). Shows
-// everyone in the call: their webcam, or their username on black while it is off.
+// ---- the tile's videochat: the small screens under the room, and where
+// everyone's plate, webcam, desk and desk screen come from.
+// Watched with a hidden, watch-only pass (nobody sees it in the call). The
+// desks are handed out by the videochat itself (src/data/seats.ts) and read
+// here from each person's attributes.
 const strip = document.getElementById("strip");
 const side = document.getElementById("side");
 const ROW = 4; // small screens under the room; the rest go in the column
-const callers = new Map(); // identity -> { el, video, who, center }
+// identity -> { el, video, who, center, name, and for a person: p, seat, stand, wait, sharing, share }
+const callers = new Map();
+let callRoom = null;
+// the videochat's own share track names (VoiceRoom): stream mode, a second screen
+const STREAM = "stream", SECOND_SCREEN = "screen-2";
 
 async function watchCall(pass) {
   const call = new Room({ adaptiveStream: false, dynacast: false });
-  const refresh = (p) => {
-    const tile = callers.get(p.identity);
-    if (!tile) return;
-    const cam = p.getTrackPublication(Track.Source.Camera);
-    tile.el.classList.toggle("live", Boolean(cam?.track && cam.isSubscribed && !cam.isMuted));
-  };
+  // LiveKit drops a publication just after these events: look again after
+  const later = () => setTimeout(syncCall);
   call
-    .on(RoomEvent.ParticipantConnected, (p) => addCaller(p))
-    .on(RoomEvent.ParticipantDisconnected, (p) => removeCaller(p.identity))
+    .on(RoomEvent.ParticipantConnected, (p) => { addCaller(p); syncCall(); })
+    .on(RoomEvent.ParticipantDisconnected, (p) => { removeCaller(p.identity); syncCall(); })
     .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
       if (pub.source === Track.Source.Camera) track.attach(addCaller(p).video);
-      refresh(p);
+      syncCall();
     })
-    // LiveKit drops the publication just after these events: look again after
-    .on(RoomEvent.TrackUnsubscribed, (track, _pub, p) => { track.detach(); setTimeout(() => refresh(p)); })
-    .on(RoomEvent.TrackUnpublished, (_pub, p) => setTimeout(() => refresh(p)))
-    .on(RoomEvent.TrackMuted, (_pub, p) => refresh(p))
-    .on(RoomEvent.TrackUnmuted, (_pub, p) => refresh(p))
+    .on(RoomEvent.TrackUnsubscribed, (track) => { track.detach(); later(); })
+    .on(RoomEvent.TrackPublished, later)
+    .on(RoomEvent.TrackUnpublished, later)
+    .on(RoomEvent.TrackMuted, syncCall)
+    .on(RoomEvent.TrackUnmuted, syncCall)
+    .on(RoomEvent.ParticipantAttributesChanged, syncCall)
     .on(RoomEvent.ParticipantNameChanged, (_name, p) => addCaller(p));
   await call.connect(pass.url, pass.token);
-  for (const p of call.remoteParticipants.values()) { addCaller(p); refresh(p); }
+  callRoom = call;
+  for (const p of call.remoteParticipants.values()) addCaller(p);
+  syncCall();
+  setInterval(syncCall, 1000); // room poses go stale, the waiting line moves up
 }
 
 function addCaller(p) {
@@ -1367,9 +1300,9 @@ function addCaller(p) {
   const who = document.createElement("div");
   who.className = "who";
   el.append(video, center, who);
-  tile = { el, video, who, center };
+  tile = { el, video, who, center, name: "", seat: -1 };
   callers.set(p.identity, tile);
-  const name = (n) => { who.textContent = n; center.textContent = n; };
+  const name = (n) => { tile.name = n; who.textContent = n; center.textContent = n; };
   name(p.name || "Someone");
   // a person's identity is their uid; the call's other names are "uid:..."
   getDoc(doc(db, "profiles", p.identity.split(":")[0]))
@@ -1384,6 +1317,7 @@ function removeCaller(identity) {
   tile.video.srcObject = null;
   tile.el.remove();
   callers.delete(identity);
+  dropPerson(identity, "call");
   layoutCall();
 }
 function layoutCall() {
@@ -1392,12 +1326,116 @@ function layoutCall() {
   document.body.classList.toggle("calling", tiles.length > 0);
 }
 
+/** A publication's video, when it is coming in and not paused. */
+const videoOf = (pub) => (pub?.track && pub.isSubscribed && !pub.isMuted ? pub.track.mediaStreamTrack : null);
+/** What someone shares in the videochat: a stream first, then the main share, then a second screen. */
+function shareOf(p) {
+  const rank = (pub) => (pub.trackName === STREAM ? 0 : pub.trackName === SECOND_SCREEN ? 2 : 1);
+  const pubs = [...p.trackPublications.values()]
+    .filter((pub) => pub.kind === Track.Kind.Video && !pub.isMuted &&
+      (pub.source === Track.Source.ScreenShare || pub.trackName === STREAM || pub.trackName === SECOND_SCREEN))
+    .sort((a, b) => rank(a) - rank(b));
+  return { sharing: pubs.length > 0, track: pubs.map(videoOf).find(Boolean) ?? null };
+}
+
+function syncCall() {
+  if (!callRoom) return;
+  for (const p of callRoom.remoteParticipants.values()) {
+    const c = callers.get(p.identity);
+    if (!c) continue;
+    const cam = videoOf(p.getTrackPublication(Track.Source.Camera));
+    c.el.classList.toggle("live", Boolean(cam));
+    if (p.identity.includes(":")) continue; // not a person (watchers, extras)
+    const seat = Number.parseInt(p.attributes["dw-seat"] ?? "", 10);
+    Object.assign(c, {
+      p,
+      seat: seat >= 0 && seat < CHAIRS.length ? seat : -1,
+      stand: p.attributes["dw-stand"] === "1",
+      wait: p.attributes["dw-wait"] === "1",
+    });
+    const share = shareOf(p);
+    c.sharing = share.sharing;
+    c.share = share.track;
+    if (p.identity === myUid) {
+      showMyCam(cam);
+      continue;
+    }
+    const person = addPerson(p, "call");
+    if ((person.video.srcObject?.getVideoTracks()[0] ?? null) !== cam) person.video.srcObject = cam ? new MediaStream([cam]) : null;
+    person.el.classList.toggle("live", Boolean(cam));
+  }
+  // each desk's screen: what its person shares
+  for (const s of SCREENS) {
+    if (s.big) continue;
+    const owner = [...callers.entries()].find(([, c]) => c.seat === s.id - 1 && c.share);
+    if (owner) showOnScreen(s, owner[1].share, owner[0], owner[1].name);
+    else clearScreen(s);
+  }
+  placeFromCall();
+  syncMe();
+  updateShareButton();
+}
+
+// The fifth and later wait in a line across the middle, first come first
+// (anyone else without a desk after them, so no two plates stand in one spot).
+const SPOT = 90; // 0.9 m apart
+function middleSpot(identity) {
+  const line = [...callers.values()]
+    .filter((c) => c.p && c.seat < 0)
+    .sort((a, b) => Number(b.wait) - Number(a.wait) || (a.p.joinedAt?.getTime() ?? 0) - (b.p.joinedAt?.getTime() ?? 0));
+  const k = line.findIndex((c) => c.p.identity === identity);
+  return k < 0 ? null : { x: (k - (line.length - 1) / 2) * SPOT, z: 0 };
+}
+/** People not walking in the room (no fresh pose): at their desk, or in the middle. */
+function placeFromCall() {
+  const now = performance.now();
+  for (const [id, person] of people) {
+    const c = callers.get(id);
+    if (!c?.p || now - person.poseAt < POSE_FRESH) continue;
+    let to;
+    if (c.seat >= 0) {
+      const chair = CHAIRS[c.seat];
+      to = { ...chairPoint(chair, SEAT_Z), yaw: -chair.turn, eye: SIT_EYE };
+    } else {
+      to = { ...(middleSpot(id) ?? { x: 0, z: 0 }), yaw: 0, eye: EYE };
+    }
+    Object.assign(person.to, to, { pitch: 0, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 });
+    if (person.el.classList.contains("hidden")) {
+      person.el.classList.remove("hidden");
+      Object.assign(person.at, person.to);
+    }
+  }
+  glidePeople();
+}
+
+// You: the desk the videochat gives you is where you sit; waiting, you stand
+// in the line in the middle until you walk off.
+let lastCallSeat; // the desk the videochat last said is yours
+let moved = false; // walked since coming in
+function syncMe() {
+  const c = callers.get(myUid);
+  if (!c?.p) return;
+  if (c.seat !== lastCallSeat) {
+    lastCallSeat = c.seat;
+    if (c.seat >= 0 && !c.stand && me.seat !== c.seat) sitDown(CHAIRS[c.seat], true);
+    else if (c.seat < 0 && me.seat >= 0) standUp(true);
+  }
+  if (c.seat < 0 && c.wait && !moved && me.seat < 0) {
+    const spot = middleSpot(myUid);
+    if (spot && (me.x !== spot.x || me.z !== spot.z)) {
+      me.x = spot.x;
+      me.z = spot.z;
+      me.yaw = 0;
+      draw();
+    }
+  }
+}
+
 // ---- start
 setFov(fov);
 setShape(recall("room_shape") === "hexagon");
 setThird(recall("room_view") === "third");
-// You are here to be seen: the webcam starts on unless you turned it off.
-void setCamera(recall("room_cam") !== "0");
+camBtn.textContent = "Camera off (C)"; // until the videochat's webcam shows up
 
 // Testing on this PC only (never in the live build): ?lk=<url>&token=<pass>
 // joins with a pass signed by hand, so tests never use anyone's login.
@@ -1418,6 +1456,7 @@ if (testPass) {
     }
     if (started) return;
     started = true;
+    myUid = user.uid;
     // your own username on the back of your plate
     getDoc(doc(db, "profiles", user.uid))
       .then((snap) => { const prof = snap.data(); if (prof) setName(mine, prof.username || prof.name || ""); })

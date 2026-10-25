@@ -124,6 +124,7 @@ export function RoomPane(props: {
           roomView={roomView()}
           teams={props.teams}
           autoJoin
+          seats={hasDarkwoodRoom(props.channel)}
           onLeave={props.onLeave}
         />
       </div>
