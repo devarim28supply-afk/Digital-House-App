@@ -263,13 +263,26 @@ export function Chat(props: {
   }
   const dropFile = (id: number) => setPending((list) => list.filter((f) => f.id !== id));
   // another channel starts with nothing attached
-  createEffect(on(() => props.channel.id, () => setPending([]), { defer: true }));
+  // Another chat: start empty. By server AND channel (every DM's chat is
+  // "chat"), and the half-written text too, so words meant for one person
+  // are never sent to another.
+  createEffect(
+    on(
+      () => `${props.serverId}/${props.channel.id}`,
+      () => {
+        setPending([]);
+        setDraft("");
+      },
+      { defer: true },
+    ),
+  );
 
   async function send() {
     const text = draft().trim();
     const files = ready();
     if ((!text && !files.length) || uploading()) return;
     const sent = pending();
+    const where = `${props.serverId}/${props.channel.id}`;
     setDraft("");
     setPending([]);
     setError("");
@@ -277,7 +290,10 @@ export function Chat(props: {
     try {
       await sendMessage(props.serverId, props.channel.id, props.uid, text.slice(0, 4000), files);
     } catch {
-      // put back the words and the attached files, so a retry sends both
+      // Put back the words and the attached files, so a retry sends both,
+      // but only into the same chat: switched away meanwhile, they would
+      // land (and be sent) somewhere they were never meant for.
+      if (`${props.serverId}/${props.channel.id}` !== where) return;
       setDraft(text);
       setPending((now) => [...sent, ...now]);
       setError("Could not send. Check your connection.");
