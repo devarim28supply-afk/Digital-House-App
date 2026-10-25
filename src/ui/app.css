@@ -3068,3 +3068,11 @@ img.live-tile-still {
   width: 100%;
   margin-top: 10px;
 }
+
+.activity-btn {
+  height: 32px;
+  font-size: 12px;
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
+}

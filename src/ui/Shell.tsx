@@ -102,7 +102,7 @@ function pictureStyle(profile: Profile | undefined, field: "banner" | "backgroun
  * server's channels next to them, the channel in the middle, and who is in
  * the server on the right. On a phone the two left columns slide in.
  */
-export function Shell(props: { uid: string; admin: boolean; name: string; username: string; onLogout: () => void }) {
+export function Shell(props: { uid: string; admin: boolean; developer?: boolean; name: string; username: string; onLogout: () => void }) {
   const [servers, setServers] = createSignal<Server[]>([]);
   const [profiles, setProfiles] = createSignal(new Map<string, Profile>());
   const [presence, setPresence] = createSignal(new Map<string, Presence>());
@@ -726,6 +726,12 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           <button class="btn feedback-btn" type="button" title="Send feedback to the developers" onClick={() => openFeedback()}>
             Feedback
           </button>
+          {/* who committed, pushed and deployed what (owner, admins, developers) */}
+          <Show when={props.admin || props.developer}>
+            <a class="btn activity-btn" href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener" title="Who committed, pushed and deployed what">
+              Activity
+            </a>
+          </Show>
           <Show when={tileChat()}>
             {(chat) => (
               <button

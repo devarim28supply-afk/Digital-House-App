@@ -17,7 +17,7 @@ export type AccessStatus = "guest" | "pending" | "approved" | "denied" | "unregi
 export type AccessState = {
   status: AccessStatus;
   user: { uid: string; loginEmail: string; displayName: string } | null;
-  member: { name?: string; username?: string; email?: string } | null;
+  member: { name?: string; username?: string; email?: string; roles?: Record<string, boolean> } | null;
   admin: boolean;
   error: string | null;
 };

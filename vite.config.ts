@@ -11,7 +11,7 @@ function apiDev(): Plugin {
     name: "api-dev",
     apply: "serve",
     configureServer(server) {
-      Object.assign(process.env, loadEnv(server.config.mode, __dirname, ["LIVEKIT_", "BLOB_"]));
+      Object.assign(process.env, loadEnv(server.config.mode, __dirname, ["LIVEKIT_", "BLOB_", "GITHUB_", "VERCEL_TOKEN"]));
       server.middlewares.use("/api", async (req, res, next) => {
         const name = (req.url ?? "").split("?")[0].replace(/^\/+/, "");
         if (!/^[a-z-]+$/.test(name)) return next();
@@ -35,6 +35,12 @@ export default defineConfig(({ command }) => ({
     target: "es2022",
     outDir: "dist/app",
     emptyOutDir: true,
-    rollupOptions: { input: { main: resolve(__dirname, "index.html"), room: resolve(__dirname, "room.html") } },
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        room: resolve(__dirname, "room.html"),
+        activity: resolve(__dirname, "activity.html"),
+      },
+    },
   },
 }));

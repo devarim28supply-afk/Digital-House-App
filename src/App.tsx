@@ -61,6 +61,7 @@ export function App() {
           <Shell
             uid={user().uid}
             admin={state().admin}
+            developer={Boolean(state().member?.roles?.develop)}
             name={state().member?.name || user().displayName || "Member"}
             username={state().member?.username || ""}
             onLogout={logout}

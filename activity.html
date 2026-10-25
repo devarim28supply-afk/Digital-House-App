@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Darkwood Activity</title>
+<style>
+  :root {
+    --bg: #050505;
+    --panel: #0d0f0e;
+    --line: #1f2421;
+    --text: #e5e7e6;
+    --dim: #8b918e;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #facc15;
+    --blue: #60a5fa;
+    --violet: #c084fc;
+    --mono: ui-monospace, Consolas, monospace;
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  header.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  header.top h1 { margin: 0; font: 600 20px var(--mono); }
+  header.top h1::before { content: "› "; color: var(--green); }
+  header.top a { color: var(--dim); text-decoration: none; }
+  .updated { margin-left: auto; color: var(--dim); font-size: 12px; font-family: var(--mono); }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filters button {
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .filters button[aria-pressed="true"] { border-color: var(--green); color: var(--green); }
+  .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 22px; }
+  .person { display: flex; gap: 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .person img, .ev img { width: 36px; height: 36px; border-radius: 50%; background: #222; flex: none; }
+  .person b { display: block; }
+  .person small { color: var(--dim); font-size: 12px; }
+  h2 { font: 600 13px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 22px 0 10px; }
+  .feed { display: flex; flex-direction: column; gap: 6px; }
+  .ev { display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .ev .what { min-width: 0; }
+  .ev .line1 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ev .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; color: var(--text); text-decoration: none; }
+  .ev a.title:hover { text-decoration: underline; }
+  .ev .meta { color: var(--dim); font-size: 12px; }
+  .ev time { color: var(--dim); font-size: 12px; font-family: var(--mono); white-space: nowrap; }
+  .tag { padding: 1px 8px; border-radius: 999px; font: 600 11px var(--mono); text-transform: uppercase; }
+  .tag.commit { background: #14532d; color: #bbf7d0; }
+  .tag.push { background: #1e3a8a; color: #bfdbfe; }
+  .tag.deploy { background: #4c1d95; color: #e9d5ff; }
+  .tag.pr { background: #713f12; color: #fef08a; }
+  .state.READY { color: var(--green); }
+  .state.ERROR, .state.CANCELED { color: var(--red); }
+  .state.BUILDING, .state.QUEUED, .state.INITIALIZING { color: var(--yellow); }
+  .proj { color: var(--dim); font-size: 12px; }
+  .msg { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .msg.err { border-color: #7f1d1d; }
+  .more { margin-top: 10px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  @media (max-width: 600px) { .ev { grid-template-columns: 28px 1fr; } .ev time { grid-column: 2; } .ev img { width: 28px; height: 28px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Activity</h1>
+    <a href="./">← Darkwood Node</a>
+    <span class="updated" id="updated"></span>
+  </header>
+  <div id="status" class="msg">Loading…</div>
+  <div id="content" hidden>
+    <div class="filters" id="projects"></div>
+    <div class="filters" id="kinds"></div>
+    <h2>Who did what (last 30 days)</h2>
+    <div class="people" id="people"></div>
+    <h2>Timeline</h2>
+    <div class="feed" id="feed"></div>
+    <button class="more" id="more" type="button" hidden>Show more</button>
+  </div>
+</div>
+<script type="module" src="/src/activity/activity.ts"></script>
+</body>
+</html>
