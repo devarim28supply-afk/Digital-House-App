@@ -35,6 +35,7 @@ import {
   watchServers,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
+import { ActivityButton } from "./ActivityPanel";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
@@ -728,9 +729,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           </button>
           {/* who committed, pushed and deployed what (owner, admins, developers) */}
           <Show when={props.admin || props.developer}>
-            <a class="btn activity-btn" href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener" title="Who committed, pushed and deployed what">
-              Activity
-            </a>
+            <ActivityButton uid={props.uid} />
           </Show>
           <Show when={tileChat()}>
             {(chat) => (

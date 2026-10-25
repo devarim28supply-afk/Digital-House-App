@@ -479,6 +479,9 @@ async function load() {
   }
 }
 
+// inside Darkwood Node's Activity window: no way back needed, it has its own close button
+if (new URLSearchParams(location.search).has("embed")) document.body.classList.add("embedded");
+
 let started = false;
 onAuthStateChanged(auth, (user) => {
   if (!user) {

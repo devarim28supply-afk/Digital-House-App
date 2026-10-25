@@ -3070,9 +3070,80 @@ img.live-tile-still {
 }
 
 .activity-btn {
+  position: relative;
   height: 32px;
   font-size: 12px;
-  display: inline-grid;
-  place-items: center;
+}
+.activity-btn[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+/* the red count of what is new */
+.activity-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  font: 700 11px/18px system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+/* the floating Activity window: move by the top bar, resize by the corner */
+.activity-window {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: #050505;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+.activity-window-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 38px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+.activity-window-head span {
+  flex: 1;
+}
+.activity-window-head a {
+  color: var(--muted);
   text-decoration: none;
+}
+.activity-window iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #050505;
+}
+.activity-window.dragging iframe {
+  pointer-events: none;
+}
+.activity-window-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 58%, transparent 58%, transparent 70%, var(--muted) 70%, var(--muted) 78%, transparent 78%);
 }
