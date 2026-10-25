@@ -158,9 +158,10 @@ const CHAIRS = [
   makeChair(-SCREEN_X, D / 4, 180),
 ];
 // ---- the table: dining height, in the middle of the room between the two
-// rows of chairs, its long side left to right (parallel to the TV walls).
+// rows of chairs, its long side left to right (parallel to the TV walls),
+// long enough to reach past both chairs of each row (Kaalob's floor plan).
 // Same look as the chairs: a top slab on four square legs.
-const TABLE = { w: 120, d: 80, tall: 75, slab: 5, leg: 6 };
+const TABLE = { w: 400, d: 80, tall: 75, slab: 5, leg: 6 };
 /** A box of CSS faces in `parent`: x0..x1 left to right, z0..z1 front to back,
  *  from `top` (px above the floor) down `h` px. No bottom face. */
 function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {
@@ -178,7 +179,8 @@ function makeTable() {
   table.style.transform = `translate3d(0px, ${H / 2}px, 0px)`;
   boxFaces(table, -w / 2, w / 2, -d / 2, d / 2, tall, slab);
   const lx = w / 2 - leg - 4, lz = d / 2 - leg - 4; // legs set in a little
-  for (const [x, z] of [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]]) {
+  // a leg at each corner and a pair in the middle of the long sides
+  for (const [x, z] of [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz], [0, -lz], [0, lz]]) {
     boxFaces(table, x - leg / 2, x + leg / 2, z - leg / 2, z + leg / 2, tall - slab, tall - slab, "");
   }
   world.append(table);
@@ -782,8 +784,8 @@ function cropTransform(cx, cy, zoom) {
 // ---- you
 // You start in the aisle between the two rows of chairs, facing the front
 // wall (somewhere left to right, so people do not land on each other).
-// (beside the table, not in it: 1 to 2.5 m left or right of the middle)
-const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(100 + Math.random() * 150), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
+// (beside the table's end, not in it: 2.4 to 2.7 m left or right of the middle)
+const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(240 + Math.random() * 30), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
 const mine = makeAvatar(true);
 updateSitButton(); // its label needs you (me) to exist
 // Your sight starts at your webcam plate (first person). V steps out behind
