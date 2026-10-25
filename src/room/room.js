@@ -207,16 +207,21 @@ const SCREENS = [
   // back wall (+z), facing it your left is +x
   { id: 3, x: SCREEN_X, z: D / 2 - 2, place: `translate3d(${SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
   { id: 4, x: -SCREEN_X, z: D / 2 - 2, place: `translate3d(${-SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
+  // Screens 5 and 6: one whole wall each, the two side walls between the TV
+  // walls, floor to ceiling in 16:9 (5.3 x 3 m). Screen sharing only, no TV.
+  // Their shares go out at a higher rate so the 1080p stays sharp this big.
+  { id: 5, big: true, x: -W / 2 + 2, z: 0, place: `translate3d(${-W / 2 + 2}px, 0, 0) rotateY(90deg)` },
+  { id: 6, big: true, x: W / 2 - 2, z: 0, place: `translate3d(${W / 2 - 2}px, 0, 0) rotateY(-90deg)` },
 ].map((s) => {
   const el = document.createElement("div");
-  el.className = "monitor";
+  el.className = s.big ? "monitor big" : "monitor";
   const video = document.createElement("video");
   video.autoplay = true;
   video.muted = true;
   video.playsInline = true;
   const idle = document.createElement("div");
   idle.className = "idle";
-  idle.textContent = `SCREEN ${s.id}\n${s.id} share · T TV`;
+  idle.textContent = s.big ? `SCREEN ${s.id}\npress ${s.id} to share your screen` : `SCREEN ${s.id}\n${s.id} share · T TV`;
   const label = document.createElement("div");
   label.className = "label";
   // TV plays in its own <video> (hls.js feeds it), so a share never fights it
@@ -295,7 +300,8 @@ async function toggleShare(screen) {
       // 1.5 Mbps at 10 frames a second: about twice the detail per frame
       // of 15 fps, which is what keeps text readable.
       videoCodec: "h264",
-      videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 10 },
+      // the whole-wall screens get more: the same 1080p, twice the detail
+      videoEncoding: screen.big ? { maxBitrate: 3_000_000, maxFramerate: 15 } : { maxBitrate: 1_500_000, maxFramerate: 10 },
       // short on upload: keep the 1080p sharpness, drop frames instead
       degradationPreference: "maintain-resolution",
     });
@@ -494,7 +500,8 @@ const pickerList = picker.querySelector(".list");
 let pickerScreen = null;
 let pickerSource = "free";
 // T: whichever screen you look at most directly, showing or not
-const facingScreen = () => nearestInView(SCREENS);
+// (the whole-wall screens are for screen sharing only, never TV)
+const facingScreen = () => nearestInView(SCREENS.filter((x) => !x.big));
 function openPicker(screen) {
   pickerScreen = screen;
   pickerTitle.textContent = `TV on Screen ${screen.id}${screen.tv ? " · now: " + screen.tv.name : ""}`;
@@ -1113,7 +1120,7 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyC") setCamera(!stream);
   if (e.code === "KeyG") setShape(!isHex());
   if (e.code === "KeyV") setThird(!third);
-  const n = /^Digit([1-4])$/.exec(e.code);
+  const n = /^Digit([1-6])$/.exec(e.code);
   if (n) toggleShare(SCREENS[Number(n[1]) - 1]);
   if (e.code === "BracketLeft") setFov(fov - 5);
   if (e.code === "BracketRight") setFov(fov + 5);

@@ -137,6 +137,15 @@
     display: grid;
     place-items: center;
   }
+  /* screens 5 and 6: a whole side wall, floor to ceiling, 16:9 */
+  .monitor.big {
+    width: 533px;
+    height: 300px;
+    margin: -150px 0 0 -266.5px;
+    border-width: 4px;
+  }
+  .monitor.big .idle { font-size: 16px; }
+  .monitor.big .label { font-size: 9px; }
   .monitor video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
   .monitor:not(.on) video { display: none; }
   /* TV (tv.js): its own video, under a share when there is one */
@@ -536,7 +545,7 @@
   </div>
 </div>
 <div id="status"></div>
-<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · 1–4 share your screen · F view a screen big · T TV channels · M TV sound · E sit / stand · R turn a chair · [ and ] FOV · on a phone, drag to look</div>
+<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera · G diamond/hexagon · V first/third person · 1–6 share your screen (5 and 6: the whole side walls) · F view a screen big · T TV channels · M TV sound · E sit / stand · R turn a chair · [ and ] FOV · on a phone, drag to look</div>
 <script type="module" src="/src/room/room.js"></script>
 </body>
 </html>
