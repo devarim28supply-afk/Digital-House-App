@@ -157,9 +157,38 @@ const CHAIRS = [
   makeChair(SCREEN_X, D / 4, 180),
   makeChair(-SCREEN_X, D / 4, 180),
 ];
-const CHAIR_GAP = 18; // how close you can walk to a chair
+// ---- the table: dining height, in the middle of the room between the two
+// rows of chairs, its long side left to right (parallel to the TV walls).
+// Same look as the chairs: a top slab on four square legs.
+const TABLE = { w: 120, d: 80, tall: 75, slab: 5, leg: 6 };
+/** A box of CSS faces in `parent`: x0..x1 left to right, z0..z1 front to back,
+ *  from `top` (px above the floor) down `h` px. No bottom face. */
+function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {
+  const y = -top, sx = x1 - x0, sz = z1 - z0;
+  chairFace(parent, sx, h, `translate3d(${x0}px, ${y}px, ${z1}px)`);
+  chairFace(parent, sx, h, `translate3d(${x1}px, ${y}px, ${z0}px) rotateY(180deg)`);
+  chairFace(parent, sz, h, `translate3d(${x1}px, ${y}px, ${z1}px) rotateY(90deg)`);
+  chairFace(parent, sz, h, `translate3d(${x0}px, ${y}px, ${z0}px) rotateY(-90deg)`);
+  chairFace(parent, sx, sz, `translate3d(${x0}px, ${y}px, ${z0}px) rotateX(90deg)`, topCls);
+}
+function makeTable() {
+  const { w, d, tall, slab, leg } = TABLE;
+  const table = document.createElement("div");
+  table.className = "chair"; // same 3D holder as a chair
+  table.style.transform = `translate3d(0px, ${H / 2}px, 0px)`;
+  boxFaces(table, -w / 2, w / 2, -d / 2, d / 2, tall, slab);
+  const lx = w / 2 - leg - 4, lz = d / 2 - leg - 4; // legs set in a little
+  for (const [x, z] of [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]]) {
+    boxFaces(table, x - leg / 2, x + leg / 2, z - leg / 2, z + leg / 2, tall - slab, tall - slab, "");
+  }
+  world.append(table);
+  return { x: 0, z: 0, half: w / 2, halfZ: d / 2 };
+}
+const THE_TABLE = makeTable();
+
+const CHAIR_GAP = 18; // how close you can walk to a chair (or the table)
 const inChair = (x, z) =>
-  CHAIRS.some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
+  [...CHAIRS, THE_TABLE].some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
 
 // ---- four monitors, two on each of the opposite walls, at eye level
 // Screens 1 and 2 hang side by side on the front wall, 3 and 4 on the back
@@ -753,7 +782,8 @@ function cropTransform(cx, cy, zoom) {
 // ---- you
 // You start in the aisle between the two rows of chairs, facing the front
 // wall (somewhere left to right, so people do not land on each other).
-const me = { x: Math.round((Math.random() - 0.5) * 300), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
+// (beside the table, not in it: 1 to 2.5 m left or right of the middle)
+const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(100 + Math.random() * 150), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
 const mine = makeAvatar(true);
 updateSitButton(); // its label needs you (me) to exist
 // Your sight starts at your webcam plate (first person). V steps out behind
