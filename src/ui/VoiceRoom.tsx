@@ -255,7 +255,11 @@ export function VoiceRoom(props: {
     onCleanup(() => setInCall(undefined));
   });
 
+  // Bumped on every hang-up: a join still connecting when you hang up (or
+  // switch away) sees it changed and drops its connection instead of keeping it.
+  let joinGen = 0;
   function leave() {
+    joinGen++;
     const current = room();
     setRoom(undefined);
     current?.disconnect();
@@ -315,6 +319,7 @@ export function VoiceRoom(props: {
     if (joining() || room()) return;
     setError("");
     setJoining(true);
+    const gen = joinGen;
     try {
       const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
       // The wall in a 3D room (viewOnly) is a page turned in 3D space: LiveKit's
@@ -357,6 +362,11 @@ export function VoiceRoom(props: {
         next.on(event, bump);
       }
       await next.connect(pass.url, pass.token);
+      if (gen !== joinGen) {
+        // hung up (or switched away) while this was connecting
+        await next.disconnect();
+        return;
+      }
       setRoom(next);
       bump();
       // In the call: also watch the 3D room's camera (the Room view).

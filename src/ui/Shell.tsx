@@ -131,7 +131,8 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   // (or servers) until Disconnect. Joining another one moves you there.
   const [call, setCall] = createSignal<{ serverId: string; channel: Channel } | undefined>();
   function joinCall(serverId: string, ch: Channel) {
-    if (call()?.channel.id === ch.id) return;
+    // the same channel id can be in two places (every DM's call is "call")
+    if (call()?.serverId === serverId && call()?.channel.id === ch.id) return;
     setCall({ serverId, channel: ch });
   }
   function goToCall() {
@@ -302,7 +303,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     const ch = channels().find((c) => c.id === id);
     if (sid && ch && (ch.kind === "room" || ch.kind === "voice")) joinCall(sid, ch);
   }
-  const inThisCall = () => Boolean(channel() && call()?.channel.id === channel()!.id);
+  const inThisCall = () => Boolean(channel() && call()?.serverId === serverId() && call()?.channel.id === channel()!.id);
 
   // The right sidebar slides out of the way. A new chat message slides it in
   // for 30 seconds (each message restarts the 30); the cursor at the right

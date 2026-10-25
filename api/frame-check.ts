@@ -1,4 +1,6 @@
+import { lookup } from "node:dns/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isIP } from "node:net";
 
 /**
  * Can this page be shown inside Darkwood Node (a tile's Room side)?
@@ -40,6 +42,40 @@ export function embeddable(headers: Headers) {
   return OUR_ORIGINS.some((origin) => ancestors.some((a) => a === origin || a === "https:"));
 }
 
+/** An address on the public internet (not this machine, a private network or a reserved range). */
+export function publicAddress(ip: string) {
+  if (isIP(ip) === 4) {
+    const [a, b] = ip.split(".").map(Number);
+    return !(
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) || // carrier-grade NAT
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19))
+    );
+  }
+  const v6 = ip.toLowerCase();
+  if (v6.startsWith("::ffff:")) return publicAddress(v6.slice(7));
+  return !(v6 === "::" || v6 === "::1" || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6) || v6.startsWith("ff"));
+}
+
+/** A link this server may fetch: https, and every address its name has is public. */
+async function safeTarget(url: URL) {
+  if (url.protocol !== "https:" || url.username || url.password) return false;
+  const host = url.hostname.replace(/^\[|\]$/g, ""); // an IPv6 address comes in [brackets]
+  if (/^localhost$/i.test(host) || /\.(local|internal|localhost)$/i.test(host)) return false;
+  if (isIP(host)) return publicAddress(host);
+  try {
+    const addresses = await lookup(host, { all: true });
+    return addresses.length > 0 && addresses.every((a) => publicAddress(a.address));
+  } catch {
+    return false;
+  }
+}
+
+const MAX_REDIRECTS = 5;
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const raw = new URL(req.url ?? "/", "http://local").searchParams.get("url") ?? "";
   let target: URL;
@@ -48,19 +84,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch {
     return send(res, 400, { error: "Bad link" });
   }
-  // public web pages only: never this machine or a private network
-  const host = target.hostname;
-  if (
-    target.protocol !== "https:" ||
-    /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[)/.test(host) ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal")
-  ) {
-    return send(res, 400, { error: "Public https links only" });
-  }
+  // public web pages only: never this machine or a private network. Every
+  // redirect is checked the same way before it is followed.
+  if (!(await safeTarget(target))) return send(res, 400, { error: "Public https links only" });
   try {
-    const page = await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(6000) });
-    send(res, 200, { embeddable: embeddable(page.headers) });
+    for (let hop = 0; ; hop++) {
+      const page = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(6000) });
+      const next = page.headers.get("location");
+      if (page.status >= 300 && page.status < 400 && next) {
+        if (hop >= MAX_REDIRECTS) return send(res, 200, { embeddable: true });
+        target = new URL(next, target);
+        if (!(await safeTarget(target))) return send(res, 400, { error: "Public https links only" });
+        continue;
+      }
+      return send(res, 200, { embeddable: embeddable(page.headers) });
+    }
   } catch {
     // could not reach it: let the frame try
     send(res, 200, { embeddable: true });

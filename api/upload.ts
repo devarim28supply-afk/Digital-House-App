@@ -46,7 +46,10 @@ async function approvedUid(idToken: string) {
   if (res.status === 401) throw new Error("Your login has expired. Log in again.");
   const owner = String(claims.email ?? "").toLowerCase() === OWNER_EMAIL;
   if (!res.ok) {
-    if (owner) return uid;
+    // The owner has no members record: Firestore answers 404 Not Found, and
+    // only to a genuine, unexpired token. Any other failure (a forged token,
+    // an outage) never counts as the owner: fail closed.
+    if (owner && res.status === 404) return uid;
     throw new Error("Approved members only");
   }
   if (!owner) {
