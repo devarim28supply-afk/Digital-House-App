@@ -1,3 +1,4 @@
+import { DeveloperBadge } from "./DeveloperBadge";
 import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js";
 
 import { type RemoteTrack, Room, RoomEvent, Track } from "livekit-client";
@@ -35,6 +36,7 @@ export function LiveTile(props: {
   /** the streamer(s): their uid is their name in the call */
   uids: string[];
   nameOf: (uid: string) => string;
+  usernameOf?: (uid: string) => string | undefined;
   /** you are in the streamers' videochat: hold a still picture, no live preview */
   frozen: boolean;
   /** clicked: open this streamer (the one showing now) */
@@ -192,7 +194,7 @@ export function LiveTile(props: {
       <Show when={snapshot()?.face}>{(src) => <img class="live-tile-face" src={src()} alt="" />}</Show>
       <span class="live-badge">LIVE</span>
       <span class="room-tile-name">
-        {props.nameOf(current())}
+        {props.nameOf(current())}<DeveloperBadge username={props.usernameOf?.(current())} />
         {/* a team: which member is showing */}
         <Show when={props.uids.length > 1}>
           <span class="live-team" aria-hidden="true">

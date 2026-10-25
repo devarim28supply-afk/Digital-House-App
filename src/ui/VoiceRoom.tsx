@@ -1,3 +1,4 @@
+import { DeveloperBadge } from "./DeveloperBadge";
 import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
 import {
@@ -13,7 +14,7 @@ import {
   VideoPresets,
 } from "livekit-client";
 
-import { type Channel, type Profile } from "../data/store";
+import { displayName, type Channel, type Profile } from "../data/store";
 import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { faceStyle, faceText } from "./Shell";
@@ -206,7 +207,7 @@ export function VoiceRoom(props: {
   }
   // A room name is a member username: show their profile name.
   const roomFaceName = (name: string) => {
-    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return p.callName || p.name || p.username;
+    for (const p of props.profiles.values()) if (roomName(p.username || "") === name) return displayName(p);
     return name;
   };
   const roomFaceColor = (name: string) => {
@@ -715,7 +716,7 @@ export function VoiceRoom(props: {
   // the name on a tile: their chosen videochat name, else their name
   const nameOf = (p: Participant) => {
     const profile = props.profiles.get(p.identity);
-    return profile?.callName || profile?.name || p.name || "Member";
+    return displayName(profile, p.name || "Member");
   };
 
   // ---- the layout (Kaalob's drawings) --------------------------------------
@@ -990,6 +991,7 @@ export function VoiceRoom(props: {
                 onDblClick={() => toggleFocus(faceKey(name))}
                 track={track}
                 name={`${roomFaceName(name)} · in room`}
+                username={[...props.profiles.values()].find(p => roomName(p.username || "") === name)?.username}
                 color={roomFaceColor(name)}
               />
             )}
@@ -1003,7 +1005,7 @@ export function VoiceRoom(props: {
                 uids={members.split(",")}
                 streamFor={streamFor}
                 profileOf={(uid) => props.profiles.get(uid)}
-                nameOf={(uid) => props.profiles.get(uid)?.callName || props.profiles.get(uid)?.name || "Member"}
+                nameOf={(uid) => displayName(props.profiles.get(uid))}
               />
             )}
           </For>
@@ -1269,6 +1271,7 @@ function RoomFaceTile(props: {
   track: RemoteTrack;
   name: string;
   color: string;
+  username?: string;
   style: JSX.CSSProperties;
   onDblClick: () => void;
 }) {
@@ -1282,7 +1285,7 @@ function RoomFaceTile(props: {
   return (
     <article class="tile in-room" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
       <video ref={video} autoplay playsinline muted />
-      <span class="tile-name">{props.name}</span>
+      <span class="tile-name">{props.name}<DeveloperBadge username={props.username} /></span>
     </article>
   );
 }
@@ -1499,7 +1502,7 @@ function Tile(props: {
         <Show when={props.stream}>
           <span class="live-dot" aria-hidden="true" />{" "}
         </Show>
-        {props.name}
+        {props.name}<DeveloperBadge username={props.profile?.username} />
       </span>
     </article>
   );

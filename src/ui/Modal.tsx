@@ -4,7 +4,7 @@ import { type JSX, Show, onCleanup, onMount } from "solid-js";
  * A small in-page dialog (never the browser's prompt/confirm).
  * Esc or a click on the backdrop closes it.
  */
-export function Modal(props: { title: string; open: boolean; onClose: () => void; children: JSX.Element }) {
+export function Modal(props: { title: string; class?: string; open: boolean; onClose: () => void; children: JSX.Element }) {
   return (
     <Show when={props.open}>
       <ModalBody {...props} />
@@ -12,7 +12,7 @@ export function Modal(props: { title: string; open: boolean; onClose: () => void
   );
 }
 
-function ModalBody(props: { title: string; onClose: () => void; children: JSX.Element }) {
+function ModalBody(props: { title: string; class?: string; onClose: () => void; children: JSX.Element }) {
   let panel: HTMLDivElement | undefined;
   const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
   onMount(() => {
@@ -23,7 +23,7 @@ function ModalBody(props: { title: string; onClose: () => void; children: JSX.El
 
   return (
     <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div class="modal" role="dialog" aria-modal="true" aria-label={props.title} ref={panel}>
+      <div class={`modal ${props.class ?? ""}`} role="dialog" aria-modal="true" aria-label={props.title} ref={panel}>
         <header class="modal-head">
           <h2>{props.title}</h2>
           <button class="icon-btn" type="button" aria-label="Close" onClick={props.onClose}>
