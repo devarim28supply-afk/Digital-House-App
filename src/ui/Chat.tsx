@@ -1,3 +1,4 @@
+import { DeveloperBadge } from "./DeveloperBadge";
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import { MAX_FILE_BYTES, uploadChatFile } from "../data/files";
@@ -7,6 +8,7 @@ import {
   type Emoji,
   type Message,
   type Profile,
+  displayName,
   type Sticker,
   deleteMessage,
   editMessage,
@@ -14,7 +16,6 @@ import {
   sendMessage,
   watchMessages,
 } from "../data/store";
-import { audit } from "../data/audit";
 import { EmojiPicker, ImageViewer } from "./Emoji";
 import { faceStyle, faceText } from "./Shell";
 
@@ -227,7 +228,7 @@ export function Chat(props: {
     stickToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
   };
 
-  const nameOf = (uid: string) => props.profiles.get(uid)?.name || props.profiles.get(uid)?.username || "Member";
+  const nameOf = (uid: string) => displayName(props.profiles.get(uid));
   const startsGroup = (i: number) => {
     const list = messages();
     const prev = list[i - 1];
@@ -339,7 +340,7 @@ export function Chat(props: {
       .filter((uid) => uid !== props.uid)
       .map((uid) => props.profiles.get(uid))
       .filter((p): p is Profile => Boolean(p?.username))
-      .map((p) => ({ username: p.username, label: p.name || p.username, profile: p as Profile | undefined }));
+      .map((p) => ({ username: p.username, label: displayName(p), profile: p as Profile | undefined }));
     const all = [{ username: "everyone", label: "Everyone here", profile: undefined }, ...people];
     const query = q.toLowerCase();
     return all.filter((x) => x.username.toLowerCase().startsWith(query) || x.label.toLowerCase().includes(query)).slice(0, 8);
@@ -493,7 +494,7 @@ export function Chat(props: {
                 <Show when={startsGroup(i())}>
                   <header class="msg-head">
                     <b class="msg-author" onClick={(e) => props.onProfile?.(m.authorUid, e)}>
-                      {nameOf(m.authorUid)}
+                      {nameOf(m.authorUid)}<DeveloperBadge username={props.profiles.get(m.authorUid)?.username} />
                     </b>
                     <time title={fullTime(m.createdAt)}>{timeLabel(m.createdAt)}</time>
                   </header>
@@ -592,17 +593,7 @@ export function Chat(props: {
                       type="button"
                       title="Delete"
                       aria-label="Delete message"
-                      onClick={() =>
-                        void deleteMessage(props.serverId, props.channel.id, m.id).then(() => {
-                          // someone else's message: that goes in the action log
-                          if (m.authorUid !== props.uid)
-                            audit("message.delete", {
-                              serverId: props.serverId,
-                              target: m.authorUid,
-                              detail: `#${props.channel.name}: ${m.text.slice(0, 120)}`,
-                            });
-                        })
-                      }
+                      onClick={() => void deleteMessage(props.serverId, props.channel.id, m.id)}
                     >
                       🗑
                     </button>
@@ -659,7 +650,7 @@ export function Chat(props: {
                 <span class="avatar small" style={faceStyle(x.profile)}>
                   {x.profile ? faceText(x.profile, x.label) : "@"}
                 </span>
-                <b>{x.label}</b>
+                <b>{x.label}<DeveloperBadge username={x.profile?.username} /></b>
                 <small>@{x.username}</small>
               </button>
             )}

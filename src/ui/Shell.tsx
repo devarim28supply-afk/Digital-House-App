@@ -1,3 +1,6 @@
+import { DeveloperBadge } from "./DeveloperBadge";
+import { Customize } from "./Customize";
+import { customization, PATRICK_GIF } from "../data/customization";
 import { For, type JSX, Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import {
@@ -27,6 +30,7 @@ import {
   startPresence,
   watchChannels,
   saveCallName,
+  displayName,
   setTileImage,
   saveProfilePicture,
   watchEmojis,
@@ -51,6 +55,7 @@ const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
 const RIGHT_MODE_KEY = "dh_right_mode";
 const LEFT_MODE_KEY = "dh_left_mode";
+type SidebarMode = "slide" | "pinned" | "hover";
 // a tile shows up to this many faces, then "+N"
 const TILE_FACES = 5;
 // other names a tile's room goes by in people's "where"
@@ -83,16 +88,23 @@ export function initials(name: string) {
 /** A round picture: their profile picture if they have one, else their colour. */
 export function faceStyle(profile: Profile | undefined, fallback = "#404040"): JSX.CSSProperties {
   const color = profile?.color ?? fallback;
-  return profile?.photo
-    ? { "background-color": color, "background-image": `url("${profile.photo}")`, "background-size": "cover", "background-position": "center" }
-    : { background: color };
+  const decoration = customization(profile?.customization).decoration;
+  return {
+    "background-color": color,
+    "background-image": profile?.photo ? `url("${profile.photo}")` : "none",
+    "background-size": "cover", "background-position": "center",
+    "--avatar-decoration": decoration === "patrick" ? `url("${PATRICK_GIF}")` : "none",
+    "--avatar-decoration-radius": decoration === "patrick" ? "0" : "50%",
+    "--avatar-ring": decoration === "orbit" ? "2px dotted #dddffb" : decoration === "neon" ? "3px solid #9d74ff" : "0px solid transparent",
+    "--avatar-glow": decoration === "neon" ? "0 0 13px #9d74ff" : "none",
+  } as JSX.CSSProperties;
 }
 /** The initials inside it, only when there is no picture. */
 export const faceText = (profile: Profile | undefined, name: string) => (profile?.photo ? "" : initials(name));
 /** The card's top strip or its background: the chosen picture over your colour. */
 function pictureStyle(profile: Profile | undefined, field: "banner" | "background"): JSX.CSSProperties {
   const url = profile?.[field];
-  const color = profile?.color ?? "#404040";
+  const color = field === "banner" ? customization(profile?.customization).bannerColor : profile?.color ?? "#404040";
   return url
     ? { "background-color": color, "background-image": `url("${url}")`, "background-size": "cover", "background-position": "center" }
     : { background: color };
@@ -111,6 +123,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const [serverId, setServerId] = createSignal<string | undefined>(recall(LAST_SERVER_KEY));
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [channelId, setChannelId] = createSignal<string | undefined>();
+  const [customizeOpen, setCustomizeOpen] = createSignal(false);
   const [navOpen, setNavOpen] = createSignal(false);
   const [sideChatOpen, setSideChatOpen] = createSignal(false);
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
@@ -314,11 +327,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   let leaveTimer = 0;
   function enterRight() {
     window.clearTimeout(leaveTimer);
+    leaveTimer = 0;
     setEdgeHover(true);
   }
   function leaveRight() {
-    window.clearTimeout(leaveTimer);
-    leaveTimer = window.setTimeout(() => setEdgeHover(false), RIGHT_LINGER_MS);
+    if (leaveTimer) return;
+    leaveTimer = window.setTimeout(() => { leaveTimer = 0; setEdgeHover(false); }, rightMode() === "hover" ? 100 : RIGHT_LINGER_MS);
   }
   onCleanup(() => window.clearTimeout(leaveTimer));
   const [chatPing, setChatPing] = createSignal(false);
@@ -341,41 +355,64 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   onCleanup(() => window.clearTimeout(pingTimer));
 
   // A person's profile card, like Discord's, next to where you clicked.
-  const [card, setCard] = createSignal<{ uid: string; x: number; y: number } | undefined>();
-  const openCard = (uid: string, at: MouseEvent) => setCard({ uid, x: at.clientX, y: at.clientY });
+  const [card, setCard] = createSignal<{ uid: string; x: number; y: number; anchorRight: number; keepLeftOpen: boolean; keepRightOpen: boolean } | undefined>();
+  const openCard = (uid: string, at: MouseEvent) => {
+    const target = at.currentTarget instanceof Element ? at.currentTarget : undefined;
+    const row = target?.closest(".member, .me, .msg-head") ?? target;
+    const bounds = row?.getBoundingClientRect();
+    // Right-hand member cards emerge from the sidebar edge, without covering its names.
+    const edge = target?.closest(".members")?.getBoundingClientRect() ?? bounds;
+    setCard({
+      uid, x: edge?.left ?? at.clientX, anchorRight: edge?.right ?? at.clientX, y: bounds?.top ?? at.clientY,
+      // Preserve the panels visible at the click, including the source panel.
+      keepLeftOpen: leftHover() || Boolean(target?.closest(".rail, .side")) || Boolean(card()?.keepLeftOpen),
+      keepRightOpen: edgeHover() || sideChatOpen() || chatPing() || Boolean(target?.closest(".members, .side-chat")) || Boolean(card()?.keepRightOpen),
+    });
+  };
   // A profile card opened from the sidebar keeps the sidebar in until it closes.
   // A file dragged in from a folder slides it in too, so it can be dropped on the chat.
   const [fileDrag, setFileDrag] = createSignal(false);
-  const rightOpen = () => edgeHover() || chatPing() || sideChatOpen() || Boolean(card()) || fileDrag();
+  const rightOpen = () => rightMode() === "hover" && !TOUCH
+    ? edgeHover() || Boolean(card()?.keepRightOpen)
+    : edgeHover() || chatPing() || sideChatOpen() || Boolean(card()?.keepRightOpen) || fileDrag();
 
   // The left side (servers + room tiles) slides out of the way while you are
   // in your videochat or room, to give it the room (Kaalob). The cursor at
   // the left edge brings it in; it stays 5 s after the mouse leaves; the pin
   // keeps it always showing. Outside a call it stays as it is.
-  const [leftPinned, setLeftPinned] = createSignal(recall(LEFT_MODE_KEY) === "pinned");
-  function pinLeft(on: boolean) {
-    setLeftPinned(on);
-    remember(LEFT_MODE_KEY, on ? "pinned" : "slide");
+  const savedLeftMode = recall(LEFT_MODE_KEY);
+  const [leftMode, setLeftMode] = createSignal<SidebarMode>(savedLeftMode === "pinned" || savedLeftMode === "hover" ? savedLeftMode : "slide");
+  const leftPinned = () => leftMode() === "pinned";
+  function chooseLeftMode(mode: SidebarMode) {
+    window.clearTimeout(leftTimer); leftTimer = 0;
+    setLeftMode(mode); setLeftHover(false);
+    remember(LEFT_MODE_KEY, mode);
   }
+  const pinLeft = (on: boolean) => chooseLeftMode(on ? "pinned" : "slide");
   const [leftHover, setLeftHover] = createSignal(false);
   let leftTimer = 0;
   function enterLeft() {
     window.clearTimeout(leftTimer);
+    leftTimer = 0;
     setLeftHover(true);
   }
   function leaveLeft() {
-    window.clearTimeout(leftTimer);
-    leftTimer = window.setTimeout(() => setLeftHover(false), RIGHT_LINGER_MS);
+    if (leftTimer) return;
+    leftTimer = window.setTimeout(() => { leftTimer = 0; setLeftHover(false); }, leftMode() === "hover" ? 100 : RIGHT_LINGER_MS);
   }
   onCleanup(() => window.clearTimeout(leftTimer));
-  const leftSlides = () => inThisCall() && !leftPinned();
+  const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH);
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.
-  const [rightPinned, setRightPinned] = createSignal(recall(RIGHT_MODE_KEY) === "pinned");
-  function pinRight(on: boolean) {
-    setRightPinned(on);
-    remember(RIGHT_MODE_KEY, on ? "pinned" : "slide");
+  const savedRightMode = recall(RIGHT_MODE_KEY);
+  const [rightMode, setRightMode] = createSignal<SidebarMode>(savedRightMode === "pinned" || savedRightMode === "hover" ? savedRightMode : "slide");
+  const rightPinned = () => rightMode() === "pinned";
+  function chooseRightMode(mode: SidebarMode) {
+    window.clearTimeout(leaveTimer); leaveTimer = 0; window.clearTimeout(pingTimer);
+    setRightMode(mode); setEdgeHover(false); setChatPing(false); setSideChatOpen(false);
+    remember(RIGHT_MODE_KEY, mode);
   }
+  const pinRight = (on: boolean) => chooseRightMode(on ? "pinned" : "slide");
 
   const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
@@ -434,7 +471,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     const places = new Set(names.flatMap((n) => [`In ${n}`, `Videochat · ${n}`]));
     return onlineHere().filter((uid) => places.has(whereOf(uid)));
   };
-  const nameOf = (uid: string) => profiles().get(uid)?.name || profiles().get(uid)?.username || "Member";
+  const nameOf = (uid: string) => displayName(profiles().get(uid), uid === props.uid ? props.name : "Member");
 
   // Picture tiles all the way (Kaalob): # text and voice channels are no
   // longer listed (their data stays). A tile's chat lives in the right sidebar.
@@ -449,12 +486,26 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   return (
     <div
       class="shell"
-      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "left-slide": leftSlides(), "left-open": leftSlides() && leftHover() }}
+      onMouseMove={e => {
+        if (TOUCH) return;
+        const target = e.target instanceof Element ? e.target : undefined;
+        // Coordinate-based activation preserves the wide hover zones without
+        // placing an invisible click target above Activity or other controls.
+        if (leftSlides() && (e.clientX <= 144 || target?.closest(".rail, .side"))) enterLeft();
+        else if (leftHover()) leaveLeft();
+        // Only the middle side band triggers opening (roughly the marked
+        // 28–80% height). Once open, the whole sidebar remains hoverable.
+        const inRightOpeningBand = e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80;
+        if (!rightPinned() && (e.clientX >= window.innerWidth - 144 && inRightOpeningBand || edgeHover() && target?.closest(".side-chat, .members"))) enterRight();
+        else if (edgeHover()) leaveRight();
+      }}
+      onMouseLeave={() => { leaveLeft(); leaveRight(); }}
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "right-hover-only": rightMode() === "hover" && !TOUCH, "left-slide": leftSlides(), "left-open": leftSlides() && (leftHover() || Boolean(card()?.keepLeftOpen)) }}
     >
       {/* ---- servers ---- */}
       {/* in a call: the strip at the left edge brings the left side in */}
       <Show when={leftSlides()}>
-        <div class="left-edge" aria-hidden="true" onMouseEnter={enterLeft} />
+        <div class="left-edge" aria-hidden="true" onMouseEnter={enterLeft} onMouseLeave={leaveLeft} />
       </Show>
       <nav class="rail" aria-label="Servers" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
         <button
@@ -544,7 +595,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                         </Show>
                       </span>
                       <span class="member-text">
-                        <span class="member-name">{nameOf(other())}</span>
+                        <span class="member-name">{nameOf(other())}<DeveloperBadge username={profiles().get(other())?.username} /></span>
                       </span>
                       <Show when={dmUnread(d.id)}>
                         <i class="dm-dot" aria-label="unread" />
@@ -569,6 +620,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                       channelId={channelId}
                       uids={uids}
                       nameOf={nameOf}
+                      usernameOf={uid => profiles().get(uid)?.username}
                       frozen={call()?.serverId === serverId() && call()?.channel.id === channelId}
                       onOpen={(uid) => {
                         const ch = channels().find((c) => c.id === channelId);
@@ -621,7 +673,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                           e.currentTarget.value = "";
                           if (!file) return;
                           try {
-                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480), c.name);
+                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480));
                           } catch {
                             /* the old picture stays */
                           }
@@ -677,14 +729,15 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </div>
           )}
         </Show>
-        <footer class="me">
+        <button class="customize-launch" type="button" onClick={() => setCustomizeOpen(true)}>✧ Customize <span>your profile →</span></button>
+        <footer class={`me nameplate-${customization(profiles().get(props.uid)?.customization).nameplate}`}>
           <span class="avatar" style={faceStyle(profiles().get(props.uid), "#4ADE80")}>
-            {faceText(profiles().get(props.uid), props.name)}
+            {faceText(profiles().get(props.uid), nameOf(props.uid))}
           </span>
-          <span class="me-names">
-            <b>{props.name}</b>
+          <button class="me-names profile-name-trigger" type="button" aria-label="Open my profile" onClick={e => openCard(props.uid, e)}>
+            <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b>
             <small>@{props.username || "member"}</small>
-          </span>
+          </button>
           <button class="icon-btn" type="button" title="Account" aria-label="Account" onClick={() => setModal("me")}>
             ⚙
           </button>
@@ -711,7 +764,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             {(d) => (
               <>
                 <span class="main-title">
-                  <span class="hash">@</span> {dmName(d())}
+                  <span class="hash">@</span> {dmName(d())}<DeveloperBadge username={profiles().get(dmPartner(d(), props.uid))?.username} />
                 </span>
                 <button
                   class="btn dm-call-btn"
@@ -790,7 +843,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                   serverId={c.serverId}
                   channel={c.channel}
                   uid={props.uid}
-                  name={props.name}
+                  name={nameOf(props.uid)}
                   username={props.username}
                   profiles={profiles()}
                   teams={teamsIn(c.serverId, c.channel.id)}
@@ -801,7 +854,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                   serverId={c.serverId}
                   channel={c.channel}
                   uid={props.uid}
-                  name={props.name}
+                  name={nameOf(props.uid)}
                   profiles={profiles()}
                   teams={teamsIn(c.serverId, c.channel.id)}
                   autoJoin
@@ -815,13 +868,13 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
 
       {/* ---- right: the open tile's chat, otherwise the people. It slides
           out of the way; the strip at the screen's right edge brings it in. ---- */}
-      <div class="right-edge" aria-hidden="true" onMouseEnter={enterRight} />
+      <div class="right-edge" aria-hidden="true" onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }} onMouseLeave={leaveRight} />
       <Show when={server() && tileChat()}>
         {(chat) => (
           <aside
             class="side-chat"
             aria-label={`# ${chat().name}`}
-            onMouseEnter={enterRight}
+            onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }}
             onMouseLeave={leaveRight}
           >
             <header class="side-chat-head">
@@ -876,7 +929,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         class="members"
         aria-label="Members"
         classList={{ hidden: Boolean(tileChat()) }}
-        onMouseEnter={enterRight}
+        onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }}
         onMouseLeave={leaveRight}
       >
         <div class="members-head">
@@ -921,9 +974,11 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             uid={c().uid}
             x={c().x}
             y={c().y}
+            anchorRight={c().anchorRight}
             profile={profiles().get(c().uid)}
             name={nameOf(c().uid)}
             online={isOnline(c().uid)}
+            onEdit={c().uid === props.uid ? () => { setCard(undefined); setCustomizeOpen(true); } : undefined}
             onMessage={c().uid !== props.uid ? () => void startDm(c().uid) : undefined}
             where={whereOf(c().uid)}
             owner={server()?.ownerUid === c().uid}
@@ -979,7 +1034,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         open={feedbackOpen()}
         onClose={() => setFeedbackOpen(false)}
         uid={props.uid}
-        name={props.name}
+        name={nameOf(props.uid)}
         username={props.username}
         admin={props.admin}
         where={
@@ -988,9 +1043,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           "Darkwood Node"
         }
       />
+      <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">
-          Signed in as <b>{props.name}</b> (@{props.username || "member"}).
+          Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).
         </p>
         <PictureField
           uid={props.uid}
@@ -1000,7 +1056,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           value={profiles().get(props.uid)?.photo}
           preview={
             <span class="avatar photo-preview" style={faceStyle(profiles().get(props.uid))}>
-              {faceText(profiles().get(props.uid), props.name)}
+              {faceText(profiles().get(props.uid), nameOf(props.uid))}
             </span>
           }
         />
@@ -1021,19 +1077,18 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           preview={<span class="picture-preview" style={pictureStyle(profiles().get(props.uid), "background")} />}
         />
         <CallNameField uid={props.uid} name={props.name} current={profiles().get(props.uid)?.callName ?? ""} />
-        <div class="field">
-          <span>Right sidebar</span>
-          <div class="kind-pick">
-            <label>
-              <input type="radio" name="right-mode" checked={!rightPinned()} onChange={() => pinRight(false)} /> Slides in
-              and out
-            </label>
-            <label>
-              <input type="radio" name="right-mode" checked={rightPinned()} onChange={() => pinRight(true)} /> Always
-              show (beside, covering nothing)
-            </label>
-          </div>
-        </div>
+        <For each={["left", "right"] as const}>{side => {
+          const current = () => side === "left" ? leftMode() : rightMode();
+          const choose = (mode: SidebarMode) => side === "left" ? chooseLeftMode(mode) : chooseRightMode(mode);
+          return <fieldset class="field sidebar-mode"><legend>{side === "left" ? "Left sidebar" : "Right sidebar"}</legend>
+            <div class="kind-pick">
+              <label><input type="radio" name={`${side}-mode`} checked={current() === "slide"} onChange={() => choose("slide")} />Slides in and out</label>
+              <label><input type="radio" name={`${side}-mode`} checked={current() === "hover"} onChange={() => choose("hover")} />Show only on hover</label>
+              <label><input type="radio" name={`${side}-mode`} checked={current() === "pinned"} onChange={() => choose("pinned")} />Always show</label>
+            </div>
+            <small class="call-name-note">Hover opens at the screen edge and closes when the pointer leaves. Touch devices keep their tap controls.</small>
+          </fieldset>;
+        }}</For>
         <div class="modal-actions">
           <button class="btn danger" type="button" onClick={props.onLogout}>
             Log out
@@ -1116,8 +1171,8 @@ function PictureField(props: {
 }
 
 /**
- * The name on your own videochat tile, if you want it different from your
- * name (everyone sees it there). Empty = your normal name.
+ * Public display name, shared by all live profile surfaces.
+ * Empty restores the account name.
  */
 function CallNameField(props: { uid: string; name: string; current: string }) {
   const [value, setValue] = createSignal(props.current);
@@ -1135,7 +1190,7 @@ function CallNameField(props: { uid: string; name: string; current: string }) {
   }
   return (
     <form class="field call-name" onSubmit={save}>
-      <span>Name on my webcam (videochat)</span>
+      <span>Display name</span>
       <div class="call-name-row">
         <input
           value={value()}
@@ -1152,10 +1207,10 @@ function CallNameField(props: { uid: string; name: string; current: string }) {
       </div>
       <small class="call-name-note">
         {state() === "saved"
-          ? "Saved. Everyone sees it on your tile."
+          ? "Saved. Your name updates across status, chat, profiles and calls."
           : state() === "error"
             ? "Could not save. Check your connection."
-            : "Leave it empty to show your name."}
+            : "Leave it empty to use your account name."}
       </small>
     </form>
   );
@@ -1183,10 +1238,11 @@ function PinButton(props: { pinned: boolean; onPin: (on: boolean) => void }) {
  * big initials, name, @username, and whether (and where) they are online.
  * Click outside it or press Esc to close.
  */
-function ProfileCard(props: {
+export function ProfileCard(props: {
   uid: string;
   x: number;
   y: number;
+  anchorRight?: number;
   profile?: Profile;
   name: string;
   online: boolean;
@@ -1194,23 +1250,48 @@ function ProfileCard(props: {
   owner: boolean;
   /** start (or open) a direct message with them */
   onMessage?: () => void;
+  onEdit?: () => void;
   onClose: () => void;
 }) {
+  let panel: HTMLElement | undefined;
+  const [viewport, setViewport] = createSignal({ width: window.innerWidth, height: window.innerHeight });
+  const [height, setHeight] = createSignal(365);
+  const width = () => Math.min(340, viewport().width - 24);
+  const opensLeft = () => props.x >= width() + 24;
+  const left = () => {
+    const preferred = opensLeft() ? props.x - width() - 12 : (props.anchorRight ?? props.x) + 12;
+    return Math.max(12, Math.min(preferred, viewport().width - width() - 12));
+  };
+  const top = () => Math.max(12, Math.min(props.y, viewport().height - height() - 12));
   onMount(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    panel?.focus();
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    const observer = new ResizeObserver(() => { if (panel) setHeight(panel.getBoundingClientRect().height); });
+    if (panel) observer.observe(panel);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); props.onClose(); }
+      if (e.key === "Tab" && panel) {
+        const buttons = Array.from(panel.querySelectorAll<HTMLButtonElement>("button"));
+        if (!buttons.length) { e.preventDefault(); return; }
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = (index + (e.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
+        e.preventDefault(); buttons[next]?.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
-    onCleanup(() => window.removeEventListener("keydown", onKey));
+    window.addEventListener("resize", resize);
+    onCleanup(() => { observer.disconnect(); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", resize); previous?.focus(); });
   });
-  // keep the whole card on screen, beside the click
-  const W = 300;
-  const H = 280;
-  const left = () => Math.max(12, Math.min(props.x - W - 16, window.innerWidth - W - 12));
-  const top = () => Math.max(12, Math.min(props.y - 40, window.innerHeight - H - 12));
   return (
     <div class="card-backdrop" onClick={props.onClose}>
       <article
-        class="profile-card"
+        ref={panel} role="dialog" aria-modal="true" tabIndex={-1}
+        class={`profile-card profile-effect-${customization(props.profile?.customization).effect}`}
         style={{
+          "--profile-enter-x": opensLeft() ? "28px" : "-28px",
+          width: `${width()}px`,
+          "max-height": `${viewport().height - 24}px`,
           left: `${left()}px`,
           top: `${top()}px`,
           ...(props.profile?.background
@@ -1225,22 +1306,24 @@ function ProfileCard(props: {
         aria-label={`${props.name}'s profile`}
       >
         <div class="profile-banner" style={pictureStyle(props.profile, "banner")} />
+        <button class="profile-close icon-btn" type="button" aria-label="Close profile" onClick={props.onClose}>✕</button>
         <span class="avatar profile-avatar" style={faceStyle(props.profile)}>
           {faceText(props.profile, props.name)}
           <i class="dot" classList={{ off: !props.online }} />
         </span>
         <div class="profile-body">
-          <h3>
-            {props.name}
+          <div class={`profile-identity nameplate-${customization(props.profile?.customization).nameplate}`}><h3>
+            {props.name}<DeveloperBadge username={props.profile?.username} />
             <Show when={props.owner}>
               <span class="profile-badge">Owner</span>
             </Show>
           </h3>
-          <p class="profile-user">@{props.profile?.username || "member"}</p>
+          <p class="profile-user">@{props.profile?.username || "member"}</p></div>
           <div class="profile-section">
             <span class="group-label">Status</span>
             <p>{props.online ? props.where || "Online" : "Offline"}</p>
           </div>
+          <Show when={props.onEdit}><button class="btn primary profile-message profile-edit" type="button" onClick={() => props.onEdit?.()}>✎ Edit Profile</button></Show>
           <Show when={props.onMessage}>
             <button class="btn primary profile-message" type="button" onClick={() => props.onMessage?.()}>
               Message
@@ -1270,7 +1353,7 @@ function MemberGroup(props: {
         {(uid) => (
           <button
             type="button"
-            class="member"
+            class={`member nameplate-${customization(props.profiles.get(uid)?.customization).nameplate}`}
             classList={{ offline: !props.online }}
             onClick={(e) => props.onPick?.(uid, e)}
           >
@@ -1281,7 +1364,7 @@ function MemberGroup(props: {
               </Show>
             </span>
             <span class="member-text">
-              <span class="member-name">{props.nameOf(uid)}</span>
+              <span class="member-name">{props.nameOf(uid)}<DeveloperBadge username={props.profiles.get(uid)?.username} /></span>
               <Show when={props.online && props.whereOf?.(uid)}>
                 {(where) => <small class="member-where">{where()}</small>}
               </Show>
@@ -1569,7 +1652,7 @@ function PeopleDialog(props: {
   uid: string;
 }) {
   const everyone = () =>
-    [...props.profiles.values()].sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username));
+    [...props.profiles.values()].sort((a, b) => displayName(a).localeCompare(displayName(b)));
   const inServer = (uid: string) => Boolean(props.server?.memberUids.includes(uid));
   return (
     <Modal title="People in this server" open={props.open} onClose={props.onClose}>
@@ -1579,10 +1662,10 @@ function PeopleDialog(props: {
           {(p) => (
             <div class="person">
               <span class="avatar small" style={faceStyle(p)}>
-                {faceText(p, p.name || p.username)}
+                {faceText(p, displayName(p))}
               </span>
               <span class="member-name">
-                {p.name} <small>@{p.username}</small>
+                {displayName(p)}<DeveloperBadge username={p.username} /> <small>@{p.username}</small>
               </span>
               <Show
                 when={inServer(p.uid)}
@@ -1619,8 +1702,8 @@ function NewDmDialog(props: {
   const people = () =>
     [...props.profiles.values()]
       .filter((p) => p.uid !== props.uid)
-      .filter((p) => !q().trim() || `${p.name} ${p.username}`.toLowerCase().includes(q().trim().toLowerCase()))
-      .sort((a, b) => Number(props.isOnline(b.uid)) - Number(props.isOnline(a.uid)) || (a.name || a.username).localeCompare(b.name || b.username));
+      .filter((p) => !q().trim() || `${displayName(p)} ${p.name} ${p.username}`.toLowerCase().includes(q().trim().toLowerCase()))
+      .sort((a, b) => Number(props.isOnline(b.uid)) - Number(props.isOnline(a.uid)) || displayName(a).localeCompare(displayName(b)));
   return (
     <Modal title="New message" open={props.open} onClose={props.onClose}>
       <div class="modal-form">
@@ -1633,14 +1716,14 @@ function NewDmDialog(props: {
             {(p) => (
               <button type="button" class="member" onClick={() => props.onPick(p.uid)}>
                 <span class="avatar small" style={faceStyle(p)}>
-                  {faceText(p, p.name || p.username)}
+                  {faceText(p, displayName(p))}
                   <Show when={props.isOnline(p.uid)}>
                     <i class="dot" />
                   </Show>
                 </span>
                 <span class="member-text">
                   <span class="member-name">
-                    {p.name || p.username} <small>@{p.username}</small>
+                    {displayName(p)}<DeveloperBadge username={p.username} /> <small>@{p.username}</small>
                   </span>
                 </span>
               </button>

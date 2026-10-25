@@ -1,8 +1,9 @@
+import { DeveloperBadge } from "./DeveloperBadge";
 import { Index, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 
 import { type RemoteParticipant, Room, RoomEvent, Track } from "livekit-client";
 
-import { type Profile } from "../data/store";
+import { displayName, type Profile } from "../data/store";
 import { fetchPass } from "./VoiceRoom";
 
 type Caller = { identity: string; name: string; video?: MediaStream };
@@ -23,7 +24,7 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
   // a person's identity is their uid; other names in the call are "uid:..."
   const nameOf = (p: RemoteParticipant) => {
     const prof = props.profiles.get(p.identity.split(":")[0]);
-    return prof?.username || prof?.callName || prof?.name || p.name || "someone";
+    return displayName(prof, p.name || "someone");
   };
   const refresh = () =>
     setCallers(
@@ -33,6 +34,14 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
         return { identity: p.identity, name: nameOf(p), video: live ? cam.track!.mediaStream : undefined };
       }),
     );
+  // Names can change in Firestore without a LiveKit participant/track event.
+  createEffect(() => {
+    const profiles = props.profiles;
+    setCallers((current) => current.map((caller) => ({
+      ...caller,
+      name: displayName(profiles.get(caller.identity.split(":")[0]), caller.name),
+    })));
+  });
   // LiveKit drops a publication just after its events: look again after
   const later = () => setTimeout(refresh);
 
@@ -68,8 +77,8 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
     return (
       <div class="strip-tile" classList={{ live: Boolean(c().video) }}>
         <video autoplay muted playsinline ref={video} />
-        <span class="name">{c().name}</span>
-        <span class="who">{c().name}</span>
+        <span class="name">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
+        <span class="who">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
       </div>
     );
   };
