@@ -22,6 +22,15 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import { type AuditAction, audit } from "./audit";
+
+/** Do it, then note it in the action log (the Activity page). */
+function logged<T>(work: Promise<T>, action: AuditAction, info: { serverId?: string; target?: string; detail?: string }) {
+  return work.then((result) => {
+    audit(action, info);
+    return result;
+  });
+}
 
 /*
  * Firestore layout (rules: M2A-Access-Control/firestore.rules):
@@ -359,6 +368,7 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
   ];
   for (const ch of start) batch.set(doc(collection(ref, "channels")), ch);
   await batch.commit();
+  audit("server.create", { serverId: ref.id, target: name });
   return ref.id;
 }
 
@@ -439,20 +449,31 @@ export async function createRoomTile(
   const channelsRef = collection(db, "servers", sid, "channels");
   const tile = await addDoc(channelsRef, { name, kind: "room", position, ...extra });
   await addDoc(channelsRef, { name: tileChatName(name), kind: "text", position, parentId: tile.id });
+  audit("tile.create", { serverId: sid, target: name, detail: extra.url });
   return tile.id;
 }
 
-export const renameServer = (sid: string, name: string) => updateDoc(doc(db, "servers", sid), { name });
+export const renameServer = (sid: string, name: string) =>
+  logged(updateDoc(doc(db, "servers", sid), { name }), "server.rename", { serverId: sid, target: name });
 
 /** Name and banner together (Server settings). banner null removes it. */
 export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) =>
-  updateDoc(doc(db, "servers", sid), {
-    name,
-    open,
-    ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
-  });
+  logged(
+    updateDoc(doc(db, "servers", sid), {
+      name,
+      open,
+      ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
+    }),
+    "server.settings",
+    {
+      serverId: sid,
+      target: name,
+      detail: `${open ? "open to everyone" : "closed"}${banner === undefined ? "" : banner === null ? ", banner removed" : ", banner changed"}`,
+    },
+  );
 
-export const setServerOpen = (sid: string, open: boolean) => updateDoc(doc(db, "servers", sid), { open });
+export const setServerOpen = (sid: string, open: boolean) =>
+  logged(updateDoc(doc(db, "servers", sid), { open }), "server.open", { serverId: sid, detail: open ? "open to everyone" : "closed" });
 
 /**
  * Remove a whole server: every channel's messages, the channels, then the
@@ -467,11 +488,12 @@ export async function deleteServer(sid: string) {
     await deleteDoc(c.ref);
   }
   await deleteDoc(doc(db, "servers", sid));
+  audit("server.delete", { serverId: sid });
 }
 export const addServerMembers = (sid: string, uids: string[]) =>
-  updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) });
+  logged(updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) }), "member.add", { serverId: sid, target: uids.join(",") });
 export const removeServerMember = (sid: string, uid: string) =>
-  updateDoc(doc(db, "servers", sid), { memberUids: arrayRemove(uid) });
+  logged(updateDoc(doc(db, "servers", sid), { memberUids: arrayRemove(uid) }), "member.remove", { serverId: sid, target: uid });
 
 // ---- channels ---------------------------------------------------------------
 
@@ -487,7 +509,12 @@ export const createChannel = (
   kind: Channel["kind"],
   position: number,
   extra: { image?: string; url?: string } = {},
-) => addDoc(collection(db, "servers", sid, "channels"), { name, kind, position, ...extra });
+) =>
+  logged(addDoc(collection(db, "servers", sid, "channels"), { name, kind, position, ...extra }), "channel.create", {
+    serverId: sid,
+    target: name,
+    detail: kind,
+  });
 
 /** A picked image, shrunk to a tile-sized JPEG so it fits in the channel record. */
 export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
@@ -513,10 +540,10 @@ export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
   });
 }
 /** A room tile's picture (a JPEG data URL, as when the tile was made). */
-export const setTileImage = (sid: string, cid: string, image: string) =>
-  updateDoc(doc(db, "servers", sid, "channels", cid), { image });
+export const setTileImage = (sid: string, cid: string, image: string, tileName = "") =>
+  logged(updateDoc(doc(db, "servers", sid, "channels", cid), { image }), "tile.picture", { serverId: sid, target: tileName || cid });
 export const renameChannel = (sid: string, cid: string, name: string) =>
-  updateDoc(doc(db, "servers", sid, "channels", cid), { name });
+  logged(updateDoc(doc(db, "servers", sid, "channels", cid), { name }), "channel.rename", { serverId: sid, target: name });
 /**
  * A channel and every message in it. Firestore never deletes a document's
  * subcollection on its own, so the messages go first, a few hundred at a
@@ -538,6 +565,7 @@ export async function deleteChannel(sid: string, cid: string) {
 export async function deleteRoomTile(sid: string, tileId: string, channels: Channel[]) {
   for (const c of channels) if (c.parentId === tileId) await deleteChannel(sid, c.id);
   await deleteChannel(sid, tileId);
+  audit("tile.delete", { serverId: sid, target: channels.find((c) => c.id === tileId)?.name ?? tileId });
 }
 
 // ---- messages ---------------------------------------------------------------
@@ -625,6 +653,11 @@ export function watchEmojis(sid: string, cb: (emojis: Emoji[]) => void): Unsubsc
 }
 
 export const addEmoji = (sid: string, emoji: Omit<Emoji, "id">) =>
-  addDoc(collection(db, "servers", sid, "emojis"), { ...emoji, createdAt: serverTimestamp() });
+  logged(addDoc(collection(db, "servers", sid, "emojis"), { ...emoji, createdAt: serverTimestamp() }), "emoji.add", {
+    serverId: sid,
+    target: `:${emoji.name}:`,
+    detail: emoji.kind === "sticker" ? "sticker" : "emoji",
+  });
 
-export const deleteEmoji = (sid: string, id: string) => deleteDoc(doc(db, "servers", sid, "emojis", id));
+export const deleteEmoji = (sid: string, id: string, name = "") =>
+  logged(deleteDoc(doc(db, "servers", sid, "emojis", id)), "emoji.delete", { serverId: sid, target: name ? `:${name}:` : id });
