@@ -59,6 +59,8 @@ export type Server = {
   banner?: string;
   /** everyone who gets in through M2A-access joins it on their own */
   open?: boolean;
+  /** "dm": a direct message between two people (data/dms.ts), not a server */
+  kind?: "dm";
 };
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle

@@ -3020,3 +3020,51 @@ img.live-tile-still {
     margin-right: 0;
   }
 }
+
+/* ---- direct messages (Shell, data/dms.ts) ---- */
+.rail-dm {
+  position: relative;
+  font-size: 20px;
+}
+.rail-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 3px solid var(--bg);
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 12px;
+  box-sizing: content-box;
+}
+.dm-row {
+  width: 100%;
+}
+.dm-row.active {
+  background: rgba(74, 222, 128, 0.12);
+}
+.dm-row.unread .member-name {
+  color: #fff;
+  font-weight: 700;
+}
+.dm-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #ef4444;
+  flex: none;
+}
+.dm-call-btn {
+  height: 32px;
+  font-size: 12px;
+}
+.profile-message {
+  width: 100%;
+  margin-top: 10px;
+}

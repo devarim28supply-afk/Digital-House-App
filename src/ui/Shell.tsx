@@ -1,4 +1,4 @@
-import { For, type JSX, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, type JSX, Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import {
   type Channel,
@@ -36,6 +36,7 @@ import {
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
+import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
@@ -166,15 +167,80 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
     });
   });
 
+  // ---- direct messages (data/dms.ts): a DM is a tiny private server for two.
+  // The ✉ button at the top of the server rail shows your DMs in the left
+  // column; servers keep their own buttons below it.
+  const realServers = createMemo(() => servers().filter((x) => !isDm(x)));
+  const dms = createMemo(() => servers().filter(isDm));
+  const [dmHome, setDmHome] = createSignal(false);
+  const [newDm, setNewDm] = createSignal(false);
+  // the newest message in each DM, and when you last read each one here
+  const [latest, setLatest] = createSignal(new Map<string, { at: number; author: string }>());
+  const [readAt, setReadAt] = createSignal(readTimes());
+  createEffect(
+    on(
+      () => dms().map((d) => d.id).join(","),
+      (ids) => {
+        const stops = ids
+          .split(",")
+          .filter(Boolean)
+          .map((id) =>
+            watchLatest(id, (l) =>
+              setLatest((prev) => {
+                const next = new Map(prev);
+                if (l) next.set(id, l);
+                else next.delete(id);
+                return next;
+              }),
+            ),
+          );
+        onCleanup(() => stops.forEach((stop) => stop()));
+      },
+    ),
+  );
+  const dmUnread = (id: string) => {
+    const l = latest().get(id);
+    return Boolean(l && l.author !== props.uid && l.at > (readAt()[id] ?? 0));
+  };
+  const unreadDms = () => dms().filter((d) => dmUnread(d.id)).length;
+  // newest conversation first
+  const dmsByLatest = () =>
+    [...dms()].sort((a, b) => (latest().get(b.id)?.at ?? 0) - (latest().get(a.id)?.at ?? 0));
+  async function startDm(uid: string) {
+    setCard(undefined);
+    setNewDm(false);
+    try {
+      const id = await openDm(props.uid, uid, servers());
+      setDmHome(true);
+      setServerId(id);
+      setNavOpen(false);
+    } catch {
+      /* the other person started it at the same moment: it shows up shortly */
+    }
+  }
+  function openServer(id: string) {
+    setDmHome(false);
+    setServerId(id);
+  }
+  function goDms() {
+    setDmHome(true);
+    const first = dmsByLatest()[0];
+    if (first && !isDm(server())) setServerId(first.id);
+  }
+
   // Keep a valid server picked.
   createEffect(() => {
     const list = servers();
     if (!list.length) return;
-    if (!list.some((s) => s.id === serverId())) setServerId(list[0].id);
+    if (!list.some((s) => s.id === serverId())) setServerId((realServers()[0] ?? list[0]).id);
   });
 
   const server = createMemo(() => servers().find((s) => s.id === serverId()));
-  const runsServer = () => Boolean(server() && (server()!.ownerUid === props.uid || props.admin));
+  // in a DM nobody runs anything: no settings, tiles or people to add
+  const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
+  // the left column shows your DMs (the ✉ button, or a DM is open)
+  const dmMode = () => dmHome() || isDm(server());
+  const dmName = (d: { memberUids: string[]; ownerUid: string }) => nameOf(dmPartner(d as never, props.uid));
 
   // Channels of the picked server, and a valid channel in it.
   createEffect(() => {
@@ -210,6 +276,13 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   });
 
   const channel = createMemo(() => channels().find((c) => c.id === channelId()));
+  createEffect(() => {
+    const sid = serverId();
+    if (!sid || !isDm(server()) || channelId() !== DM_CHAT) return;
+    const l = latest().get(sid);
+    markRead(sid, l?.at ?? Date.now());
+    setReadAt(readTimes());
+  });
 
   // The picked server's own emojis, for every chat in it.
   const [emojis, setEmojis] = createSignal<Emoji[]>([]);
@@ -382,16 +455,29 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         <div class="left-edge" aria-hidden="true" onMouseEnter={enterLeft} />
       </Show>
       <nav class="rail" aria-label="Servers" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
-        <For each={servers()}>
+        <button
+          type="button"
+          class="rail-server rail-dm"
+          classList={{ active: dmMode() }}
+          title="Direct messages"
+          aria-label="Direct messages"
+          onClick={goDms}
+        >
+          ✉
+          <Show when={unreadDms()}>
+            <span class="rail-badge">{unreadDms()}</span>
+          </Show>
+        </button>
+        <For each={realServers()}>
           {(s) => (
             <button
               type="button"
               class="rail-server"
-              classList={{ active: s.id === serverId() }}
+              classList={{ active: !dmMode() && s.id === serverId() }}
               title={s.name}
               aria-label={s.name}
-              aria-current={s.id === serverId() ? "true" : undefined}
-              onClick={() => setServerId(s.id)}
+              aria-current={!dmMode() && s.id === serverId() ? "true" : undefined}
+              onClick={() => openServer(s.id)}
             >
               {initials(s.name)}
             </button>
@@ -405,11 +491,16 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
       {/* ---- channels ---- */}
       <aside class="side" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
         {/* the banner on its own, the name in the row under it */}
-        <Show when={server()?.banner}>
+        <Show when={!dmMode() && server()?.banner}>
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
         </Show>
         <header class="side-head">
-          <span class="side-title">{server()?.name ?? "Darkwood Node"}</span>
+          <span class="side-title">{dmMode() ? "Direct messages" : server()?.name ?? "Darkwood Node"}</span>
+          <Show when={dmMode()}>
+            <button class="icon-btn" type="button" title="New message" aria-label="New message" onClick={() => setNewDm(true)}>
+              +
+            </button>
+          </Show>
           {/* in a call: keep the left side showing, or let it slide away */}
           <Show when={inThisCall()}>
             <PinButton pinned={leftPinned()} onPin={pinLeft} />
@@ -428,6 +519,41 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         </header>
 
         <div class="side-scroll">
+          <Show when={dmMode()}>
+            <Show when={dms().length} fallback={<p class="side-empty">No messages yet. Start one with +, or from someone's profile card.</p>}>
+              <For each={dmsByLatest()}>
+                {(d) => {
+                  const other = () => dmPartner(d, props.uid);
+                  return (
+                    <button
+                      type="button"
+                      class="member dm-row"
+                      classList={{ active: d.id === serverId(), unread: dmUnread(d.id) }}
+                      onClick={() => {
+                        setDmHome(true);
+                        setServerId(d.id);
+                        setNavOpen(false);
+                      }}
+                    >
+                      <span class="avatar small" style={faceStyle(profiles().get(other()))}>
+                        {faceText(profiles().get(other()), nameOf(other()))}
+                        <Show when={isOnline(other())}>
+                          <i class="dot" />
+                        </Show>
+                      </span>
+                      <span class="member-text">
+                        <span class="member-name">{nameOf(other())}</span>
+                      </span>
+                      <Show when={dmUnread(d.id)}>
+                        <i class="dm-dot" aria-label="unread" />
+                      </Show>
+                    </button>
+                  );
+                }}
+              </For>
+            </Show>
+          </Show>
+          <Show when={!dmMode()}>
           <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
             <For each={liveStreams()}>
@@ -524,6 +650,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
               </div>
             </Show>
           </Show>
+          </Show>
         </div>
 
         <Show when={call()}>
@@ -570,10 +697,31 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           <button class="icon-btn menu-btn" type="button" aria-label="Channels" onClick={() => setNavOpen(true)}>
             ☰
           </button>
-          <span class="main-title">
-            <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
-            {channel()?.name ?? ""}
-          </span>
+          <Show
+            when={isDm(server()) && server()}
+            fallback={
+              <span class="main-title">
+                <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
+                {channel()?.name ?? ""}
+              </span>
+            }
+          >
+            {(d) => (
+              <>
+                <span class="main-title">
+                  <span class="hash">@</span> {dmName(d())}
+                </span>
+                <button
+                  class="btn dm-call-btn"
+                  type="button"
+                  title={channelId() === DM_CALL ? "Back to the messages" : "Videochat with them"}
+                  onClick={() => pickChannel(channelId() === DM_CALL ? DM_CHAT : DM_CALL)}
+                >
+                  {channelId() === DM_CALL ? "Messages" : "📞 Call"}
+                </button>
+              </>
+            )}
+          </Show>
           <button class="btn feedback-btn" type="button" title="Send feedback to the developers" onClick={() => openFeedback()}>
             Feedback
           </button>
@@ -592,6 +740,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
           </Show>
         </header>
         <Switch fallback={<div class="main-empty">Pick a channel.</div>}>
+          <Match when={dmHome() && !isDm(server())}>
+            <div class="main-empty">Pick a conversation, or start one with + (or Message on a profile card).</div>
+          </Match>
           <Match when={server() && channel()?.kind === "text" && channel()}>
             {(ch) => (
               <Chat
@@ -767,6 +918,7 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             profile={profiles().get(c().uid)}
             name={nameOf(c().uid)}
             online={isOnline(c().uid)}
+            onMessage={c().uid !== props.uid ? () => void startDm(c().uid) : undefined}
             where={whereOf(c().uid)}
             owner={server()?.ownerUid === c().uid}
             onClose={() => setCard(undefined)}
@@ -808,6 +960,14 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         server={server()}
         profiles={profiles()}
         uid={props.uid}
+      />
+      <NewDmDialog
+        open={newDm()}
+        onClose={() => setNewDm(false)}
+        uid={props.uid}
+        profiles={profiles()}
+        isOnline={isOnline}
+        onPick={(uid) => void startDm(uid)}
       />
       <FeedbackDialog
         open={feedbackOpen()}
@@ -1026,6 +1186,8 @@ function ProfileCard(props: {
   online: boolean;
   where: string;
   owner: boolean;
+  /** start (or open) a direct message with them */
+  onMessage?: () => void;
   onClose: () => void;
 }) {
   onMount(() => {
@@ -1073,6 +1235,11 @@ function ProfileCard(props: {
             <span class="group-label">Status</span>
             <p>{props.online ? props.where || "Online" : "Offline"}</p>
           </div>
+          <Show when={props.onMessage}>
+            <button class="btn primary profile-message" type="button" onClick={() => props.onMessage?.()}>
+              Message
+            </button>
+          </Show>
         </div>
       </article>
     </div>
@@ -1428,6 +1595,52 @@ function PeopleDialog(props: {
             </div>
           )}
         </For>
+      </div>
+    </Modal>
+  );
+}
+
+/** New message: pick anyone approved (searchable) to start a DM with. */
+function NewDmDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  uid: string;
+  profiles: Map<string, Profile>;
+  isOnline: (uid: string) => boolean;
+  onPick: (uid: string) => void;
+}) {
+  const [q, setQ] = createSignal("");
+  const people = () =>
+    [...props.profiles.values()]
+      .filter((p) => p.uid !== props.uid)
+      .filter((p) => !q().trim() || `${p.name} ${p.username}`.toLowerCase().includes(q().trim().toLowerCase()))
+      .sort((a, b) => Number(props.isOnline(b.uid)) - Number(props.isOnline(a.uid)) || (a.name || a.username).localeCompare(b.name || b.username));
+  return (
+    <Modal title="New message" open={props.open} onClose={props.onClose}>
+      <div class="modal-form">
+        <label class="field">
+          <span>Who do you want to message?</span>
+          <input value={q()} onInput={(e) => setQ(e.currentTarget.value)} placeholder="Search names" />
+        </label>
+        <div class="people-list">
+          <For each={people()}>
+            {(p) => (
+              <button type="button" class="member" onClick={() => props.onPick(p.uid)}>
+                <span class="avatar small" style={faceStyle(p)}>
+                  {faceText(p, p.name || p.username)}
+                  <Show when={props.isOnline(p.uid)}>
+                    <i class="dot" />
+                  </Show>
+                </span>
+                <span class="member-text">
+                  <span class="member-name">
+                    {p.name || p.username} <small>@{p.username}</small>
+                  </span>
+                </span>
+              </button>
+            )}
+          </For>
+        </div>
       </div>
     </Modal>
   );
