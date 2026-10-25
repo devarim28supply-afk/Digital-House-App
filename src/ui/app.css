@@ -3096,7 +3096,7 @@ img.live-tile-still {
 }
 /* the floating Activity window: move by the top bar, resize by the corner */
 .activity-window {
-  position: fixed;
+  position: absolute; /* inside the middle column (.main) */
   z-index: 45;
   display: flex;
   flex-direction: column;

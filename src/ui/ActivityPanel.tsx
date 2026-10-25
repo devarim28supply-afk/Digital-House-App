@@ -1,11 +1,13 @@
 import { Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Portal } from "solid-js/web";
 
 import { watchAudit } from "../data/audit";
 import { auth } from "../firebase";
 
 /*
  * Activity for developers (owner, admins, developers): the Activity page in a
- * floating window over Darkwood Node. Move it by its top bar, make it bigger
+ * floating window in the middle of Darkwood Node (between the side bars, never
+ * over them), opening centred. Move it by its top bar, make it bigger
  * by dragging its corner, close it with ✕; where it was and its size are
  * remembered. The button shows a red count of what is new since you last
  * looked: commits, pushes, deploys and pull requests (from /api/activity) and
@@ -17,16 +19,17 @@ const BOX_KEY = "dh_activity_box";
 const POLL_MS = 60_000;
 
 type Box = { x: number; y: number; w: number; h: number };
-function recallBox(): Box {
+/** The size you last gave the window (it always opens centred). */
+function recallSize(area: { w: number; h: number }) {
+  let w = 560;
+  let h = 640;
   try {
-    const b = JSON.parse(localStorage.getItem(BOX_KEY) || "null") as Box | null;
-    if (b && b.w >= 320 && b.h >= 240) return b;
+    const b = JSON.parse(localStorage.getItem(BOX_KEY) || "null") as Partial<Box> | null;
+    if (b?.w && b?.h) [w, h] = [b.w, b.h];
   } catch {
-    /* fall through */
+    /* the default size */
   }
-  const w = Math.min(560, innerWidth - 32);
-  const h = Math.min(640, innerHeight - 100);
-  return { x: innerWidth - w - 16, y: 64, w, h };
+  return { w: Math.min(Math.max(320, w), area.w - 16), h: Math.min(Math.max(240, h), area.h - 16) };
 }
 const remember = (key: string, value: string) => {
   try {
@@ -134,13 +137,29 @@ export function ActivityButton(props: { uid: string }) {
 }
 
 function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
-  const [box, setBox] = createSignal(recallBox());
+  // It lives in the middle column (the channel and videochat), never over the
+  // side bars: its box is measured inside that column.
+  const host = document.querySelector<HTMLElement>(".main") ?? document.body;
+  const area = () => ({ w: host.clientWidth, h: host.clientHeight });
+  const centred = (): Box => {
+    const size = recallSize(area());
+    return { ...size, x: Math.round((area().w - size.w) / 2), y: Math.round((area().h - size.h) / 2) };
+  };
+  const [box, setBox] = createSignal(centred());
   let panel: HTMLDivElement | undefined;
   const save = () => remember(BOX_KEY, JSON.stringify(box()));
-  const clamp = (b: Box): Box => ({
-    ...b,
-    x: Math.min(Math.max(0, b.x), innerWidth - 120),
-    y: Math.min(Math.max(0, b.y), innerHeight - 48),
+  // always wholly inside the column
+  const fit = (b: Box): Box => {
+    const { w: aw, h: ah } = area();
+    const w = Math.min(b.w, aw);
+    const h = Math.min(b.h, ah);
+    return { w, h, x: Math.min(Math.max(0, b.x), aw - w), y: Math.min(Math.max(0, b.y), ah - h) };
+  };
+  // the column changes size (a side bar slides in or out, the window resizes)
+  onMount(() => {
+    const ro = new ResizeObserver(() => setBox((b) => fit(b)));
+    ro.observe(host);
+    onCleanup(() => ro.disconnect());
   });
 
   // move: drag the top bar
@@ -150,7 +169,7 @@ function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
     const head = e.currentTarget as HTMLElement;
     head.setPointerCapture(e.pointerId);
     panel?.classList.add("dragging"); // the page inside must not swallow the pointer
-    const move = (ev: PointerEvent) => setBox(clamp({ ...start, x: start.x + ev.clientX - start.px, y: start.y + ev.clientY - start.py }));
+    const move = (ev: PointerEvent) => setBox(fit({ ...start, x: start.x + ev.clientX - start.px, y: start.y + ev.clientY - start.py }));
     const up = () => {
       head.removeEventListener("pointermove", move);
       head.removeEventListener("pointerup", up);
@@ -168,11 +187,13 @@ function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
     grip.setPointerCapture(e.pointerId);
     panel?.classList.add("dragging");
     const move = (ev: PointerEvent) =>
-      setBox({
-        ...start,
-        w: Math.max(320, Math.min(innerWidth - start.x, start.w + ev.clientX - start.px)),
-        h: Math.max(240, Math.min(innerHeight - start.y, start.h + ev.clientY - start.py)),
-      });
+      setBox(
+        fit({
+          ...start,
+          w: Math.max(320, Math.min(area().w - start.x, start.w + ev.clientX - start.px)),
+          h: Math.max(240, Math.min(area().h - start.y, start.h + ev.clientY - start.py)),
+        }),
+      );
     const up = () => {
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", up);
@@ -195,6 +216,7 @@ function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
   });
 
   return (
+    <Portal mount={host}>
     <div
       ref={panel}
       class="activity-window"
@@ -214,5 +236,6 @@ function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
       <iframe src={`${import.meta.env.BASE_URL}activity.html?embed`} title="Activity" />
       <div class="activity-window-grip" onPointerDown={startResize} title="Drag to resize" aria-hidden="true" />
     </div>
+    </Portal>
   );
 }
