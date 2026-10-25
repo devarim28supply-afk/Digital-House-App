@@ -69,24 +69,41 @@ async function isStaff(idToken: string) {
   return roles.admin?.booleanValue === true || roles.develop?.booleanValue === true;
 }
 
-async function github(path: string) {
-  const res = await fetch(`https://api.github.com/${path}`, {
-    headers: {
-      Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+/**
+ * A key from the environment: just the key itself, whatever was pasted
+ * around it. Keys never contain spaces, so the first word is the key.
+ */
+const key = (raw: string | undefined) => (raw ?? "").trim().split(/\s+/)[0] ?? "";
+
+/**
+ * One request. A failure is reported only as a short fixed message: never
+ * the request or its error text, which can echo the key back.
+ */
+async function call(url: string, headers: Record<string, string>, who: string) {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers });
+  } catch {
+    throw new Error(`${who} could not be reached (check its key)`);
+  }
+  if (!res.ok) throw new Error(`${who} answered ${res.status}`);
+  return res.json();
+}
+
+const github = (path: string) =>
+  call(
+    `https://api.github.com/${path}`,
+    {
+      Authorization: `Bearer ${key(process.env.GITHUB_TOKEN)}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "darkwood-node-activity",
     },
-  });
-  if (!res.ok) throw new Error(`GitHub ${res.status} on ${path.split("?")[0]}`);
-  return res.json();
-}
+    "GitHub",
+  );
 
-async function vercel(path: string) {
-  const res = await fetch(`https://api.vercel.com/${path}`, { headers: { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` } });
-  if (!res.ok) throw new Error(`Vercel ${res.status}`);
-  return res.json();
-}
+const vercel = (path: string) =>
+  call(`https://api.vercel.com/${path}`, { Authorization: `Bearer ${key(process.env.VERCEL_TOKEN)}` }, "Vercel");
 
 type Gh = Record<string, any>; // GitHub / Vercel replies, read loosely
 
