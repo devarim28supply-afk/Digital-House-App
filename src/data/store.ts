@@ -501,7 +501,22 @@ export const setTileImage = (sid: string, cid: string, image: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid), { image });
 export const renameChannel = (sid: string, cid: string, name: string) =>
   updateDoc(doc(db, "servers", sid, "channels", cid), { name });
-export const deleteChannel = (sid: string, cid: string) => deleteDoc(doc(db, "servers", sid, "channels", cid));
+/**
+ * A channel and every message in it. Firestore never deletes a document's
+ * subcollection on its own, so the messages go first, a few hundred at a
+ * time; whoever runs the server may delete any message.
+ */
+export async function deleteChannel(sid: string, cid: string) {
+  const messages = collection(db, "servers", sid, "channels", cid, "messages");
+  for (;;) {
+    const page = await getDocs(query(messages, limit(400)));
+    if (page.empty) break;
+    const batch = writeBatch(db);
+    page.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+  await deleteDoc(doc(db, "servers", sid, "channels", cid));
+}
 
 /** A room tile goes with its own chat channel(s). */
 export async function deleteRoomTile(sid: string, tileId: string, channels: Channel[]) {

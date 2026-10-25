@@ -269,6 +269,7 @@ export function Chat(props: {
     const text = draft().trim();
     const files = ready();
     if ((!text && !files.length) || uploading()) return;
+    const sent = pending();
     setDraft("");
     setPending([]);
     setError("");
@@ -276,7 +277,9 @@ export function Chat(props: {
     try {
       await sendMessage(props.serverId, props.channel.id, props.uid, text.slice(0, 4000), files);
     } catch {
+      // put back the words and the attached files, so a retry sends both
       setDraft(text);
+      setPending((now) => [...sent, ...now]);
       setError("Could not send. Check your connection.");
     }
   }
