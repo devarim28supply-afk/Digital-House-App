@@ -1,12 +1,15 @@
-import { Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 
 import { Room, RoomEvent } from "livekit-client";
 
+import { callFaces } from "../data/callFaces";
+import { type Profile } from "../data/store";
 import { inRoom } from "../data/where";
 import { auth } from "../firebase";
 import { autoCaptions } from "../room/livecaptions";
 import { playChannel } from "../room/tv";
+import { CallStrip, CamRow } from "./CallStrip";
 
 type Tv = { id: number; name: string; url: string; at: number; onAt: number };
 
@@ -15,7 +18,9 @@ type Tv = { id: number; name: string; url: string; at: number; onAt: number };
  * right side bar (Kaalob). Only while a TV is on there; when that one goes
  * off, the next one still on (turned on earliest) takes its place, and a
  * channel change follows along. Muted to start (the speaker is yours alone);
- * a click opens it big over the middle, Esc or a click closes it. Hovering
+ * a click opens it big over the middle, with the tile's videochat webcams
+ * in a row under it, the same as a big screen. Esc or a click on the
+ * picture closes it. Hovering
  * shows Hide: it goes from the side bar until that TV is turned off (a
  * different first TV brings it back).
  *
@@ -23,7 +28,7 @@ type Tv = { id: number; name: string; url: string; at: number; onAt: number };
  * (room.js publishTvs); this watches the room unseen (a hidden, watch-only
  * pass), so it works without opening the Room side.
  */
-export function SideTv(props: { serverId: string; channelId: string }) {
+export function SideTv(props: { serverId: string; channelId: string; profiles: Map<string, Profile> }) {
   const [tv, setTv] = createSignal<Tv | undefined>();
   const [sound, setSound] = createSignal(false);
   const [big, setBig] = createSignal(false);
@@ -145,6 +150,13 @@ export function SideTv(props: { serverId: string; channelId: string }) {
   createEffect(() => {
     if (!shown()) setBig(false);
   });
+  // Webcams of the call you are in. Anyone else in this tile's videochat
+  // still shows, through the watch-only strip, when you have not joined.
+  const callersHere = createMemo(() => {
+    const faces = callFaces();
+    if (!faces || faces.channelKey !== `${props.serverId}/${props.channelId}`) return undefined;
+    return faces.callers;
+  });
 
   return (
     <Show when={shown()}>
@@ -178,8 +190,18 @@ export function SideTv(props: { serverId: string; channelId: string }) {
           <Show when={big()}>
             <Portal mount={document.querySelector<HTMLElement>(".main") ?? document.body}>
               <div class="side-tv-big" role="dialog" aria-label={`TV: ${now().name}`} onClick={() => setBig(false)}>
-                <video ref={setBigVideo} autoplay playsinline />
-                <div class="live-cc big-cc" ref={setBigCcBox} hidden />
+                <div class="side-tv-stage">
+                  <video ref={setBigVideo} autoplay playsinline />
+                  <div class="live-cc big-cc" ref={setBigCcBox} hidden />
+                </div>
+                <div class="side-tv-cams" onClick={(e) => e.stopPropagation()}>
+                  <Show
+                    when={callersHere()}
+                    fallback={<CallStrip serverId={props.serverId} channelId={props.channelId} profiles={props.profiles} />}
+                  >
+                    {(callers) => <CamRow callers={callers()} profiles={props.profiles} />}
+                  </Show>
+                </div>
               </div>
             </Portal>
           </Show>

@@ -895,7 +895,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </header>
             {/* the first TV on in this tile's Darkwood Room, above everything (Kaalob) */}
             <Show when={channel() && hasDarkwoodRoom(channel()!) ? channel()!.id : undefined}>
-              {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} />}
+              {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} profiles={profiles()} />}
             </Show>
             {/* who is online stays visible with a tile open, above its chat */}
             <div class="side-online">

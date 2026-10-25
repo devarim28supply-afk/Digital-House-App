@@ -3260,21 +3260,51 @@ img.live-tile-still {
   opacity: 1;
 }
 
-/* opened big: over the middle column, click or Esc closes it */
+/* opened big: the picture over the middle, videochat webcams along the bottom
+   (up to 4; the rest in a column on the right), same as a big screen.
+   A click on the picture or Esc closes it. A click on a webcam does not. */
 .side-tv-big {
+  --strip-h: clamp(70px, 16vh, 160px);
   position: absolute;
   inset: 0;
   z-index: 60;
   display: grid;
-  place-items: center;
+  grid-template: "stage side" minmax(0, 1fr) "cams cams" auto / minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
   background: #000;
   cursor: zoom-out;
+}
+
+.side-tv-stage {
+  grid-area: stage;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.side-tv-cams {
+  display: contents;
+}
+
+.side-tv-big .call-strip {
+  grid-area: cams;
+}
+
+.side-tv-big .call-strip-side {
+  grid-area: side;
+}
+
+.side-tv-big .call-strip,
+.side-tv-big .call-strip-side {
+  cursor: default;
 }
 
 .side-tv-big video {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #000;
 }
 
 /* Pop out button in the Activity window head (a word, not a square icon) */

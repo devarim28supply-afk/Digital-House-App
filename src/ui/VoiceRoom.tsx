@@ -16,6 +16,7 @@ import {
 
 import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
+import { setCallFaces } from "../data/callFaces";
 import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { faceStyle, faceText } from "./Shell";
@@ -747,6 +748,31 @@ export function VoiceRoom(props: {
     const profile = props.profiles.get(p.identity);
     return displayName(profile, p.name || "Member");
   };
+  // The side-bar TV, opened big, shows this same row of webcams underneath.
+  // A watch-only wall must not replace the call you are actually in.
+  createEffect(() => {
+    if (props.viewOnly) return;
+    // Not in the call yet: leave the row to the watch-only strip.
+    if (!room()) {
+      setCallFaces(undefined);
+      return;
+    }
+    const callers = tiles()
+      .filter((t) => !t.screen)
+      .map((t) => {
+        const pub = t.publication;
+        const on = Boolean(pub?.track) && !pub!.isMuted && pub!.isSubscribed;
+        return {
+          identity: t.participant.identity,
+          name: nameOf(t.participant),
+          video: on ? pub!.track!.mediaStream : undefined,
+        };
+      });
+    setCallFaces({ channelKey: `${props.serverId}/${props.channel.id}`, callers });
+  });
+  onCleanup(() => {
+    if (!props.viewOnly) setCallFaces(undefined);
+  });
 
   // ---- the layout (Kaalob's drawings) --------------------------------------
   // Every tile is one 16:9 size; the Room view is one of the tiles:

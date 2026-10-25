@@ -164,9 +164,10 @@ const CHAIRS = [
 ];
 // ---- a small desk against the wall under each small TV (screens 1 to 4).
 // Same look as the chairs: a top slab on four square legs. Its top stays
-// under the TV's bottom edge (0.87 m up). A little wider than the TV (2.24 m)
-// and deep enough to reach almost to the chair (its front edge is 0.2 m off).
-const DESK = { w: 250, d: 85, tall: 75, slab: 4, leg: 6 };
+// under the TV's bottom edge (0.87 m up). A little wider than the TV (2.24 m).
+// Depth grows toward the chair only (the back edge stays on the wall) and
+// tucks about 8 cm under the front of the seat.
+const DESK = { w: 250, d: 115, tall: 75, slab: 4, leg: 6 };
 /** A box of CSS faces in `parent`: x0..x1 left to right, z0..z1 front to back,
  *  from `top` (px above the floor) down `h` px. No bottom face. */
 function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {

@@ -6,7 +6,44 @@ import { type RemoteParticipant, Room, RoomEvent, Track } from "livekit-client";
 import { displayName, type Profile } from "../data/store";
 import { fetchPass } from "./VoiceRoom";
 
-type Caller = { identity: string; name: string; video?: MediaStream };
+export type Caller = { identity: string; name: string; video?: MediaStream };
+
+/**
+ * Videochat webcams: up to 4 in a row, the rest in a column on the right.
+ * A camera that is off is black with the username in the middle.
+ */
+export function CamRow(props: { callers: Caller[]; profiles: Map<string, Profile> }) {
+  const row = () => props.callers.slice(0, 4);
+  const side = () => props.callers.slice(4);
+  // Index keeps each screen (and its video) in place while the list is
+  // rebuilt, so a refresh never flashes anyone's webcam black.
+  const tile = (c: () => Caller) => {
+    let video: HTMLVideoElement | undefined;
+    createEffect(() => {
+      const stream = c().video ?? null;
+      if (video && video.srcObject !== stream) video.srcObject = stream;
+    });
+    return (
+      <div class="strip-tile" classList={{ live: Boolean(c().video) }}>
+        <video autoplay muted playsinline ref={video} />
+        <span class="name">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
+        <span class="who">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
+      </div>
+    );
+  };
+  return (
+    <>
+      <div class="call-strip">
+        <Index each={row()}>{tile}</Index>
+      </div>
+      <Show when={side().length}>
+        <div class="call-strip-side">
+          <Index each={side()}>{tile}</Index>
+        </div>
+      </Show>
+    </>
+  );
+}
 
 /**
  * The tile's videochat as small screens over the bottom of its Room side,
@@ -64,35 +101,5 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
   });
   onCleanup(() => void room.disconnect());
 
-  const row = () => callers().slice(0, 4);
-  const side = () => callers().slice(4);
-  // Index keeps each screen (and its video) in place while the list is
-  // rebuilt, so a refresh never flashes anyone's webcam black.
-  const tile = (c: () => Caller) => {
-    let video: HTMLVideoElement | undefined;
-    createEffect(() => {
-      const stream = c().video ?? null;
-      if (video && video.srcObject !== stream) video.srcObject = stream;
-    });
-    return (
-      <div class="strip-tile" classList={{ live: Boolean(c().video) }}>
-        <video autoplay muted playsinline ref={video} />
-        <span class="name">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
-        <span class="who">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
-      </div>
-    );
-  };
-
-  return (
-    <>
-      <div class="call-strip">
-        <Index each={row()}>{tile}</Index>
-      </div>
-      <Show when={side().length}>
-        <div class="call-strip-side">
-          <Index each={side()}>{tile}</Index>
-        </div>
-      </Show>
-    </>
-  );
+  return <CamRow callers={callers()} profiles={props.profiles} />;
 }
