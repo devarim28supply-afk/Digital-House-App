@@ -14,6 +14,7 @@ import {
   sendMessage,
   watchMessages,
 } from "../data/store";
+import { audit } from "../data/audit";
 import { EmojiPicker, ImageViewer } from "./Emoji";
 import { faceStyle, faceText } from "./Shell";
 
@@ -591,7 +592,17 @@ export function Chat(props: {
                       type="button"
                       title="Delete"
                       aria-label="Delete message"
-                      onClick={() => void deleteMessage(props.serverId, props.channel.id, m.id)}
+                      onClick={() =>
+                        void deleteMessage(props.serverId, props.channel.id, m.id).then(() => {
+                          // someone else's message: that goes in the action log
+                          if (m.authorUid !== props.uid)
+                            audit("message.delete", {
+                              serverId: props.serverId,
+                              target: m.authorUid,
+                              detail: `#${props.channel.name}: ${m.text.slice(0, 120)}`,
+                            });
+                        })
+                      }
                     >
                       🗑
                     </button>

@@ -1,50 +1,148 @@
-// The Activity page (activity.html): who committed, pushed, deployed and
-// opened pull requests, across Darkwood Node's projects. Staff only; the data
-// comes from /api/activity (GitHub + Vercel, read-only), refreshed every minute.
+// The Activity page (activity.html): who did what across Darkwood Node.
+//
+// - Commits, pushes, deploys and pull requests from /api/activity (GitHub +
+//   Vercel, read-only), with which AI helped and which parts each commit changed.
+// - Actions inside Darkwood Node from the action log (auditlog, data/audit.ts).
+// - Real people instead of account names: activity_people lists each person's
+//   GitHub and Vercel accounts and their Darkwood account (owner/admins edit).
+//
+// Staff only (owner, admins, developers). Refreshed every minute.
 
 import { onAuthStateChanged } from "firebase/auth";
+import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 
-import { auth } from "../firebase";
+import { type AuditEntry, watchAudit } from "../data/audit";
+import { auth, db } from "../firebase";
 
-type Commit = { sha: string; url: string; title: string; author: string; avatar: string; helpers: string[]; at: string };
+type Change = { areas: string[]; files: number; added: number; removed: number } | null;
+type Commit = { sha: string; url: string; title: string; author: string; avatar: string; helpers: string[]; ai: string; change: Change; at: string };
 type Push = { by: string; avatar: string; branch: string; count: number; head: string; at: string };
 type Pull = { number: number; title: string; url: string; by: string; state: string; mergedBy: string; at: string };
 type Repo = { name: string; repo: string; commits: Commit[]; pushes: Push[]; pulls: Pull[]; error?: string };
 type Deploy = { project: string; url: string; state: string; target: string; by: string; commit: string; message: string; via: string; at: string; error?: string };
 type Activity = { at: string; repos: Repo[]; deploys: Deploy[] };
 
-type Kind = "commit" | "push" | "deploy" | "pr";
-type Event = { kind: Kind; project: string; who: string; avatar: string; title: string; url: string; meta: string; at: number; state?: string };
+type Kind = "commit" | "push" | "deploy" | "pr" | "action";
+type Event = {
+  kind: Kind;
+  project: string;
+  account: string; // the GitHub / Vercel / Darkwood account that did it
+  avatar: string;
+  title: string;
+  url: string;
+  meta: string;
+  at: number;
+  state?: string;
+  ai?: string;
+  change?: Change;
+};
+
+/** A real person and the accounts that are theirs. */
+type Person = { id: string; name: string; uid: string; github: string[]; vercel: string[] };
+type Profile = { name?: string; username?: string; photo?: string; color?: string };
 
 const $ = (id: string) => document.getElementById(id)!;
 const REFRESH_MS = 60_000;
 const PAGE = 60;
+const KIND_LABEL: Record<Kind, string> = { commit: "Commits", push: "Pushes", deploy: "Deploys", pr: "Pull requests", action: "Darkwood actions" };
 
 let data: Activity | null = null;
+let actions: AuditEntry[] = [];
+let actionsError = "";
+let people: Person[] = [];
+const profiles = new Map<string, Profile>();
+const serverNames = new Map<string, string>();
 let project = "all";
-let kinds = new Set<Kind>(["commit", "push", "deploy", "pr"]);
+const kinds = new Set<Kind>(["commit", "push", "deploy", "pr", "action"]);
 let shown = PAGE;
 
-function ago(ms: number) {
-  const s = Math.round((Date.now() - ms) / 1000);
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" }) + " " + new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+// ---- who is who --------------------------------------------------------------
+const lower = (s: string) => s.toLowerCase();
+function personOf(kind: Kind, account: string): Person | undefined {
+  const a = lower(account);
+  return people.find((p) =>
+    kind === "action"
+      ? p.uid === account
+      : kind === "deploy"
+        ? p.vercel.some((v) => lower(v) === a)
+        : p.github.some((g) => lower(g) === a),
+  );
+}
+function profileName(uid: string) {
+  const p = profiles.get(uid);
+  return p?.name || p?.username || "someone";
+}
+/** The name to show for whoever did an event. */
+function whoOf(e: Event) {
+  const person = personOf(e.kind, e.account);
+  if (person) return person.name;
+  return e.kind === "action" ? profileName(e.account) : e.account;
+}
+function photoOf(e: Event) {
+  const person = personOf(e.kind, e.account);
+  const uid = person?.uid || (e.kind === "action" ? e.account : "");
+  return profiles.get(uid)?.photo || e.avatar || (e.kind !== "action" ? `https://github.com/${encodeURIComponent(e.account)}.png?size=72` : "");
+}
+async function loadProfile(uid: string) {
+  if (!uid || profiles.has(uid)) return;
+  profiles.set(uid, {});
+  try {
+    const snap = await getDoc(doc(db, "profiles", uid));
+    if (snap.exists()) profiles.set(uid, snap.data() as Profile);
+    render();
+  } catch {
+    /* a name we cannot read stays "someone" */
+  }
+}
+async function loadServerName(sid: string) {
+  if (!sid || serverNames.has(sid)) return;
+  serverNames.set(sid, "");
+  try {
+    const snap = await getDoc(doc(db, "servers", sid));
+    const s = snap.data();
+    if (s) serverNames.set(sid, s.kind === "dm" ? "a DM" : String(s.name ?? ""));
+    render();
+  } catch {
+    /* not a member of it: no name */
+  }
 }
 
-function events(d: Activity): Event[] {
+// ---- what happened -------------------------------------------------------------
+const ACTION_TEXT: Record<string, (e: AuditEntry) => string> = {
+  "server.create": (e) => `made the server ${e.target ?? ""}`,
+  "server.delete": () => "deleted a server",
+  "server.settings": (e) => `changed server settings (${e.detail ?? ""})`,
+  "server.rename": (e) => `renamed the server to ${e.target ?? ""}`,
+  "server.open": (e) => `set the server ${e.detail ?? ""}`,
+  "member.add": (e) => `added ${(e.target ?? "").split(",").map(profileName).join(", ")} to the server`,
+  "member.remove": (e) => `removed ${profileName(e.target ?? "")} from the server`,
+  "member.approve": (e) => `approved ${profileName(e.target ?? "")}`,
+  "member.deny": (e) => `revoked ${profileName(e.target ?? "")}`,
+  "member.roles": (e) => `changed ${profileName(e.target ?? "")}'s role (${e.detail ?? ""})`,
+  "tile.create": (e) => `made the tile ${e.target ?? ""}`,
+  "tile.delete": (e) => `deleted the tile ${e.target ?? ""}`,
+  "tile.picture": (e) => `changed the picture of ${e.target ?? ""}`,
+  "channel.create": (e) => `made the ${e.detail ?? ""} channel ${e.target ?? ""}`,
+  "channel.rename": (e) => `renamed a channel to ${e.target ?? ""}`,
+  "message.delete": (e) => `deleted ${profileName(e.target ?? "")}'s message (${e.detail ?? ""})`,
+  "emoji.add": (e) => `added the ${e.detail ?? "emoji"} ${e.target ?? ""}`,
+  "emoji.delete": (e) => `removed the emoji ${e.target ?? ""}`,
+};
+
+function events(): Event[] {
   const out: Event[] = [];
-  for (const r of d.repos) {
+  for (const r of data?.repos ?? []) {
     for (const c of r.commits) {
       out.push({
         kind: "commit",
         project: r.name,
-        who: c.author,
+        account: c.author,
         avatar: c.avatar,
         title: c.title,
         url: c.url,
-        meta: `${c.sha}${c.helpers.length ? ` · with ${c.helpers.join(", ")}` : ""}`,
+        meta: c.sha,
+        ai: c.ai,
+        change: c.change,
         at: Date.parse(c.at),
       });
     }
@@ -52,7 +150,7 @@ function events(d: Activity): Event[] {
       out.push({
         kind: "push",
         project: r.name,
-        who: p.by,
+        account: p.by,
         avatar: p.avatar,
         // GitHub stopped saying how many commits a push had: show it only when known
         title: p.count ? `pushed ${p.count} commit${p.count === 1 ? "" : "s"} to ${p.branch}` : `pushed to ${p.branch}`,
@@ -65,8 +163,8 @@ function events(d: Activity): Event[] {
       out.push({
         kind: "pr",
         project: r.name,
-        who: pr.by,
-        avatar: `https://github.com/${pr.by}.png?size=72`,
+        account: pr.by,
+        avatar: "",
         title: `#${pr.number} ${pr.title}`,
         url: pr.url,
         meta: pr.state === "merged" ? `merged${pr.mergedBy ? ` by ${pr.mergedBy}` : ""}` : pr.state,
@@ -74,12 +172,12 @@ function events(d: Activity): Event[] {
       });
     }
   }
-  for (const dep of d.deploys) {
+  for (const dep of data?.deploys ?? []) {
     if (dep.error) continue;
     out.push({
       kind: "deploy",
       project: dep.project,
-      who: dep.by,
+      account: dep.by,
       avatar: "",
       title: dep.commit ? `deployed ${dep.commit} ${dep.message}` : `deployed (${dep.via})`,
       url: dep.url,
@@ -88,26 +186,60 @@ function events(d: Activity): Event[] {
       at: Date.parse(dep.at),
     });
   }
+  for (const a of actions) {
+    void loadProfile(a.uid);
+    if (a.target && /^member\.|^message\./.test(a.action)) a.target.split(",").forEach((u) => void loadProfile(u));
+    if (a.serverId) void loadServerName(a.serverId);
+    out.push({
+      kind: "action",
+      project: "Darkwood Node app",
+      account: a.uid,
+      avatar: "",
+      title: (ACTION_TEXT[a.action] ?? ((e: AuditEntry) => `${e.action} ${e.target ?? ""}`))(a),
+      url: "",
+      meta: a.serverId && serverNames.get(a.serverId) ? `in ${serverNames.get(a.serverId)}` : "",
+      at: a.at,
+    });
+  }
   return out.filter((e) => !Number.isNaN(e.at)).sort((a, b) => b.at - a.at);
 }
 
+// ---- drawing -------------------------------------------------------------------
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+}
 function button(label: string, pressed: boolean, onClick: () => void) {
-  const b = document.createElement("button");
+  const b = el("button", "", label);
   b.type = "button";
-  b.textContent = label;
   b.setAttribute("aria-pressed", String(pressed));
   b.addEventListener("click", onClick);
   return b;
 }
+function face(src: string) {
+  const img = el("img");
+  img.alt = "";
+  if (src) img.src = src;
+  img.onerror = () => (img.style.visibility = "hidden");
+  return img;
+}
+function ago(ms: number) {
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" }) + " " + new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 function render() {
   if (!data) return;
-  const all = events(data);
+  const all = events();
   const projects = ["all", ...data.repos.map((r) => r.name)];
   $("projects").replaceChildren(
     ...projects.map((p) => button(p === "all" ? "All projects" : p, project === p, () => { project = p; shown = PAGE; render(); })),
   );
-  const KIND_LABEL: Record<Kind, string> = { commit: "Commits", push: "Pushes", deploy: "Deploys", pr: "Pull requests" };
   $("kinds").replaceChildren(
     ...(Object.keys(KIND_LABEL) as Kind[]).map((k) =>
       button(KIND_LABEL[k], kinds.has(k), () => {
@@ -118,84 +250,78 @@ function render() {
       }),
     ),
   );
-  const picked = all.filter((e) => (project === "all" || e.project === project) && kinds.has(e.kind));
+  const inProject = (e: Event) => project === "all" || e.project === project;
 
-  // who did what, last 30 days
+  // who did what, last 30 days: one card per person (or unknown account)
   const since = Date.now() - 30 * 86400_000;
-  const tally = new Map<string, { avatar: string; commit: number; push: number; deploy: number; pr: number; last: number }>();
-  for (const e of all.filter((x) => x.at >= since && (project === "all" || x.project === project))) {
-    const t = tally.get(e.who) ?? { avatar: "", commit: 0, push: 0, deploy: 0, pr: 0, last: 0 };
-    t[e.kind]++;
-    t.avatar ||= e.avatar;
+  type Tally = { photo: string; counts: Record<Kind, number>; ai: Map<string, number>; areas: Map<string, number>; added: number; removed: number; last: number };
+  const tally = new Map<string, Tally>();
+  for (const e of all.filter((x) => x.at >= since && inProject(x))) {
+    const who = whoOf(e);
+    const t = tally.get(who) ?? { photo: "", counts: { commit: 0, push: 0, deploy: 0, pr: 0, action: 0 }, ai: new Map(), areas: new Map(), added: 0, removed: 0, last: 0 };
+    t.counts[e.kind]++;
+    t.photo ||= photoOf(e);
     t.last = Math.max(t.last, e.at);
-    tally.set(e.who, t);
+    if (e.ai) t.ai.set(e.ai, (t.ai.get(e.ai) ?? 0) + 1);
+    if (e.change) {
+      t.added += e.change.added;
+      t.removed += e.change.removed;
+      for (const a of e.change.areas) t.areas.set(a, (t.areas.get(a) ?? 0) + 1);
+    }
+    tally.set(who, t);
   }
   $("people").replaceChildren(
     ...[...tally.entries()]
-      .sort((a, b) => b[1].commit + b[1].deploy - (a[1].commit + a[1].deploy))
+      .sort((a, b) => b[1].last - a[1].last)
       .map(([who, t]) => {
-        const el = document.createElement("div");
-        el.className = "person";
-        const img = document.createElement("img");
-        img.alt = "";
-        img.src = t.avatar || `https://github.com/${encodeURIComponent(who)}.png?size=72`;
-        img.onerror = () => (img.style.visibility = "hidden");
-        const text = document.createElement("div");
-        const name = document.createElement("b");
-        name.textContent = who;
-        const line = document.createElement("small");
-        line.textContent = `${t.commit} commits · ${t.push} pushes · ${t.deploy} deploys · ${t.pr} PRs`;
-        const last = document.createElement("small");
-        last.textContent = ` · last ${ago(t.last)}`;
-        text.append(name, line, document.createElement("br"), last);
-        el.append(img, text);
-        return el;
+        const card = el("div", "person");
+        const text = el("div");
+        text.append(el("b", "", who));
+        const c = t.counts;
+        text.append(el("small", "", [`${c.commit} commits`, `${c.push} pushes`, `${c.deploy} deploys`, c.pr ? `${c.pr} PRs` : "", c.action ? `${c.action} actions` : ""].filter(Boolean).join(" · ")));
+        if (t.ai.size) {
+          const ai = el("div", "chips");
+          for (const [name, n] of [...t.ai.entries()].sort((a, b) => b[1] - a[1])) ai.append(el("span", `ai ai-${name.replace(/\s/g, "")}`, `${name} ${n}`));
+          text.append(ai);
+        }
+        if (t.areas.size) {
+          const top = [...t.areas.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([a]) => a).join(", ");
+          text.append(el("small", "areas", `worked on ${top}${t.added || t.removed ? ` · +${t.added} −${t.removed}` : ""}`));
+        }
+        text.append(el("small", "", `last ${ago(t.last)}`));
+        card.append(face(t.photo), text);
+        return card;
       }),
   );
+  if (!tally.size) $("people").textContent = "Nobody did anything here in the last 30 days.";
 
+  // the timeline
+  const picked = all.filter((e) => inProject(e) && kinds.has(e.kind));
   $("feed").replaceChildren(
     ...picked.slice(0, shown).map((e) => {
-      const row = document.createElement("div");
-      row.className = "ev";
-      const img = document.createElement("img");
-      img.alt = "";
-      img.src = e.avatar || `https://github.com/${encodeURIComponent(e.who)}.png?size=72`;
-      img.onerror = () => (img.style.visibility = "hidden");
-      const what = document.createElement("div");
-      what.className = "what";
-      const line1 = document.createElement("div");
-      line1.className = "line1";
-      const tag = document.createElement("span");
-      tag.className = `tag ${e.kind}`;
-      tag.textContent = e.kind === "pr" ? "PR" : e.kind;
-      const who = document.createElement("b");
-      who.textContent = e.who;
-      const proj = document.createElement("span");
-      proj.className = "proj";
-      proj.textContent = e.project;
-      line1.append(tag, who, proj);
-      if (e.state) {
-        const st = document.createElement("span");
-        st.className = `state ${e.state}`;
-        st.textContent = e.state.toLowerCase();
-        line1.append(st);
-      }
-      const title = document.createElement(e.url ? "a" : "span");
-      title.className = "title";
-      title.textContent = e.title;
-      if (e.url && title instanceof HTMLAnchorElement) {
+      const row = el("div", "ev");
+      const what = el("div", "what");
+      const line1 = el("div", "line1");
+      line1.append(el("span", `tag ${e.kind}`, e.kind === "pr" ? "PR" : e.kind));
+      const who = whoOf(e);
+      line1.append(el("b", "", who));
+      if (e.ai) line1.append(el("span", `ai ai-${e.ai.replace(/\s/g, "")}`, e.ai));
+      line1.append(el("span", "proj", e.project));
+      if (e.state) line1.append(el("span", `state ${e.state}`, e.state.toLowerCase()));
+      const title = el(e.url ? "a" : "span", "title", e.title);
+      if (title instanceof HTMLAnchorElement) {
         title.href = e.url;
         title.target = "_blank";
         title.rel = "noopener";
       }
-      const meta = document.createElement("span");
-      meta.className = "meta";
-      meta.textContent = e.meta;
-      what.append(line1, title, meta);
-      const time = document.createElement("time");
-      time.textContent = ago(e.at);
+      const metaParts = [e.meta];
+      // the account behind a named person, so it stays clear which one it was
+      if (e.kind !== "action" && who !== e.account) metaParts.push(e.account);
+      if (e.change) metaParts.push(`${e.change.areas.join(", ")} · ${e.change.files} file${e.change.files === 1 ? "" : "s"} · +${e.change.added} −${e.change.removed}`);
+      what.append(line1, title, el("span", "meta", metaParts.filter(Boolean).join(" · ")));
+      const time = el("time", "", ago(e.at));
       time.title = new Date(e.at).toLocaleString();
-      row.append(img, what, time);
+      row.append(face(photoOf(e)), what, time);
       return row;
     }),
   );
@@ -205,9 +331,67 @@ function render() {
   more.onclick = () => { shown += PAGE; render(); };
 
   const errors = data.repos.filter((r) => r.error).map((r) => `${r.name}: ${r.error}`);
+  if (actionsError) errors.push(`Darkwood actions: ${actionsError}`);
   $("updated").textContent = `updated ${ago(Date.parse(data.at))}${errors.length ? ` · ${errors.join("; ")}` : ""}`;
 }
 
+// ---- the people editor (owner and admins) ------------------------------------------
+const splitList = (s: string) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+function renderEditor() {
+  const box = $("editor");
+  const rows = people.length
+    ? people
+    : // a start, from the accounts seen so far: the owner's GitHub and Vercel go together
+      [{ id: "", name: "Kaalob", uid: auth.currentUser?.uid ?? "", github: ["devarim28supply-afk"], vercel: ["devarim28supply-9180"] },
+       { id: "", name: "Tyler", uid: "", github: ["RiMyShrimp"], vercel: [] }];
+  const list = el("div", "people-edit");
+  const draw = (p: Person) => {
+    const row = el("div", "pe-row");
+    const name = el("input");
+    name.placeholder = "Name";
+    name.value = p.name;
+    const gh = el("input");
+    gh.placeholder = "GitHub accounts (comma)";
+    gh.value = p.github.join(", ");
+    const vc = el("input");
+    vc.placeholder = "Vercel accounts (comma)";
+    vc.value = p.vercel.join(", ");
+    const uid = el("input");
+    uid.placeholder = "Darkwood account id (optional, for their photo)";
+    uid.value = p.uid;
+    const del = button("Remove", false, async () => {
+      if (p.id) await deleteDoc(doc(db, "activity_people", p.id)).catch((err) => alertBox(err));
+      row.remove();
+    });
+    const save = button("Save", false, async () => {
+      const id = p.id || name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || `p${Date.now()}`;
+      try {
+        await setDoc(doc(db, "activity_people", id), {
+          name: name.value.trim() || "Someone",
+          uid: uid.value.trim(),
+          github: splitList(gh.value),
+          vercel: splitList(vc.value),
+        });
+        p.id = id;
+        save.textContent = "Saved";
+        setTimeout(() => (save.textContent = "Save"), 1500);
+      } catch (err) {
+        alertBox(err);
+      }
+    });
+    row.append(name, gh, vc, uid, save, del);
+    list.append(row);
+  };
+  rows.forEach(draw);
+  const add = button("+ Person", false, () => draw({ id: "", name: "", uid: "", github: [], vercel: [] }));
+  const hint = el("p", "hint", "Each person's GitHub and Vercel accounts count as them. Only the owner and admins can save. Your own Darkwood account id: " + (auth.currentUser?.uid ?? ""));
+  box.replaceChildren(hint, list, add);
+}
+function alertBox(err: unknown) {
+  $("editor-msg").textContent = `Could not save: ${err instanceof Error ? err.message : String(err)} (owner and admins only; the database rule may not be published yet)`;
+}
+
+// ---- loading ---------------------------------------------------------------------
 async function load() {
   const user = auth.currentUser;
   if (!user) return;
@@ -237,4 +421,33 @@ onAuthStateChanged(auth, (user) => {
   void load();
   window.setInterval(() => void load(), REFRESH_MS);
   window.setInterval(render, 30_000); // keep "x min ago" fresh between loads
+  // the action log and the people list update live
+  watchAudit(
+    (list) => {
+      actions = list;
+      actionsError = "";
+      render();
+    },
+    () => {
+      actionsError = "the action log rule is not published yet";
+      render();
+    },
+  );
+  onSnapshot(
+    collection(db, "activity_people"),
+    (snap) => {
+      people = snap.docs.map((d) => {
+        const x = d.data();
+        return { id: d.id, name: String(x.name ?? ""), uid: String(x.uid ?? ""), github: x.github ?? [], vercel: x.vercel ?? [] };
+      });
+      people.forEach((p) => void loadProfile(p.uid));
+      render();
+    },
+    () => {},
+  );
+  $("edit-people").addEventListener("click", () => {
+    const box = $("editor-wrap");
+    box.hidden = !box.hidden;
+    if (!box.hidden) renderEditor();
+  });
 });

@@ -620,7 +620,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                           e.currentTarget.value = "";
                           if (!file) return;
                           try {
-                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480));
+                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480), c.name);
                           } catch {
                             /* the old picture stays */
                           }

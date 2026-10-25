@@ -113,6 +113,68 @@ const vercel = (path: string) =>
 
 type Gh = Record<string, any>; // GitHub / Vercel replies, read loosely
 
+/**
+ * Which AI helped with a commit, from its co-author lines, author and
+ * message: Claude, Codex, Grok, Codebuff, or "by hand".
+ */
+export function whichAi(text: string) {
+  const t = text.toLowerCase();
+  if (/\bclaude\b|anthropic/.test(t)) return "Claude";
+  if (/codex|openai|chatgpt|\bgpt-?\d/.test(t)) return "Codex";
+  if (/\bgrok\b|x\.ai|\bxai\b/.test(t)) return "Grok";
+  if (/codebuff/.test(t)) return "Codebuff";
+  if (/copilot/.test(t)) return "Copilot";
+  return "by hand";
+}
+
+// Which part of the app a changed file belongs to (first match wins).
+const AREAS: [RegExp, string][] = [
+  [/^src\/room\/|^room\.html$/, "Darkwood Room"],
+  [/src\/ui\/(Chat|Emoji)/, "Chat"],
+  [/src\/ui\/(VoiceRoom|CallStrip|LiveTile|WallView|RoomPane)/, "Videochat"],
+  [/src\/data\/dms/, "DMs"],
+  [/[Ff]eedback/, "Feedback"],
+  [/activity|audit/, "Activity page"],
+  [/^api\//, "Server (api)"],
+  [/src\/ui\/Shell|app\.css|App\.tsx|Modal|styles\.css/, "App layout"],
+  [/src\/data\//, "Data"],
+  [/src\/auth|src\/firebase|access-client|Login/, "Login"],
+  [/firestore\.rules/, "Database rules"],
+  [/^admin\//, "Admin panel"],
+  [/^public\//, "Pictures & files"],
+  [/package(-lock)?\.json/, "Packages"],
+  [/vite\.config|vercel\.json|tsconfig|\.gitignore/, "Setup"],
+  [/\.md$/, "Docs"],
+];
+export function areaOf(path: string) {
+  for (const [re, label] of AREAS) if (re.test(path)) return label;
+  return path.includes("/") ? path.split("/")[0] : "Other";
+}
+
+// Commit details are fetched for the newest few per repo and kept: a commit never changes.
+const CHANGED_COMMITS = 15;
+const changeCache = new Map<string, { areas: string[]; files: number; added: number; removed: number }>();
+async function changesOf(repo: string, sha: string) {
+  const key = `${repo}@${sha}`;
+  const known = changeCache.get(key);
+  if (known) return known;
+  try {
+    const c = (await github(`repos/${repo}/commits/${sha}`)) as Gh;
+    const files = (c.files ?? []) as Gh[];
+    const areas = [...new Set(files.map((f) => areaOf(String(f.filename))))];
+    const result = {
+      areas,
+      files: files.length,
+      added: Number(c.stats?.additions ?? 0),
+      removed: Number(c.stats?.deletions ?? 0),
+    };
+    changeCache.set(key, result);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 export async function repoActivity(p: (typeof PROJECTS)[number]) {
   try {
     const [commits, events, pulls] = await Promise.all([
@@ -120,20 +182,25 @@ export async function repoActivity(p: (typeof PROJECTS)[number]) {
       github(`repos/${p.repo}/events?per_page=60`) as Promise<Gh[]>,
       github(`repos/${p.repo}/pulls?state=all&per_page=20`) as Promise<Gh[]>,
     ]);
+    // what the newest commits changed (a commit never changes, so each is asked once)
+    const changes = await Promise.all(commits.slice(0, CHANGED_COMMITS).map((c) => changesOf(p.repo, String(c.sha))));
     return {
       name: p.name,
       repo: p.repo,
-      commits: commits.map((c) => {
+      commits: commits.map((c, i) => {
         const msg = String(c.commit?.message ?? "");
         // AI helpers sign their commits; show who wrote it with whom
         const helpers = [...msg.matchAll(/Co-Authored-By:\s*([^<\n]+)</gi)].map((m) => m[1].trim());
+        const author = c.author?.login ?? c.commit?.author?.name ?? "unknown";
         return {
           sha: String(c.sha).slice(0, 7),
           url: c.html_url,
           title: msg.split("\n")[0].slice(0, 200),
-          author: c.author?.login ?? c.commit?.author?.name ?? "unknown",
+          author,
           avatar: c.author?.avatar_url ?? "",
           helpers,
+          ai: whichAi([...helpers, author, c.commit?.author?.name ?? "", c.commit?.author?.email ?? "", msg].join(" ")),
+          change: changes[i] ?? null,
           at: c.commit?.author?.date ?? c.commit?.committer?.date,
         };
       }),

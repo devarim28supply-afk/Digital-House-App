@@ -194,7 +194,7 @@ export function EmojiPicker(props: {
                       class="emoji-del"
                       title={`Remove :${emoji.name}:`}
                       aria-label={`Remove :${emoji.name}:`}
-                      onClick={() => void deleteEmoji(props.serverId, emoji.id)}
+                      onClick={() => void deleteEmoji(props.serverId, emoji.id, emoji.name)}
                     >
                       ✕
                     </button>

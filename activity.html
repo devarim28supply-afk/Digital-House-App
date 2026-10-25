@@ -56,6 +56,23 @@
   .proj { color: var(--dim); font-size: 12px; }
   .msg { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .msg.err { border-color: #7f1d1d; }
+  .tag.action { background: #7f1d1d; color: #fecaca; }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; margin: 3px 0; }
+  .ai { padding: 0 7px; border-radius: 999px; font: 600 11px var(--mono); background: #1f2937; color: #d1d5db; }
+  .ai-Claude { background: #3b2410; color: #fdba74; }
+  .ai-Codex { background: #0f2a24; color: #6ee7b7; }
+  .ai-Grok { background: #1e1b2e; color: #c4b5fd; }
+  .ai-byhand { background: #262626; color: #d4d4d4; }
+  .person small { display: block; }
+  .person .areas { color: #a3a3a3; }
+  .edit { margin-left: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--dim); font: inherit; font-size: 12px; cursor: pointer; }
+  #editor-wrap { margin-bottom: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .people-edit { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+  .pe-row { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr 1.6fr auto auto; gap: 6px; }
+  .pe-row input { min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #000; color: var(--text); font: inherit; font-size: 13px; }
+  .pe-row button, #editor-wrap > div > button, #editor button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: #000; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+  .hint { margin: 0; color: var(--dim); font-size: 12px; }
+  @media (max-width: 800px) { .pe-row { grid-template-columns: 1fr 1fr; } }
   .more { margin-top: 10px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
   @media (max-width: 600px) { .ev { grid-template-columns: 28px 1fr; } .ev time { grid-column: 2; } .ev img { width: 28px; height: 28px; } }
 </style>
@@ -71,7 +88,8 @@
   <div id="content" hidden>
     <div class="filters" id="projects"></div>
     <div class="filters" id="kinds"></div>
-    <h2>Who did what (last 30 days)</h2>
+    <h2>Who did what (last 30 days) <button class="edit" id="edit-people" type="button">Who is who</button></h2>
+    <div id="editor-wrap" hidden><div id="editor"></div><p class="hint" id="editor-msg"></p></div>
     <div class="people" id="people"></div>
     <h2>Timeline</h2>
     <div class="feed" id="feed"></div>
