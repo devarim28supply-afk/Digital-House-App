@@ -992,6 +992,7 @@ export function VoiceRoom(props: {
                 onDblClick={() => toggleFocus(teamKey(members))}
                 uids={members.split(",")}
                 streamFor={streamFor}
+                profileOf={(uid) => props.profiles.get(uid)}
                 nameOf={(uid) => props.profiles.get(uid)?.callName || props.profiles.get(uid)?.name || "Member"}
               />
             )}
@@ -1167,34 +1168,87 @@ const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 // A team screen shows each member this long, then the next (Kaalob).
 const TEAM_TURN_MS = 10_000;
 
-/** Teamed-up streamers: one screen in the call, each stream for 10 s in turn. */
+// The crossfade from one teammate's stream to the next (Kaalob).
+const TEAM_FADE_MS = 1000;
+
+/**
+ * Teamed-up streamers: one screen in the call, each stream for 10 s in turn.
+ * The next stream fades in over the current one (two videos, both playing
+ * through the fade, so it never goes black). Instead of a name, every
+ * teammate's profile photo sits in a row; the one playing now is bigger
+ * and glows.
+ */
 function TeamScreen(props: {
   uids: string[];
   streamFor: (uid: string) => Track | undefined;
+  profileOf: (uid: string) => Profile | undefined;
   nameOf: (uid: string) => string;
   style: JSX.CSSProperties;
   onDblClick: () => void;
 }) {
-  let video: HTMLVideoElement | undefined;
+  const videos: HTMLVideoElement[] = [];
+  // which of the two videos is in front, and the track each one shows
+  const [front, setFront] = createSignal(0);
+  const shown: (Track | undefined)[] = [undefined, undefined];
   const [turn, setTurn] = createSignal(0);
   const timer = window.setInterval(() => setTurn((t) => t + 1), TEAM_TURN_MS);
   onCleanup(() => window.clearInterval(timer));
   const current = () => props.uids[turn() % props.uids.length];
   const track = () => props.streamFor(current());
+  let fadeTimer = 0;
   createEffect(() => {
     const t = track();
-    if (!t || !video) return;
+    if (!t) return;
+    const now = front();
+    if (shown[now] === t) return;
+    if (!shown[now]) {
+      // the first stream: straight in, no fade
+      t.attach(videos[now]);
+      shown[now] = t;
+      return;
+    }
+    // the next stream goes into the back video, then fades in once it has a picture
+    const back = 1 - now;
+    const video = videos[back];
+    if (shown[back] && shown[back] !== shown[now]) shown[back]!.detach(video);
     t.attach(video);
-    onCleanup(() => t.detach(video!));
+    shown[back] = t;
+    const swap = () => {
+      setFront(back);
+      // after the fade, let the old one go (unless the same stream is still in front)
+      window.clearTimeout(fadeTimer);
+      fadeTimer = window.setTimeout(() => {
+        const old = shown[now];
+        if (old && old !== shown[back]) old.detach(videos[now]);
+        shown[now] = undefined;
+      }, TEAM_FADE_MS + 100);
+    };
+    if (video.readyState >= 2) swap();
+    else video.addEventListener("loadeddata", swap, { once: true });
+  });
+  onCleanup(() => {
+    window.clearTimeout(fadeTimer);
+    shown.forEach((t, i) => t?.detach(videos[i]));
   });
   return (
     <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
-      <video ref={video} autoplay playsinline muted classList={{ hidden: !track() }} />
-      <span class="tile-name">
-        <span class="live-dot" aria-hidden="true" /> {props.nameOf(current())}
-        <span class="live-team" aria-hidden="true">
-          <For each={props.uids}>{(uid) => <i classList={{ on: uid === current() }} />}</For>
-        </span>
+      <video ref={(el) => (videos[0] = el)} class="team-video" classList={{ front: front() === 0 }} autoplay playsinline muted />
+      <video ref={(el) => (videos[1] = el)} class="team-video" classList={{ front: front() === 1 }} autoplay playsinline muted />
+      <span class="team-players">
+        <span class="live-dot" aria-hidden="true" />
+        <For each={props.uids}>
+          {(uid) => (
+            <span
+              class="team-face"
+              classList={{ on: uid === current() }}
+              style={faceStyle(props.profileOf(uid))}
+              title={props.nameOf(uid)}
+              aria-label={props.nameOf(uid)}
+            >
+              {faceText(props.profileOf(uid), props.nameOf(uid))}
+            </span>
+          )}
+        </For>
       </span>
     </article>
   );

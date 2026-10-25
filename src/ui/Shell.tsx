@@ -36,6 +36,7 @@ import {
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
+import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
@@ -111,6 +112,19 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
   const [navOpen, setNavOpen] = createSignal(false);
   const [sideChatOpen, setSideChatOpen] = createSignal(false);
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
+  // Feedback for the developers: from the top bar, or the Darkwood Room's
+  // own button (it asks this page to open it), or /app/?feedback
+  const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
+  const [feedbackWhere, setFeedbackWhere] = createSignal("");
+  function openFeedback(where = "") {
+    setFeedbackWhere(where);
+    setFeedbackOpen(true);
+  }
+  const onRoomMessage = (e: MessageEvent) => {
+    if (e.origin === location.origin && e.data?.type === "dh-feedback") openFeedback(String(e.data.where ?? "Darkwood Room"));
+  };
+  window.addEventListener("message", onRoomMessage);
+  onCleanup(() => window.removeEventListener("message", onRoomMessage));
   // Your one videochat, like Discord voice: opening a room tile or voice
   // channel joins it, and it stays connected while you read other channels
   // (or servers) until Disconnect. Joining another one moves you there.
@@ -560,6 +574,9 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
             <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
             {channel()?.name ?? ""}
           </span>
+          <button class="btn feedback-btn" type="button" title="Send feedback to the developers" onClick={() => openFeedback()}>
+            Feedback
+          </button>
           <Show when={tileChat()}>
             {(chat) => (
               <button
@@ -791,6 +808,19 @@ export function Shell(props: { uid: string; admin: boolean; name: string; userna
         server={server()}
         profiles={profiles()}
         uid={props.uid}
+      />
+      <FeedbackDialog
+        open={feedbackOpen()}
+        onClose={() => setFeedbackOpen(false)}
+        uid={props.uid}
+        name={props.name}
+        username={props.username}
+        admin={props.admin}
+        where={
+          feedbackWhere() ||
+          [server()?.name, channel() ? `${channel()!.kind === "room" ? "tile" : "#"} ${channel()!.name}` : ""].filter(Boolean).join(" · ") ||
+          "Darkwood Node"
+        }
       />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">

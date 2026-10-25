@@ -10,6 +10,7 @@ import { type HandleUploadBody, handleUpload } from "@vercel/blob/client";
  *                  JSON { idToken, serverId, kind: "emoji" }  a server emoji
  *                  JSON { idToken, serverId, kind: "banner" } a server banner
  *                  JSON { idToken, kind: "profile" }          your profile card
+ *                  JSON { idToken, kind: "feedback" }         a feedback screenshot
  *
  * The browser uploads straight to Vercel Blob; this only hands out the pass.
  * The check is done by Firestore itself, as in dh-token.ts: we read the
@@ -29,6 +30,8 @@ const MAX_EMOJI_BYTES = 2 * 1024 * 1024;
 const IMAGE_TYPES = ["image/png", "image/gif", "image/webp", "image/jpeg"];
 // a server banner, or a picture on your profile card (GIFs included)
 const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
+// a screenshot or file sent with feedback
+const MAX_FEEDBACK_BYTES = 50 * 1024 * 1024;
 
 /**
  * An approved member's uid: Firestore reads members/{uid} with their own
@@ -136,6 +139,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           return {
             maximumSizeInBytes: MAX_PICTURE_BYTES,
             allowedContentTypes: IMAGE_TYPES,
+            addRandomSuffix: true,
+            tokenPayload: JSON.stringify({ uid }),
+          };
+        }
+        if (payload.kind === "feedback") {
+          // a screenshot or file sent with feedback for the developers
+          const uid = await approvedUid(payload.idToken ?? "");
+          if (!pathname.startsWith(`feedback/${uid}/`)) throw new Error("Bad file path");
+          return {
+            maximumSizeInBytes: MAX_FEEDBACK_BYTES,
             addRandomSuffix: true,
             tokenPayload: JSON.stringify({ uid }),
           };

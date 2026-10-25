@@ -704,6 +704,18 @@ addEventListener("keydown", (e) => {
   toggleSit();
 });
 
+// ---- Feedback: Darkwood Node opens its feedback window over the room;
+// opened on its own, the room sends you to the app's feedback page
+const feedbackBtn = document.createElement("button");
+feedbackBtn.type = "button";
+feedbackBtn.textContent = "Feedback";
+feedbackBtn.title = "Send feedback to the developers";
+feedbackBtn.addEventListener("click", () => {
+  if (document.pointerLockElement) document.exitPointerLock();
+  if (parent !== window) parent.postMessage({ type: "dh-feedback", where: "Darkwood Room" }, location.origin);
+  else location.href = `${import.meta.env.BASE_URL}?feedback`;
+});
+
 const chairBtn = document.createElement("button");
 chairBtn.type = "button";
 chairBtn.textContent = "Turn chair (R)";
@@ -712,7 +724,7 @@ chairBtn.addEventListener("click", () => {
   const c = chairInView();
   if (c) turnChairBy(c);
 });
-document.getElementById("bar").append(chairBtn);
+document.getElementById("bar").append(chairBtn, feedbackBtn);
 addEventListener("keydown", (e) => {
   if (e.repeat || !picker.hidden || !big.hidden || e.code !== "KeyR") return;
   const c = chairInView();
