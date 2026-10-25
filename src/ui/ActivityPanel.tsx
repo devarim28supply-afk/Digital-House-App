@@ -136,6 +136,37 @@ export function ActivityButton(props: { uid: string }) {
   );
 }
 
+/*
+ * Pop out (Kaalob): the Activity page in a window of its own, outside the
+ * browser, to move anywhere (another monitor too). Chrome and Edge give it a
+ * small always-on-top window (Document Picture-in-Picture); other browsers a
+ * plain popup window. One at a time: popping out again brings it forward.
+ */
+type PipApi = { requestWindow: (o: { width: number; height: number }) => Promise<Window> };
+let poppedOut: Window | null = null;
+async function popOutActivity(size: { w: number; h: number }) {
+  if (poppedOut && !poppedOut.closed) {
+    poppedOut.focus();
+    return;
+  }
+  const url = new URL(`${import.meta.env.BASE_URL}activity.html?embed`, location.href).href;
+  const pip = (window as Window & { documentPictureInPicture?: PipApi }).documentPictureInPicture;
+  if (pip) {
+    const win = await pip.requestWindow({ width: size.w, height: size.h });
+    win.document.title = "Darkwood Activity";
+    win.document.body.style.cssText = "margin:0;background:#050505;overflow:hidden";
+    const frame = win.document.createElement("iframe");
+    frame.src = url;
+    frame.title = "Activity";
+    frame.style.cssText = "display:block;width:100vw;height:100vh;border:0;background:#050505";
+    win.document.body.append(frame);
+    win.addEventListener("pagehide", () => (poppedOut = null));
+    poppedOut = win;
+  } else {
+    poppedOut = window.open(url, "darkwood-activity", `popup,width=${size.w},height=${size.h}`);
+  }
+}
+
 function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
   // It lives in the middle column (the channel and videochat), never over the
   // side bars: its box is measured inside that column.
@@ -226,6 +257,18 @@ function ActivityWindow(props: { onClose: () => void; onSeen: () => void }) {
     >
       <header class="activity-window-head" onPointerDown={startMove}>
         <span>› Activity</span>
+        <button
+          class="icon-btn activity-popout"
+          type="button"
+          title="Pop out: its own window, move it anywhere (even another screen)"
+          onClick={() => {
+            void popOutActivity(box())
+              .then(props.onClose)
+              .catch((err) => console.warn("[activity] could not pop out:", err));
+          }}
+        >
+          ⧉ Pop out
+        </button>
         <a href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener" title="Open in its own tab">
           ↗
         </a>

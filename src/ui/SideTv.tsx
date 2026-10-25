@@ -3,7 +3,9 @@ import { Portal } from "solid-js/web";
 
 import { Room, RoomEvent } from "livekit-client";
 
+import { inRoom } from "../data/where";
 import { auth } from "../firebase";
+import { autoCaptions } from "../room/livecaptions";
 import { playChannel } from "../room/tv";
 
 type Tv = { id: number; name: string; url: string; at: number; onAt: number };
@@ -28,6 +30,11 @@ export function SideTv(props: { serverId: string; channelId: string }) {
   const [failed, setFailed] = createSignal(false);
   const [video, setVideo] = createSignal<HTMLVideoElement>();
   const [bigVideo, setBigVideo] = createSignal<HTMLVideoElement>();
+  // live captions when the channel has no CC (livecaptions.js): on the big
+  // view when open, else on the small one unless a Room side is showing
+  // (the room captions the TV you face there)
+  const [ccBox, setCcBox] = createSignal<HTMLDivElement>();
+  const [bigCcBox, setBigCcBox] = createSignal<HTMLDivElement>();
   // Hide: this TV (screen and when it was turned on) stays out of the side bar
   const keyOf = (t: Tv) => `${t.id}|${t.onAt}`;
   const [hidden, setHidden] = createSignal("");
@@ -108,6 +115,11 @@ export function SideTv(props: { serverId: string; channelId: string }) {
     setFailed(false);
     if (!now || !el) return;
     const player = playChannel(el, now.url, { muted: true, onFail: () => setFailed(true) });
+    createEffect(() => {
+      const box = ccBox();
+      if (!box || big() || inRoom()) return;
+      onCleanup(autoCaptions(el, player, box));
+    });
     onCleanup(() => player.destroy());
   });
   createEffect(() => {
@@ -120,9 +132,12 @@ export function SideTv(props: { serverId: string; channelId: string }) {
     const el = bigVideo();
     if (!big() || !now || !el) return;
     const player = playChannel(el, now.url, { muted: !sound() });
+    const box = bigCcBox();
+    const stopCc = box ? autoCaptions(el, player, box) : () => {};
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setBig(false);
     window.addEventListener("keydown", esc);
     onCleanup(() => {
+      stopCc();
       player.destroy();
       window.removeEventListener("keydown", esc);
     });
@@ -135,14 +150,12 @@ export function SideTv(props: { serverId: string; channelId: string }) {
     <Show when={shown()}>
       {(now) => (
         <div class="side-tv">
-          <button type="button" class="side-tv-screen" title={`${now().name}: click to open it big`} onClick={() => setBig(true)}>
+          <button type="button" class="side-tv-screen" title="Click to open it big" aria-label={`TV: ${now().name}`} onClick={() => setBig(true)}>
             <video ref={setVideo} autoplay playsinline muted />
             <Show when={failed()}>
               <span class="side-tv-failed">This channel can't play here</span>
             </Show>
-            <span class="side-tv-name">
-              TV · Screen {now().id} · {now().name}
-            </span>
+            <div class="live-cc" ref={setCcBox} hidden />
           </button>
           <button
             type="button"
@@ -166,9 +179,7 @@ export function SideTv(props: { serverId: string; channelId: string }) {
             <Portal mount={document.querySelector<HTMLElement>(".main") ?? document.body}>
               <div class="side-tv-big" role="dialog" aria-label={`TV: ${now().name}`} onClick={() => setBig(false)}>
                 <video ref={setBigVideo} autoplay playsinline />
-                <span class="side-tv-name">
-                  TV · {now().name} · click or Esc to close
-                </span>
+                <div class="live-cc big-cc" ref={setBigCcBox} hidden />
               </div>
             </Portal>
           </Show>

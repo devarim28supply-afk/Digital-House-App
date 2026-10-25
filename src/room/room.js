@@ -13,6 +13,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { Room, RoomEvent, Track } from "livekit-client";
 
 import { auth, db } from "../firebase";
+import { autoCaptions } from "./livecaptions";
 import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
 // ---- room size, matching room.html (px, 100 px = 1 m)
@@ -232,10 +233,14 @@ const SCREENS = [
   tvVideo.autoplay = true;
   tvVideo.muted = true;
   tvVideo.playsInline = true;
-  el.append(video, tvVideo, idle, label);
+  // live captions for a TV channel with no CC of its own (livecaptions.js)
+  const cc = document.createElement("div");
+  cc.className = "live-cc";
+  cc.hidden = true;
+  el.append(video, tvVideo, idle, label, cc);
   el.style.transform = s.place;
   world.append(el);
-  return { ...s, el, video, tvVideo, label, owner: null, tv: null, tvAt: 0, tvOnAt: 0, tvPlayer: null, tvPlaying: null };
+  return { ...s, el, video, tvVideo, label, cc, owner: null, tv: null, tvAt: 0, tvOnAt: 0, tvPlayer: null, tvPlaying: null };
 });
 
 /** A desk's screen shows its person's share from the videochat (a MediaStreamTrack). */
@@ -382,14 +387,14 @@ function refreshTv(screen) {
         onFail: (why) => {
           console.warn("[room] TV channel will not play here:", screen.tv?.name, why);
           screen.el.classList.add("tv-failed");
-          if (!screen.owner && screen.tv) screen.label.textContent = `TV · ${screen.tv.name} · can't play here, pick another (T)`;
+          if (!screen.owner && screen.tv) screen.label.textContent = "Can't play here, pick another channel (T)";
         },
       });
     }
   }
   screen.el.classList.toggle("tv", Boolean(want));
   if (!screen.owner && !screen.el.classList.contains("tv-failed")) {
-    screen.label.textContent = screen.tv ? `TV · ${screen.tv.name}` : "";
+    screen.label.textContent = ""; // no title on a TV (Kaalob)
   }
   // the big view follows a channel change on the screen it shows
   if (!big.hidden && bigScreen === screen && !screen.owner && bigPlayer && bigPlayer.url !== want) {
@@ -449,6 +454,39 @@ function toggleTvSound() {
   setStatus(tvSound ? "TV sound on (M)" : "TV sound off (M)");
   setTimeout(updateCount, 2000);
 }
+
+// ---- live captions on the TV you watch (Kaalob): the one opened big (F),
+// otherwise the TV you face. Only while the Room side shows (Darkwood Node
+// says when it is hidden behind the videochat). Channels with their own CC
+// show that instead (tv.js); livecaptions.js waits for it first.
+const bigCc = document.createElement("div");
+bigCc.className = "live-cc big-cc";
+bigCc.hidden = true;
+big.append(bigCc);
+let paneShown = true;
+let ccOn = null; // the player being captioned
+let ccStop = () => {};
+function captionWatched() {
+  let target = null;
+  if (paneShown && !document.hidden) {
+    if (!big.hidden && bigPlayer) target = { video: bigVideo, player: bigPlayer, box: bigCc };
+    else {
+      const s = facingScreen();
+      if (s?.tvPlayer && !s.owner) target = { video: s.tvVideo, player: s.tvPlayer, box: s.cc };
+    }
+  }
+  if ((target?.player ?? null) === ccOn) return;
+  ccStop();
+  ccOn = target?.player ?? null;
+  ccStop = target ? autoCaptions(target.video, target.player, target.box) : () => {};
+}
+setInterval(captionWatched, 1000);
+addEventListener("message", (e) => {
+  if (e.source === parent && e.origin === location.origin && e.data?.type === "dh-pane") {
+    paneShown = Boolean(e.data.shown);
+    captionWatched();
+  }
+});
 
 // ---- the channel picker (T): for the monitor you face
 const picker = document.getElementById("tvpicker");

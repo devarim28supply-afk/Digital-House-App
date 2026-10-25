@@ -62,6 +62,15 @@ export function RoomPane(props: {
     if (watchRequest() && pane() !== "video") show("video");
   });
 
+  // The room page captions the TV you face only while you can see it: tell
+  // it when the videochat covers it (and when it loads).
+  let frame: HTMLIFrameElement | undefined;
+  const tellRoom = () => frame?.contentWindow?.postMessage({ type: "dh-pane", shown: pane() === "room" }, location.origin);
+  createEffect(() => {
+    pane();
+    tellRoom();
+  });
+
   function show(next: Pane) {
     setPane(next);
     if (next === "room") setRoomLoaded(true);
@@ -132,6 +141,8 @@ export function RoomPane(props: {
       <div class="pane-layer room-layer" classList={{ hidden: pane() !== "room" }}>
         <Show when={roomLoaded() && url() && !blocked()}>
           <iframe
+            ref={frame}
+            onLoad={tellRoom}
             src={url()!}
             title={`${props.channel.name} room`}
             allow="camera; microphone; fullscreen; display-capture; autoplay; xr-spatial-tracking"

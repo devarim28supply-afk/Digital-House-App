@@ -88,11 +88,13 @@ function parseM3u(text) {
  * Plays a channel into a <video>, captions on. Returns { destroy }.
  * onFail is called once if the channel will not play here (gone, blocked
  * for other websites, or not available in this country).
+ * onCaptions is called once the channel's own captions show a first line
+ * (then hasCaptions() is true); a channel without them never calls it.
  * @param {HTMLVideoElement} video
  * @param {string} url
- * @param {{ muted?: boolean, onFail?: (why: string) => void }} [options]
+ * @param {{ muted?: boolean, onFail?: (why: string) => void, onCaptions?: () => void }} [options]
  */
-export function playChannel(video, url, { muted = true, onFail } = {}) {
+export function playChannel(video, url, { muted = true, onFail, onCaptions } = {}) {
   let failed = false;
   const fail = (why) => {
     if (failed) return;
@@ -101,11 +103,19 @@ export function playChannel(video, url, { muted = true, onFail } = {}) {
     onFail?.(why);
   };
   video.addEventListener("playing", () => markFailed(url, false), { once: true });
-  // closed captions: show the first captions/subtitles track that appears
+  // closed captions: show the first captions/subtitles track that appears,
+  // and say so the first time one of its lines shows (live captions stand down)
+  let captioned = false;
+  const cueSeen = (e) => {
+    if (captioned || !e.target.activeCues?.length) return;
+    captioned = true;
+    onCaptions?.();
+  };
   const showCaptions = () => {
     for (const track of video.textTracks) {
       if (track.kind === "captions" || track.kind === "subtitles") {
         track.mode = "showing";
+        track.addEventListener("cuechange", cueSeen);
         return;
       }
     }
@@ -119,6 +129,13 @@ export function playChannel(video, url, { muted = true, onFail } = {}) {
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (data.fatal) fail(data.details || data.type);
     });
+    // subtitles listed in the channel's playlist (not inside the video): on too
+    hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
+      if (hls.subtitleTracks.length && hls.subtitleTrack < 0) {
+        hls.subtitleTrack = 0;
+        hls.subtitleDisplay = true;
+      }
+    });
     hls.loadSource(url);
     hls.attachMedia(video);
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -131,8 +148,11 @@ export function playChannel(video, url, { muted = true, onFail } = {}) {
 
   return {
     url,
+    startedAt: Date.now(),
+    hasCaptions: () => captioned,
     destroy() {
       video.textTracks.removeEventListener("addtrack", showCaptions);
+      for (const track of video.textTracks) track.removeEventListener("cuechange", cueSeen);
       hls?.destroy();
       video.removeAttribute("src");
       video.load();

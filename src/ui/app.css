@@ -3276,3 +3276,38 @@ img.live-tile-still {
   height: 100%;
   object-fit: contain;
 }
+
+/* Pop out button in the Activity window head (a word, not a square icon) */
+.activity-window-head .activity-popout {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* live captions over a TV with no CC of its own (livecaptions.js) */
+.live-cc {
+  position: absolute;
+  left: 50%;
+  bottom: 8%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  max-width: 92%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+}
+.live-cc[hidden] { display: none; }
+.live-cc span, .live-cc:not(:has(span)) {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font: 600 11px/1.35 system-ui, sans-serif;
+}
+.live-cc .interim { color: #d1d5db; }
+.live-cc.big-cc span, .live-cc.big-cc:not(:has(span)) { padding: 4px 14px; font-size: clamp(18px, 2.4vw, 34px); }
