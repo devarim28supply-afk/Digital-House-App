@@ -86,7 +86,13 @@ async function call(url: string, headers: Record<string, string>, who: string) {
   } catch {
     throw new Error(`${who} could not be reached (check its key)`);
   }
-  if (!res.ok) throw new Error(`${who} answered ${res.status}`);
+  if (!res.ok) {
+    // On "bad key", say what kind of key it got (its first letters' type and
+    // its length, never the key itself), so a wrong paste is easy to spot.
+    const k = (headers.Authorization ?? "").replace(/^Bearer /, "");
+    const kind = /^github_pat_/.test(k) ? "github_pat_" : /^gh[pousr]_/.test(k) ? k.slice(0, 4) : k ? "unknown kind" : "empty";
+    throw new Error(`${who} answered ${res.status}${res.status === 401 ? ` (key: ${kind}, ${k.length} characters)` : ""}`);
+  }
   return res.json();
 }
 
