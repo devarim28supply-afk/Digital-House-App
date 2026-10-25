@@ -17,7 +17,8 @@ import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
 // ---- room size, matching room.html (px, 100 px = 1 m)
 const W = 600, D = 600, H = 300;
-const EYE = 160;    // eye height above the floor
+const EYE = 160;    // eye height above the floor, standing...
+const SIT_EYE = 110; // ...and sitting on a chair
 const MARGIN = 30;  // how close you can get to a wall
 const SPEED = 180;  // px per second
 const LOOK = 0.15;  // degrees per px of mouse movement
@@ -573,6 +574,7 @@ function turnChairBy(c) {
   turnChair(c, c.turn + 90);
   c.turnAt = Date.now();
   sendChair(c);
+  if (CHAIRS[me.seat] === c) placeSeated(); // you turn with your chair
 }
 function sendChair(c, to) {
   if (!room || room.state !== "connected") return;
@@ -593,7 +595,77 @@ function onChair(data) {
   if (!c || at <= c.turnAt || ![0, 90, 180, 270].includes(msg.turn)) return;
   turnChair(c, msg.turn);
   c.turnAt = at;
+  if (CHAIRS[me.seat] === c) placeSeated();
 }
+// ---- sitting (E): your plate sits on the chair you look at, facing the
+// way the chair faces; walking (or E again) stands you up in front of it.
+// Others see it from your pose (eye height and seat). One person a chair.
+const SEAT_Z = -6; // where you sit, from the chair's middle (toward its front)
+/** A point in a chair's own space (lz toward its back) on the floor. */
+function chairPoint(c, lz) {
+  const t = (c.turn * Math.PI) / 180;
+  return { x: c.x + lz * Math.sin(t), z: c.z + lz * Math.cos(t) };
+}
+function seatTaken(i) {
+  for (const person of people.values()) if (person.seat === i) return true;
+  return false;
+}
+/** Which way your plate faces: where you look, or the chair's way when seated. */
+function bodyYaw() {
+  return me.seat >= 0 ? -CHAIRS[me.seat].turn : me.yaw;
+}
+function placeSeated() {
+  const c = CHAIRS[me.seat];
+  const p = chairPoint(c, SEAT_Z);
+  me.x = p.x;
+  me.z = p.z;
+  me.yaw = -c.turn; // the way the chair faces
+  me.eye = SIT_EYE;
+  draw();
+  sendPose(true);
+}
+function sitDown(c) {
+  const i = CHAIRS.indexOf(c);
+  if (seatTaken(i)) {
+    setStatus("Someone is sitting there");
+    setTimeout(updateCount, 2500);
+    return;
+  }
+  me.seat = i;
+  me.pitch = 0;
+  placeSeated();
+  updateSitButton();
+}
+function standUp() {
+  const c = CHAIRS[me.seat];
+  me.seat = -1;
+  me.eye = EYE;
+  // step out in front of the chair
+  const p = chairPoint(c, -CHAIR.d / 2 - 30);
+  me.x = clamp(p.x, -W / 2 + MARGIN, W / 2 - MARGIN);
+  me.z = clamp(p.z, -D / 2 + MARGIN, D / 2 - MARGIN);
+  draw();
+  sendPose(true);
+  updateSitButton();
+}
+function toggleSit() {
+  if (me.seat >= 0) return standUp();
+  const c = chairInView();
+  if (c) sitDown(c);
+}
+const sitBtn = document.createElement("button");
+sitBtn.type = "button";
+sitBtn.addEventListener("click", toggleSit);
+document.getElementById("bar").append(sitBtn);
+function updateSitButton() {
+  sitBtn.textContent = me.seat >= 0 ? "Stand up (E)" : "Sit (E)";
+  sitBtn.title = me.seat >= 0 ? "Stand up (walking stands you up too)" : "Sit on the chair you look at";
+}
+addEventListener("keydown", (e) => {
+  if (e.repeat || !picker.hidden || !big.hidden || e.code !== "KeyE") return;
+  toggleSit();
+});
+
 const chairBtn = document.createElement("button");
 chairBtn.type = "button";
 chairBtn.textContent = "Turn chair (R)";
@@ -665,7 +737,7 @@ function placeAvatar(av, p) {
   // Worn like a body: it turns left/right with where its person looks, but
   // stays upright (never tips up or down when they look up or down).
   av.el.style.transform =
-    `translate3d(${p.x}px, ${EYE_Y}px, ${p.z}px) rotateY(${180 - p.yaw}deg) ` +
+    `translate3d(${p.x}px, ${H / 2 - (p.eye ?? EYE)}px, ${p.z}px) rotateY(${180 - p.yaw}deg) ` +
     `scale(${PLATE_H / 360})`;
   av.video.style.transform = cropTransform(p.cx, p.cy, p.zoom);
 }
@@ -681,8 +753,9 @@ function cropTransform(cx, cy, zoom) {
 // ---- you
 // You start in the aisle between the two rows of chairs, facing the front
 // wall (somewhere left to right, so people do not land on each other).
-const me = { x: Math.round((Math.random() - 0.5) * 300), z: 0, yaw: 0, pitch: 0 };
+const me = { x: Math.round((Math.random() - 0.5) * 300), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
 const mine = makeAvatar(true);
+updateSitButton(); // its label needs you (me) to exist
 // Your sight starts at your webcam plate (first person). V steps out behind
 // it (third person) to see yourself.
 let third = false;
@@ -722,7 +795,7 @@ function draw() {
   requestAnimationFrame(() => {
     queued = false;
     const a = (me.yaw * Math.PI) / 180;
-    let cx = me.x, cy = EYE_Y, cz = me.z;
+    let cx = me.x, cy = H / 2 - me.eye, cz = me.z;
     if (third) {
       const bx = -Math.sin(a), bz = Math.cos(a); // straight behind you
       const t = roomBehind(bx, bz);
@@ -732,7 +805,7 @@ function draw() {
       `translateZ(${perspective}px) rotateX(${me.pitch}deg) rotateY(${me.yaw}deg) ` +
       `translate3d(${-cx}px, ${-cy}px, ${-cz}px)`;
     mine.el.classList.toggle("hidden", !third);
-    placeAvatar(mine, { ...me, ...shown });
+    placeAvatar(mine, { ...me, ...shown, yaw: bodyYaw() });
     sendPose();
   });
 }
@@ -781,6 +854,7 @@ addEventListener("blur", () => held.clear());
 
 function walk(now) {
   if (!held.size) return;
+  if (me.seat >= 0) standUp();
   const step = SPEED * Math.min(0.05, (now - last) / 1000);
   last = now;
   let side = 0, ahead = 0;
@@ -1086,7 +1160,8 @@ function sendPose(force = false) {
   if (!room || room.state !== "connected") return;
   const pose = JSON.stringify({
     x: Math.round(me.x), z: Math.round(me.z),
-    yaw: Math.round(me.yaw * 10) / 10, pitch: Math.round(me.pitch * 10) / 10,
+    yaw: Math.round(bodyYaw() * 10) / 10, pitch: Math.round(me.pitch * 10) / 10,
+    eye: me.eye, seat: me.seat,
     hex: isHex(), cam: Boolean(stream),
     cx: Math.round(shown.cx), cy: Math.round(shown.cy), zoom: Math.round(shown.zoom * 1000) / 1000,
   });
@@ -1111,7 +1186,7 @@ function addPerson(p) {
   let person = people.get(p.identity);
   if (person) return person;
   person = makeAvatar(false);
-  const start = { x: 0, z: 0, yaw: 0, pitch: 0, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
+  const start = { x: 0, z: 0, yaw: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
   person.at = { ...start };
   person.to = { ...start };
   person.el.classList.add("hidden"); // until their first pose says where they are
@@ -1155,8 +1230,10 @@ function onPose(p, data) {
   person.el.classList.toggle("live", Boolean(pose.cam));
   Object.assign(person.to, {
     x: +pose.x || 0, z: +pose.z || 0, yaw: +pose.yaw || 0, pitch: +pose.pitch || 0,
+    eye: clamp(+pose.eye || EYE, 60, 200),
     cx: +pose.cx || SET_W / 2, cy: +pose.cy || SET_H / 2, zoom: +pose.zoom || 1,
   });
+  person.seat = Number.isInteger(pose.seat) ? pose.seat : -1;
   if (first) Object.assign(person.at, person.to);
   glidePeople();
 }
@@ -1175,9 +1252,9 @@ function peopleStep() {
     // yaw goes the short way round
     const turn = ((((to.yaw - at.yaw) % 360) + 540) % 360) - 180;
     at.yaw += turn * 0.3;
-    for (const k of ["x", "z", "pitch", "cx", "cy"]) at[k] += (to[k] - at[k]) * 0.3;
+    for (const k of ["x", "z", "pitch", "eye", "cx", "cy"]) at[k] += (to[k] - at[k]) * 0.3;
     at.zoom += (to.zoom - at.zoom) * 0.3;
-    if (Math.abs(turn) > 0.1 || ["x", "z", "pitch", "cx", "cy"].some((k) => Math.abs(to[k] - at[k]) > 0.2) ||
+    if (Math.abs(turn) > 0.1 || ["x", "z", "pitch", "eye", "cx", "cy"].some((k) => Math.abs(to[k] - at[k]) > 0.2) ||
         Math.abs(to.zoom - at.zoom) > 0.001) moving = true;
     placeAvatar(person, at);
   }
