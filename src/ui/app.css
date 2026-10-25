@@ -1123,11 +1123,16 @@
 }
 
 .member-name {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
   white-space: nowrap;
+}
+
+.member-name .developer-badge-wrap {
+  overflow: visible;
 }
 
 .member-name small {

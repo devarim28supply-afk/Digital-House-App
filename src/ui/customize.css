@@ -8,3 +8,4 @@
 @keyframes customize-unsaved-shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
 @keyframes customize-warning-fade{0%,30%{outline-color:#ff5454}100%{outline-color:transparent}}
 @media(prefers-reduced-motion:reduce){.modal.customize-unsaved-warning{animation:customize-warning-fade 900ms ease-out forwards}}
+.customize-preview-name>b{display:flex;align-items:center;gap:5px}.customize-name-input{width:auto;min-width:1ch;max-width:100%;padding:0;border:0;border-bottom:1px dashed transparent;background:transparent;color:inherit;font:inherit;cursor:text}.customize-name-input:hover{border-bottom-color:transparent}.customize-name-input:focus{border:1px solid #b2d589;border-radius:5px;outline:2px solid rgba(178,213,137,.3);outline-offset:2px;padding:3px 6px;margin:-4px -7px}.customize-name-input::placeholder{color:inherit;opacity:.65}

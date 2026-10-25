@@ -729,7 +729,6 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </div>
           )}
         </Show>
-        <button class="customize-launch" type="button" onClick={() => setCustomizeOpen(true)}>✧ Customize <span>your profile →</span></button>
         <footer class={`me nameplate-${customization(profiles().get(props.uid)?.customization).nameplate}`}>
           <span class="avatar" style={faceStyle(profiles().get(props.uid), "#4ADE80")}>
             {faceText(profiles().get(props.uid), nameOf(props.uid))}

@@ -247,12 +247,14 @@ export async function saveCallName(uid: string, callName: string) {
   await setDoc(doc(db, "profiles", uid), { callName: clean || deleteField() }, { merge: true });
 }
 
-/** Save only cosmetic fields; identity, roles and existing profile data are untouched. */
-export async function saveCustomization(uid: string, value: Customization, photo?: string, banner?: string) {
+/** Save profile appearance and the optional public display name; account identity is unchanged. */
+export async function saveCustomization(uid: string, value: Customization, photo?: string, banner?: string, displayName?: string) {
+  const cleanName = displayName?.trim().slice(0, 24);
   await setDoc(doc(db, "profiles", uid), {
     customization: customization(value),
     ...(photo !== undefined ? { photo: photo || deleteField() } : {}),
     ...(banner !== undefined ? { banner: banner || deleteField() } : {}),
+    ...(cleanName !== undefined ? { callName: cleanName || deleteField() } : {}),
   }, { merge: true });
 }
 

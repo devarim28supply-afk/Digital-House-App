@@ -15,6 +15,8 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
   const [draft, setDraft] = createSignal(customization(props.profile?.customization));
   const [photo, setPhoto] = createSignal(props.profile?.photo ?? "");
   const [banner, setBanner] = createSignal(props.profile?.banner ?? "");
+  const [publicName, setPublicName] = createSignal(props.profile?.callName ?? props.name);
+  const maxDisplayNameLength = 24;
   const [bannerFile, setBannerFile] = createSignal<File>();
   let bannerPreviewUrl: string | undefined;
   let bannerPicker: HTMLInputElement | undefined;
@@ -36,8 +38,8 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
   }
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
-  const initial = { customization: JSON.stringify(draft()), photo: photo(), banner: banner() };
-  const dirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || Boolean(bannerFile());
+  const initial = { customization: JSON.stringify(draft()), photo: photo(), banner: banner(), publicName: publicName() };
+  const dirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || publicName().trim() !== initial.publicName || Boolean(bannerFile());
   const [warnUnsaved, setWarnUnsaved] = createSignal(false);
   let warningTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(warningTimer));
@@ -50,7 +52,7 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
     warningTimer = setTimeout(() => setWarnUnsaved(false), 950);
   }
 
-  const preview = (): Profile => ({ uid: props.uid, name: props.name, username: props.profile?.username ?? "", color: props.profile?.color ?? "#383838", ...props.profile, photo: photo(), banner: banner(), customization: draft() });
+  const preview = (): Profile => ({ uid: props.uid, name: props.name, username: props.profile?.username ?? "", color: props.profile?.color ?? "#383838", ...props.profile, callName: publicName().trim() || props.profile?.username || props.name, photo: photo(), banner: banner(), customization: draft() });
   const patch = (value: Partial<Customization>) => setDraft(current => ({ ...current, ...value }));
   const choice = (label: string, selected: () => boolean, onClick: () => void, styleClass = "") => <button type="button" class={`cosmetic-choice ${styleClass}`} aria-pressed={selected()} onClick={onClick}><span>{label}</span><Show when={selected()}><b aria-hidden="true">✓</b></Show></button>;
   async function save() {
@@ -60,8 +62,9 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
       const selectedDraft = draft();
       const selectedPhoto = photo();
       const selectedBanner = banner();
+      const selectedName = publicName().trim();
       const savedBanner = selectedFile ? await uploadPicture(selectedFile, { kind: "profile", name: "banner" }) : selectedBanner;
-      await saveCustomization(props.uid, selectedDraft, selectedPhoto !== (props.profile?.photo ?? "") ? selectedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined);
+      await saveCustomization(props.uid, selectedDraft, selectedPhoto !== (props.profile?.photo ?? "") ? selectedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined, selectedName !== (props.profile?.callName ?? props.name) ? selectedName : undefined);
       props.onClose();
     } catch { setError("Could not save your customization. Check your connection and try again."); }
     finally { setSaving(false); }
@@ -71,7 +74,7 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
       <div class={`customize-preview profile-effect-${draft().effect}`}>
         <div class="customize-banner" style={{ "background-color": draft().bannerColor, "background-image": banner() ? `url("${banner()}")` : "none" }} />
         <span class="avatar big customize-avatar" style={faceStyle(preview())}>{faceText(preview(), props.name)}</span>
-        <div class={`customize-preview-name nameplate-${draft().nameplate}`}><b>{displayName(preview())}<DeveloperBadge username={preview().username} /></b><small>@{preview().username || "member"}</small></div>
+        <div class={`customize-preview-name nameplate-${draft().nameplate}`}><b><input class="customize-name-input" aria-label="Display name" title="Click to change your display name" type="text" value={publicName()} size={Math.max(1, publicName().length)} maxLength={maxDisplayNameLength} placeholder={props.name} onInput={e => setPublicName(e.currentTarget.value)} /><DeveloperBadge username={preview().username} /></b><small>@{preview().username || "member"}</small></div>
         <p>Live preview · visible to other members</p>
       </div>
       <nav class="customize-tabs" aria-label="Customization categories"><For each={categories}>{item => <button type="button" aria-pressed={category() === item} onClick={() => setCategory(item)}>{item}</button>}</For></nav>
