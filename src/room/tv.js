@@ -88,6 +88,9 @@ function parseM3u(text) {
  * Plays a channel into a <video>, captions on. Returns { destroy }.
  * onFail is called once if the channel will not play here (gone, blocked
  * for other websites, or not available in this country).
+ * @param {HTMLVideoElement} video
+ * @param {string} url
+ * @param {{ muted?: boolean, onFail?: (why: string) => void }} [options]
  */
 export function playChannel(video, url, { muted = true, onFail } = {}) {
   let failed = false;

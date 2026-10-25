@@ -2381,39 +2381,11 @@ img.msg-sticker {
 }
 
 /* the streamer's webcam, small in the LIVE tile's top-left corner */
-.live-tile video.live-tile-face {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 34%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 5px;
-  object-fit: cover;
-  background: #000;
-}
-
-.live-tile video.live-tile-face.hidden {
-  display: none;
-}
-
 /* frozen LIVE tile (you are in that videochat): a still picture */
 img.live-tile-still {
   display: block;
   width: 100%;
   height: 108px;
-  object-fit: cover;
-}
-
-.live-tile img.live-tile-face {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 34%;
-  aspect-ratio: 16 / 9;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 5px;
   object-fit: cover;
 }
 
@@ -2461,23 +2433,27 @@ img.live-tile-still {
   color: #fff;
 }
 
-/* a team's LIVE tile: dots for who is showing (it turns every 10 s) */
+/* a team's LIVE tile: every member's picture top left; the one showing is lit */
 .live-team {
-  display: inline-flex;
-  gap: 3px;
-  margin-left: 6px;
-  vertical-align: middle;
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  display: flex;
+  gap: 4px;
 }
 
-.live-team i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
+.live-team .live-team-face {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  opacity: 0.6;
+  transition: opacity 0.3s, border-color 0.3s;
 }
 
-.live-team i.on {
-  background: #f87171;
+.live-team .live-team-face.on {
+  border-color: #f87171;
+  opacity: 1;
 }
 
 /* ---- phones and tablets (touch) --------------------------------------------- */
@@ -3199,3 +3175,104 @@ img.live-tile-still {
 
 /* Edge detection is handled by mouse coordinates; hover zones never block clicks. */
 .left-edge,.right-edge{pointer-events:none}
+
+/* ---- the side bar TV (SideTv): the first TV on in the tile's Darkwood Room ---- */
+.side-tv {
+  position: relative;
+  flex: none;
+  margin: 8px 10px 4px;
+}
+
+.side-tv-screen {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #23ff9a55;
+  border-radius: 8px;
+  background: #000;
+  cursor: zoom-in;
+}
+
+.side-tv-screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.side-tv-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 48px);
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-tv-failed {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.side-tv-sound {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+/* Hide: only while the pointer is over the TV */
+.side-tv-hide {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.side-tv:hover .side-tv-hide,
+.side-tv-hide:focus-visible {
+  opacity: 1;
+}
+
+/* opened big: over the middle column, click or Esc closes it */
+.side-tv-big {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: #000;
+  cursor: zoom-out;
+}
+
+.side-tv-big video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

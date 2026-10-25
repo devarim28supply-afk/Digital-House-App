@@ -37,6 +37,7 @@ import {
   watchPresence,
   watchProfiles,
   watchServers,
+  hasDarkwoodRoom,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { ActivityButton } from "./ActivityPanel";
@@ -48,6 +49,7 @@ import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
+import { SideTv } from "./SideTv";
 
 import "./app.css";
 
@@ -621,6 +623,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                       uids={uids}
                       nameOf={nameOf}
                       usernameOf={uid => profiles().get(uid)?.username}
+                      profileOf={(uid) => profiles().get(uid)}
                       frozen={call()?.serverId === serverId() && call()?.channel.id === channelId}
                       onOpen={(uid) => {
                         const ch = channels().find((c) => c.id === channelId);
@@ -890,6 +893,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                 ✕
               </button>
             </header>
+            {/* the first TV on in this tile's Darkwood Room, above everything (Kaalob) */}
+            <Show when={channel() && hasDarkwoodRoom(channel()!) ? channel()!.id : undefined}>
+              {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} />}
+            </Show>
             {/* who is online stays visible with a tile open, above its chat */}
             <div class="side-online">
               <Show when={runsServer()}>

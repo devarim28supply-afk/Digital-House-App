@@ -3,7 +3,9 @@ import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid
 
 import { type RemoteTrack, Room, RoomEvent, Track } from "livekit-client";
 
+import type { Profile } from "../data/store";
 import { auth } from "../firebase";
+import { faceStyle, faceText } from "./Shell";
 
 // A team's LIVE tile shows each member this long, then the next (Kaalob).
 const ROTATE_MS = 10_000;
@@ -20,12 +22,13 @@ function still(video: HTMLVideoElement | undefined, width: number) {
 
 /**
  * Someone is in stream mode: a LIVE tile at the top of the sidebar playing
- * their stream (no sound) with their webcam small in the corner, their name
- * at the bottom and a glowing red LIVE (Kaalob's drawings). Clicking it takes
- * you into that videochat with their stream big.
+ * their stream (no sound, never their webcam), their name at the bottom and a
+ * glowing red LIVE (Kaalob's drawings). Clicking it takes you into that
+ * videochat with their stream big.
  *
  * A team (streamers who teamed up for the same game) shares one tile: it
- * shows each member for 10 seconds, then the next, round and round.
+ * shows each member's stream for 10 seconds, then the next, round and round,
+ * with every member's profile picture in the corner (the one showing lit).
  *
  * In that same videochat already (frozen), the tile holds a still picture
  * instead: you see the stream in the call, so the sidebar downloads nothing.
@@ -37,22 +40,22 @@ export function LiveTile(props: {
   uids: string[];
   nameOf: (uid: string) => string;
   usernameOf?: (uid: string) => string | undefined;
+  /** a member's profile, for their picture on a team's tile */
+  profileOf?: (uid: string) => Profile | undefined;
   /** you are in the streamers' videochat: hold a still picture, no live preview */
   frozen: boolean;
   /** clicked: open this streamer (the one showing now) */
   onOpen: (uid: string) => void;
 }) {
   let video: HTMLVideoElement | undefined;
-  let face: HTMLVideoElement | undefined;
   // This preview's own name in the call (one per LIVE tile, so two tiles on
   // one screen never knock each other out); the token server makes it
   // invisible and watch-only, so nobody sees an extra person.
   const peekTag = Math.random().toString(36).slice(2, 10);
-  // every member's stream and webcam, as they arrive
+  // every member's stream, as it arrives
   const [streams, setStreams] = createSignal(new Map<string, RemoteTrack>());
-  const [faces, setFaces] = createSignal(new Map<string, RemoteTrack>());
-  const put = (set: typeof setStreams, uid: string, track: RemoteTrack | undefined) =>
-    set((prev) => {
+  const put = (uid: string, track: RemoteTrack | undefined) =>
+    setStreams((prev) => {
       const next = new Map(prev);
       if (track) next.set(uid, track);
       else next.delete(uid);
@@ -68,33 +71,26 @@ export function LiveTile(props: {
   });
   const current = () => props.uids[turn() % props.uids.length] ?? props.uids[0];
   const stream = () => streams().get(current());
-  const camera = () => faces().get(current());
 
-  // the frozen picture: the stream, and their webcam if it was on
-  const [snapshot, setSnapshot] = createSignal<{ stream: string; face?: string } | undefined>();
+  // the frozen picture of the stream
+  const [snapshot, setSnapshot] = createSignal<{ stream: string } | undefined>();
   // Frozen: take the still from the live preview, then let it go. (Untracked:
   // tracks coming and going must not restart the connection below.)
   function freezeNow() {
     return untrack(() => {
       const picture = still(video, 480);
       if (!picture || !stream()) return false;
-      setSnapshot({ stream: picture, face: camera() ? still(face, 200) : undefined });
+      setSnapshot({ stream: picture });
       return true;
     });
   }
 
-  // show the current member's stream and webcam
+  // show the current member's stream
   createEffect(() => {
     const t = stream();
     if (!t || !video) return;
     t.attach(video);
     onCleanup(() => t.detach(video!));
-  });
-  createEffect(() => {
-    const t = camera();
-    if (!t || !face) return;
-    t.attach(face);
-    onCleanup(() => t.detach(face!));
   });
 
   // Live (or frozen without a picture yet): be connected. Frozen with a
@@ -124,31 +120,27 @@ export function LiveTile(props: {
         if (!res.ok || !pass.url || !pass.token || gone) throw new Error("no pass");
         const next = new Room({ adaptiveStream: true });
         next
+          // only the members' streams: never a webcam (Kaalob), so none is downloaded
+          .on(RoomEvent.TrackPublished, (pub, participant) => {
+            if (pub.trackName === "stream" && members.has(participant.identity)) pub.setSubscribed(true);
+          })
           .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
             if (!members.has(participant.identity) || track.kind !== Track.Kind.Video) return;
-            if (pub.trackName === "stream") put(setStreams, participant.identity, track);
-            // their webcam, small in the corner
-            else if (pub.source === Track.Source.Camera && !pub.isMuted) put(setFaces, participant.identity, track);
+            if (pub.trackName === "stream") put(participant.identity, track);
           })
           .on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
-            if (pub.trackName === "stream") put(setStreams, participant.identity, undefined);
-            else if (pub.source === Track.Source.Camera) put(setFaces, participant.identity, undefined);
-          })
-          .on(RoomEvent.TrackMuted, (pub, participant) => {
-            if (pub.source === Track.Source.Camera) put(setFaces, participant.identity, undefined);
-          })
-          .on(RoomEvent.TrackUnmuted, (pub, participant) => {
-            if (members.has(participant.identity) && pub.source === Track.Source.Camera && pub.track) {
-              put(setFaces, participant.identity, pub.track as RemoteTrack);
-            }
+            if (pub.trackName === "stream") put(participant.identity, undefined);
           })
           .on(RoomEvent.Disconnected, () => {
             setStreams(new Map());
-            setFaces(new Map());
             if (!gone) retry = window.setTimeout(() => void connect(), 3000);
           });
-        await next.connect(pass.url, pass.token);
+        await next.connect(pass.url, pass.token, { autoSubscribe: false });
         if (gone) return void next.disconnect();
+        for (const p of next.remoteParticipants.values()) {
+          if (!members.has(p.identity)) continue;
+          for (const pub of p.trackPublications.values()) if (pub.trackName === "stream") pub.setSubscribed(true);
+        }
         room = next;
       } catch {
         if (!gone) retry = window.setTimeout(() => void connect(), 5000);
@@ -162,7 +154,6 @@ export function LiveTile(props: {
       window.clearTimeout(retry);
       video?.removeEventListener("loadeddata", onFrame);
       setStreams(new Map());
-      setFaces(new Map());
       void room?.disconnect();
     });
   });
@@ -183,24 +174,26 @@ export function LiveTile(props: {
       <Show when={!playing() && !snapshot()}>
         <span class="live-tile-wait" />
       </Show>
-      <video
-        ref={face}
-        class="live-tile-face"
-        autoplay
-        playsinline
-        muted
-        classList={{ hidden: !camera() || Boolean(snapshot()) }}
-      />
-      <Show when={snapshot()?.face}>{(src) => <img class="live-tile-face" src={src()} alt="" />}</Show>
+      {/* a team: every member's picture, the one showing lit */}
+      <Show when={props.uids.length > 1}>
+        <span class="live-team" aria-label={`Team: ${names()}`}>
+          <For each={props.uids}>
+            {(uid) => (
+              <span
+                class="avatar live-team-face"
+                classList={{ on: uid === current() }}
+                style={faceStyle(props.profileOf?.(uid))}
+                title={props.nameOf(uid)}
+              >
+                {faceText(props.profileOf?.(uid), props.nameOf(uid))}
+              </span>
+            )}
+          </For>
+        </span>
+      </Show>
       <span class="live-badge">LIVE</span>
       <span class="room-tile-name">
         {props.nameOf(current())}<DeveloperBadge username={props.usernameOf?.(current())} />
-        {/* a team: which member is showing */}
-        <Show when={props.uids.length > 1}>
-          <span class="live-team" aria-hidden="true">
-            <For each={props.uids}>{(uid) => <i classList={{ on: uid === current() }} />}</For>
-          </span>
-        </Show>
       </span>
     </button>
   );

@@ -235,7 +235,7 @@ const SCREENS = [
   el.append(video, tvVideo, idle, label);
   el.style.transform = s.place;
   world.append(el);
-  return { ...s, el, video, tvVideo, label, owner: null, tv: null, tvAt: 0, tvPlayer: null, tvPlaying: null };
+  return { ...s, el, video, tvVideo, label, owner: null, tv: null, tvAt: 0, tvOnAt: 0, tvPlayer: null, tvPlaying: null };
 });
 
 /** A desk's screen shows its person's share from the videochat (a MediaStreamTrack). */
@@ -397,16 +397,31 @@ function refreshTv(screen) {
     if (want) openBig(screen);
   }
 }
-function setTv(screen, tv, at = Date.now(), send = true) {
+/** onAt: when this screen's TV was turned on (a channel change keeps it) */
+function setTv(screen, tv, at = Date.now(), send = true, onAt = 0) {
   if (at < screen.tvAt) return;
+  screen.tvOnAt = !tv ? 0 : onAt || (screen.tv ? screen.tvOnAt : at) || at;
   screen.tv = tv;
   screen.tvAt = at;
   refreshTv(screen);
   if (send) sendTv(screen);
+  publishTvs();
+}
+// Darkwood Node's right side bar shows the first TV turned on here (Kaalob).
+// It watches this room unseen, so everyone in the room also says which TVs
+// are on in their LiveKit attributes (all of them agree; newer wins).
+let tvsSaid = "";
+function publishTvs() {
+  if (!room || room.state !== "connected") return;
+  const on = SCREENS.filter((s) => s.tv).map((s) => ({ id: s.id, name: s.tv.name, url: s.tv.url, at: s.tvAt, onAt: s.tvOnAt }));
+  const said = JSON.stringify(on);
+  if (said === tvsSaid) return;
+  tvsSaid = said;
+  room.localParticipant.setAttributes({ "dw-tv": said }).catch(() => { tvsSaid = ""; });
 }
 function sendTv(screen, to) {
   if (!room || room.state !== "connected") return;
-  const msg = JSON.stringify({ screen: screen.id, tv: screen.tv, at: screen.tvAt });
+  const msg = JSON.stringify({ screen: screen.id, tv: screen.tv, at: screen.tvAt, onAt: screen.tvOnAt });
   room.localParticipant
     .publishData(new TextEncoder().encode(msg), { reliable: true, topic: "tv", destinationIdentities: to })
     .catch(() => {});
@@ -425,7 +440,7 @@ function onTv(data) {
       ? { name: String(msg.tv.name || "TV").slice(0, 80), url: msg.tv.url }
       : null;
   if (msg.tv && !tv) return;
-  setTv(screen, tv, Number(msg.at) || 0, false);
+  setTv(screen, tv, Number(msg.at) || 0, false, Number(msg.onAt) || 0);
 }
 function toggleTvSound() {
   tvSound = !tvSound;
@@ -1122,6 +1137,7 @@ async function join(pass) {
   setStatus("");
   updateCount();
   sendPose(true);
+  publishTvs();
   setInterval(() => sendPose(true), 2000); // newcomers learn where you are
 }
 
