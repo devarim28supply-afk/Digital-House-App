@@ -37,7 +37,8 @@ export function signPass(apiKey: string, apiSecret: string, identity: string, na
       exp: now + PASS_SECONDS,
       video: watchOnly
         ? { room, roomJoin: true, hidden: true, canPublish: false, canSubscribe: true, canPublishData: false }
-        : { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+        : // canUpdateOwnMetadata: a person's attributes say which desk they hold (src/data/seats.ts)
+          { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true, canUpdateOwnMetadata: true },
     }),
   );
   const signature = base64url(createHmac("sha256", apiSecret).update(`${header}.${payload}`).digest());

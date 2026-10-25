@@ -14,6 +14,7 @@ import {
   VideoPresets,
 } from "livekit-client";
 
+import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
@@ -171,6 +172,12 @@ export function VoiceRoom(props: {
   teams?: string[][];
   /** Disconnect: the app hangs up its one call (it keeps the call alive across channels) */
   onLeave?: () => void;
+  /**
+   * The tile's Darkwood Room: this call hands out its four desks (data/seats),
+   * and the room page asks it to sit, stand, and turn the camera or the
+   * screen share on and off (one camera and one share for both).
+   */
+  seats?: boolean;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
@@ -278,6 +285,8 @@ export function VoiceRoom(props: {
     setStreamOn(false);
     setStreamingIn(undefined);
     setRoomFaces(new Map<string, RemoteTrack>());
+    seatControl?.stop();
+    seatControl = undefined;
   }
 
   // Leaving the channel (or switching away) hangs up.
@@ -370,6 +379,7 @@ export function VoiceRoom(props: {
       }
       setRoom(next);
       bump();
+      if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
     } catch (err) {
@@ -380,6 +390,25 @@ export function VoiceRoom(props: {
   }
 
   if (props.autoJoin) queueMicrotask(() => void join());
+
+  // The Darkwood Room (this tile's Room side) asks this call to sit, stand,
+  // and turn the camera or the share on or off.
+  let seatControl: SeatControl | undefined;
+  createEffect(() => {
+    if (!props.seats) return;
+    const fromRoom = (e: MessageEvent) => {
+      if (e.origin !== location.origin || !room()) return;
+      const frames = document.querySelectorAll<HTMLIFrameElement>(".room-layer iframe");
+      if (![...frames].some((f) => f.contentWindow === e.source)) return;
+      const type = (e.data as { type?: string } | null)?.type;
+      if (type === "dh-seat-sit") seatControl?.sit(Number((e.data as { seat?: unknown }).seat));
+      if (type === "dh-seat-stand") seatControl?.stand();
+      if (type === "dh-camera") void toggleCam();
+      if (type === "dh-share") void toggle("screen");
+    };
+    window.addEventListener("message", fromRoom);
+    onCleanup(() => window.removeEventListener("message", fromRoom));
+  });
 
   const local = () => {
     version();
