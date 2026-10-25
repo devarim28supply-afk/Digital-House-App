@@ -391,6 +391,75 @@ function alertBox(err: unknown) {
   $("editor-msg").textContent = `Could not save: ${err instanceof Error ? err.message : String(err)} (owner and admins only; the database rule may not be published yet)`;
 }
 
+// ---- the Commit & Deploy Lane (COMMIT-DEPLOY-LANE.md), live every 15 s ----------------
+type LaneTurn = { who: string; agent: string; what: string; since: string; url: string };
+type Lane = {
+  url: string;
+  holder?: LaneTurn | null;
+  queue?: LaneTurn[];
+  lastRelease?: { who: string; agent: string; note: string; at: string } | null;
+  urgent?: { who: string; at: string } | null;
+  error?: string;
+};
+let lane: Lane | null = null;
+const LANE_MS = 15_000;
+/** A GitHub account as its person: "Tyler (Codex)". */
+function laneName(login: string, agent: string) {
+  const person = personOf("commit", login);
+  return `${person?.name ?? login}${agent ? ` (${agent})` : ""}`;
+}
+function since(iso: string) {
+  const mins = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
+}
+function renderLane() {
+  const box = $("lane");
+  if (!lane) return;
+  box.hidden = false;
+  const held = Boolean(lane.holder);
+  box.className = `lane ${held ? "held" : "clear"}`;
+  const top = el("div", "lane-top");
+  top.append(el("span", "lane-dot"), el("span", "lane-title", lane.error ? "Commit & Deploy Lane" : held ? "Lane held" : "Lane clear: main is free"));
+  const link = el("a", "", "lane issue ↗");
+  link.href = lane.url;
+  link.target = "_blank";
+  link.rel = "noopener";
+  top.append(link);
+  const parts: HTMLElement[] = [top];
+  if (lane.error) parts.push(el("p", "", lane.error));
+  if (lane.holder) {
+    const p = el("p");
+    p.append(
+      el("b", "", laneName(lane.holder.who, lane.holder.agent)),
+      ` holds it, for ${since(lane.holder.since)}${lane.holder.what ? `: ${lane.holder.what}` : ""}. Nobody else pushes to main.`,
+    );
+    parts.push(p);
+  } else if (lane.lastRelease) {
+    const r = lane.lastRelease;
+    parts.push(el("p", "", `Last released by ${laneName(r.who, r.agent)} ${ago(Date.parse(r.at))}${r.note ? `: ${r.note}` : ""}`));
+  }
+  if (lane.urgent) parts.push(el("p", "urgent", `${laneName(lane.urgent.who, "")} asked for the lane urgently, ${ago(Date.parse(lane.urgent.at))}.`));
+  if (lane.queue?.length) {
+    parts.push(el("p", "", held ? "Waiting for their turn:" : "Waiting (the first goes next):"));
+    const ol = el("ol");
+    for (const q of lane.queue) ol.append(el("li", "", `${laneName(q.who, q.agent)}, waiting ${since(q.since)}${q.what ? `: ${q.what}` : ""}`));
+    parts.push(ol);
+  } else if (!lane.error) parts.push(el("p", "", "Nobody waiting."));
+  box.replaceChildren(...parts);
+}
+async function loadLane() {
+  const user = auth.currentUser;
+  if (!user) return;
+  try {
+    const res = await fetch("/api/activity?lane", { headers: { Authorization: `Bearer ${await user.getIdToken()}` } });
+    if (!res.ok) return;
+    lane = (await res.json()) as Lane;
+    renderLane();
+  } catch {
+    /* next try in 15 s */
+  }
+}
+
 // ---- loading ---------------------------------------------------------------------
 async function load() {
   const user = auth.currentUser;
@@ -420,7 +489,13 @@ onAuthStateChanged(auth, (user) => {
   started = true;
   void load();
   window.setInterval(() => void load(), REFRESH_MS);
-  window.setInterval(render, 30_000); // keep "x min ago" fresh between loads
+  void loadLane();
+  window.setInterval(() => void loadLane(), LANE_MS);
+  // keep "x min ago" fresh between loads
+  window.setInterval(() => {
+    render();
+    renderLane();
+  }, 30_000);
   // the action log and the people list update live
   watchAudit(
     (list) => {

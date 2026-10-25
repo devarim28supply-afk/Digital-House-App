@@ -253,8 +253,76 @@ async function deploys() {
   return all.flat();
 }
 
+// ---- the Commit & Deploy Lane (COMMIT-DEPLOY-LANE.md) ----------------------
+// Read live from the lane issue's comments: who holds the lane (Entering /
+// Lane held), who is waiting (Waiting for lane:), and the last release.
+const LANE = { repo: "devarim28supply-afk/Digital-House-App", issue: 1 };
+const LANE_CACHE_MS = 15_000;
+let laneCache: { at: number; body: unknown } | null = null;
+
+type LaneTurn = { who: string; agent: string; what: string; since: string; url: string };
+export function readLane(comments: Gh[]) {
+  let holder: LaneTurn | null = null;
+  let queue: LaneTurn[] = [];
+  let lastRelease: { who: string; agent: string; note: string; at: string } | null = null;
+  let urgent: { who: string; at: string } | null = null;
+  for (const c of comments) {
+    const text = String(c.body ?? "").trim();
+    const who = c.user?.login ?? "unknown";
+    const at = c.created_at;
+    const agentOf = (fallback: string) => {
+      const ai = whichAi(text);
+      return ai === "by hand" ? fallback : ai;
+    };
+    const lines = text.split("\n").map((l) => l.trim());
+    const has = (re: RegExp) => lines.some((l) => re.test(l.replace(/^[>*_\s"“]+/, "")));
+    if (has(/^Lane released/i)) {
+      holder = null;
+      urgent = null;
+      lastRelease = { who, agent: agentOf(""), note: lines.filter((l) => l && !/^Lane released/i.test(l)).join(" ").slice(0, 200), at };
+      queue = queue.filter((q) => q.who !== who);
+      continue;
+    }
+    if (has(/^Entering Commit (&|and) Deploy Lane/i) || has(/^Lane held/i)) {
+      const held = lines.find((l) => /Lane held/i.test(l)) ?? "";
+      // the same person posting again keeps their start time and earlier details
+      const prev = holder as LaneTurn | null;
+      const same = prev?.who === who ? prev : null;
+      const what: string = held.match(/Working on (.+?)(\. Do not push|$)/i)?.[1] ?? same?.what ?? "";
+      holder = { who, agent: agentOf(same?.agent ?? ""), what, since: same?.since ?? at, url: c.html_url };
+      queue = queue.filter((q) => q.who !== who);
+      continue;
+    }
+    const waiting = lines.find((l) => /^Waiting for lane:?/i.test(l.replace(/^[>*_\s"“]+/, "")));
+    if (waiting && !queue.some((q) => q.who === who) && holder?.who !== who) {
+      queue.push({ who, agent: agentOf(""), what: waiting.replace(/^.*Waiting for lane:?\s*/i, "").replace(/\.$/, ""), since: at, url: c.html_url });
+      continue;
+    }
+    if (has(/^Requesting lane release/i)) urgent = { who, at };
+  }
+  return { holder, queue, lastRelease, urgent };
+}
+
+async function laneNow() {
+  try {
+    const issue = (await github(`repos/${LANE.repo}/issues/${LANE.issue}`)) as Gh;
+    // the newest comments: the last page of 100
+    const lastPage = Math.max(1, Math.ceil(Number(issue.comments ?? 0) / 100));
+    const comments = (await github(`repos/${LANE.repo}/issues/${LANE.issue}/comments?per_page=100&page=${lastPage}`)) as Gh[];
+    return { url: issue.html_url, repo: LANE.repo, ...readLane(comments) };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "failed";
+    return {
+      url: `https://github.com/${LANE.repo}/issues/${LANE.issue}`,
+      repo: LANE.repo,
+      error: /40[34]/.test(msg) ? `${msg}: the GitHub key needs "Issues: Read"` : msg,
+    };
+  }
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== "GET") return send(res, 405, { error: "Use GET" });
+  const laneOnly = new URL(req.url ?? "/", "http://local").searchParams.has("lane");
   const auth = req.headers.authorization ?? "";
   const idToken = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   try {
@@ -264,6 +332,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
   if (!process.env.GITHUB_TOKEN || !process.env.VERCEL_TOKEN) {
     return send(res, 500, { error: "The read-only GitHub and Vercel keys are not set up yet (GITHUB_TOKEN, VERCEL_TOKEN)." });
+  }
+  // the lane alone, fresher (every 15 s): ?lane
+  if (laneOnly) {
+    if (!laneCache || Date.now() - laneCache.at > LANE_CACHE_MS) laneCache = { at: Date.now(), body: await laneNow() };
+    return send(res, 200, laneCache.body);
   }
   if (!cache || Date.now() - cache.at > CACHE_MS) {
     const [repos, deployList] = await Promise.all([Promise.all(PROJECTS.map(repoActivity)), deploys()]);
