@@ -82,6 +82,13 @@ export function RoomPane(props: {
   }
 
   const url = () => roomUrlOf(props.channel, props.serverId);
+  // A Darkwood Room is loaded for everyone in the tile, even on the videochat
+  // side (hidden, and idle: it draws, tracks and plays nothing while hidden).
+  // Then the room's TV keeps running for whoever is still in the tile when
+  // the person who turned it on leaves: the loaded rooms carry it.
+  createEffect(() => {
+    if (url() && hasDarkwoodRoom(props.channel)) setRoomLoaded(true);
+  });
   // A tile linking to someone else's site: some sites refuse to be shown
   // inside another page (White Torture does). The server reads the site's
   // rules; a refusing site gets an "Open it in its own tab" button instead.

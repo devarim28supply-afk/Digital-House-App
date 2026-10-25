@@ -28,6 +28,10 @@ const BEHIND = 200; // third person: the camera sits 2 m behind you...
 const ABOVE = 40;   // ...and 0.4 m higher
 const EYE_Y = H / 2 - EYE; // css y points down; the room's middle is 0
 
+// Embedded in Darkwood Node the page is told when it is hidden behind the
+// videochat (dh-pane); until it says so, assume hidden. On its own it is shown.
+let paneShown = parent === window;
+
 const view = document.getElementById("view");
 const world = document.getElementById("world");
 const statusBox = document.getElementById("status");
@@ -160,8 +164,9 @@ const CHAIRS = [
 ];
 // ---- a small desk against the wall under each small TV (screens 1 to 4).
 // Same look as the chairs: a top slab on four square legs. Its top stays
-// under the TV's bottom edge (0.87 m up).
-const DESK = { w: 140, d: 50, tall: 75, slab: 4, leg: 5 };
+// under the TV's bottom edge (0.87 m up). A little wider than the TV (2.24 m)
+// and deep enough to reach almost to the chair (its front edge is 0.2 m off).
+const DESK = { w: 250, d: 85, tall: 75, slab: 4, leg: 6 };
 /** A box of CSS faces in `parent`: x0..x1 left to right, z0..z1 front to back,
  *  from `top` (px above the floor) down `h` px. No bottom face. */
 function boxFaces(parent, x0, x1, z0, z1, top, h, topCls = "top") {
@@ -375,7 +380,8 @@ addEventListener("keydown", (e) => {
 // TV; the channel stops loading meanwhile and comes back after.
 let tvSound = false; // TV sound is yours alone (M), off to start
 function refreshTv(screen) {
-  const want = screen.tv && !screen.owner ? screen.tv.url : null;
+  // hidden behind the videochat: the TV is remembered, not played
+  const want = screen.tv && !screen.owner && (paneShown || (!big.hidden && bigScreen === screen)) ? screen.tv.url : null;
   if (screen.tvPlaying !== want) {
     screen.tvPlayer?.destroy();
     screen.tvPlayer = null;
@@ -392,7 +398,7 @@ function refreshTv(screen) {
       });
     }
   }
-  screen.el.classList.toggle("tv", Boolean(want));
+  screen.el.classList.toggle("tv", Boolean(screen.tv && !screen.owner));
   if (!screen.owner && !screen.el.classList.contains("tv-failed")) {
     screen.label.textContent = ""; // no title on a TV (Kaalob)
   }
@@ -463,7 +469,6 @@ const bigCc = document.createElement("div");
 bigCc.className = "live-cc big-cc";
 bigCc.hidden = true;
 big.append(bigCc);
-let paneShown = true;
 let ccOn = null; // the player being captioned
 let ccStop = () => {};
 function captionWatched() {
@@ -484,6 +489,7 @@ setInterval(captionWatched, 1000);
 addEventListener("message", (e) => {
   if (e.source === parent && e.origin === location.origin && e.data?.type === "dh-pane") {
     paneShown = Boolean(e.data.shown);
+    for (const s of SCREENS) refreshTv(s);
     captionWatched();
   }
 });
@@ -1061,7 +1067,7 @@ function stopTracking() {
 }
 async function detect() {
   const v = mine.video, vw = v.videoWidth, vh = v.videoHeight;
-  if (busy || !stream || !vw || v.readyState < 2 || document.hidden) return;
+  if (busy || !stream || !vw || v.readyState < 2 || document.hidden || !paneShown) return;
   busy = true;
   try {
     const dw = Math.min(vw, TRACK.detectWidth);
