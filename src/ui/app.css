@@ -2986,3 +2986,37 @@ img.live-tile-still {
   opacity: 1;
   box-shadow: 0 0 0 2px #ff3b3b, 0 0 12px #ff3b3b;
 }
+
+/* ---- side panels push the page instead of covering it (Kaalob's feedback) ----
+   When the left side (servers + channels) or the right sidebar (a tile's chat
+   or the people) slides in, the channel in the middle, videochat included,
+   slides over just as far at the same speed, so nothing is hidden under it.
+   The videochat re-fits its tiles as it narrows (VoiceRoom's ResizeObserver). */
+@media (min-width: 761px) {
+  .main {
+    transition: margin 240ms ease;
+  }
+  .left-open .main {
+    margin-left: 320px; /* rail 72 + channels 248 */
+  }
+  .shell.right-open .main,
+  .shell:has(.members input:focus) .main {
+    margin-right: 260px;
+  }
+  .shell.with-side-chat.right-open .main,
+  .shell:has(.side-chat textarea:focus) .main {
+    margin-right: min(360px, 100vw);
+  }
+  /* the panels sit beside the page now: no shadow falling over it */
+  .left-slide .side,
+  .side-chat,
+  .members {
+    box-shadow: none;
+  }
+}
+/* pinned, the right sidebar already has its own column: no push needed */
+@media (min-width: 1101px) {
+  .shell.right-pinned .main {
+    margin-right: 0;
+  }
+}
