@@ -641,9 +641,16 @@ function seatTaken(i) {
   for (const person of people.values()) if (person.seat === i) return true;
   return false;
 }
-/** Which way your plate faces: where you look, or the chair's way when seated. */
+/**
+ * Which way your plate faces: where you look; seated, it follows your look
+ * only up to 45 degrees left or right of the way the chair faces.
+ */
+const SEAT_TURN = 45;
 function bodyYaw() {
-  return me.seat >= 0 ? -CHAIRS[me.seat].turn : me.yaw;
+  if (me.seat < 0) return me.yaw;
+  const chairYaw = -CHAIRS[me.seat].turn;
+  const off = ((((me.yaw - chairYaw) % 360) + 540) % 360) - 180; // -180..180
+  return chairYaw + clamp(off, -SEAT_TURN, SEAT_TURN);
 }
 function placeSeated() {
   const c = CHAIRS[me.seat];
