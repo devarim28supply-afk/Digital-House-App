@@ -16,12 +16,6 @@ export const EYE_GAP = 8;
 
 const RAD = Math.PI / 180;
 const URL = `${import.meta.env.BASE_URL}room/Eye.glb`;
-// The statue is the Sketchfab file unchanged. 100 px is 1 m, so she is 1.7 m
-// tall. Her toes and nose sit on +z; the room's front wall is −z.
-// Credit: "3dexport Lisa Nude 1548127115" by andrew.sheff2012, CC-BY-4.0.
-// https://sketchfab.com/3d-models/3dexport-lisa-nude-1548127115-98a289358ee84359952d2f298981438f
-const LISA_URL = `${import.meta.env.BASE_URL}room/lisa/scene.gltf`;
-const PERSON_H = 170;
 const FLOOR_Y = -150;
 
 let renderer = null;
@@ -32,8 +26,6 @@ let failed = false;
 let eyeFailed = false;
 let loading = false;
 let queued = null;
-let figure = null;
-let figureLoading = false;
 let pending = null;
 const solidMeshes = [];
 let solidGeo = null;
@@ -359,48 +351,6 @@ function startLoad() {
   });
 }
 
-// Whole model only: scale, turn, and stand her on the floor. Her meshes,
-// materials, and pose stay as they are in the file.
-function mountLisa(root, floorY) {
-  const holder = new THREE.Group();
-  holder.add(root);
-  holder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1));
-  holder.updateMatrixWorld(true);
-  const size = new THREE.Box3().setFromObject(holder).getSize(new THREE.Vector3());
-  holder.scale.setScalar(PERSON_H / (size.y || 1));
-  holder.updateMatrixWorld(true);
-  const fitted = new THREE.Box3().setFromObject(holder);
-  holder.position.set(
-    -(fitted.min.x + fitted.max.x) / 2,
-    floorY - fitted.min.y,
-    -(fitted.min.z + fitted.max.z) / 2,
-  );
-  holder.traverse((o) => {
-    if (!o.isMesh) return;
-    o.frustumCulled = false;
-    o.renderOrder = 1;
-  });
-  return holder;
-}
-
-function startFigure() {
-  if (figure || figureLoading || !scene) return;
-  figureLoading = true;
-  new GLTFLoader().load(LISA_URL, (gltf) => {
-    figure = mountLisa(gltf.scene, pending?.cam?.floorY ?? FLOOR_Y);
-    scene.add(figure);
-    figureLoading = false;
-    lastKey = "";
-    if (pending) {
-      const next = pending;
-      renderEyes(next.entries, next.plates, next.cam, next.parent, next.solids);
-    }
-  }, undefined, (err) => {
-    figureLoading = false;
-    console.warn("[lisa] load failed", err);
-  });
-}
-
 function syncSolids(list, floorY) {
   if (!solidGeo) {
     solidGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -482,15 +432,14 @@ export function renderEyes(entries, plates, cam, parent, solids) {
   pending = { entries, plates, cam, parent, solids };
   boot(parent);
   if (!renderer) return;
-  startFigure();
   if (!template && !eyeFailed) {
     queued = pending;
     startLoad();
   }
-  if (!figure && !template) return;
+  if (!template) return;
   const floorY = cam.floorY ?? FLOOR_Y;
   const key = [
-    figure ? 1 : 0, template ? 1 : 0,
+    template ? 1 : 0,
     cam.width, cam.height, Math.round(cam.perspective),
     Math.round(cam.x), Math.round(cam.y), Math.round(cam.z),
     cam.yaw.toFixed(1), cam.pitch.toFixed(1),
@@ -535,7 +484,7 @@ export function renderEyes(entries, plates, cam, parent, solids) {
     }
     for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
   }
-  if (!entries.length && !figure) {
+  if (!entries.length) {
     renderer.clear();
     lastKey = key;
     return;
