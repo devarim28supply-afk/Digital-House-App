@@ -1487,8 +1487,8 @@ const ROW = 4; // small screens under the room; the rest go in the column
 // identity -> { el, video, who, center, name, and for a person: p, seat, stand, wait, sharing, share }
 const callers = new Map();
 let callRoom = null;
-// the videochat's own share track names (VoiceRoom): stream mode, a second screen
-const STREAM = "stream", SECOND_SCREEN = "screen-2";
+// the videochat's own share track names (VoiceRoom): stream mode, a second screen, a second webcam
+const STREAM = "stream", SECOND_SCREEN = "screen-2", CAM2 = "cam-2";
 
 async function watchCall(pass) {
   const call = new Room({ adaptiveStream: false, dynacast: false });
@@ -1557,12 +1557,13 @@ function layoutCall() {
 
 /** A publication's video, when it is coming in and not paused. */
 const videoOf = (pub) => (pub?.track && pub.isSubscribed && !pub.isMuted ? pub.track.mediaStreamTrack : null);
-/** What someone shares in the videochat: a stream first, then the main share, then a second screen. */
+/** What someone shares in the videochat: a stream first, then a screen, then the second camera. */
 function shareOf(p) {
-  const rank = (pub) => (pub.trackName === STREAM ? 0 : pub.trackName === SECOND_SCREEN ? 2 : 1);
+  const rank = (pub) =>
+    pub.trackName === STREAM ? 0 : pub.trackName === SECOND_SCREEN ? 2 : pub.trackName === CAM2 ? 3 : 1;
   const pubs = [...p.trackPublications.values()]
     .filter((pub) => pub.kind === Track.Kind.Video && !pub.isMuted &&
-      (pub.source === Track.Source.ScreenShare || pub.trackName === STREAM || pub.trackName === SECOND_SCREEN))
+      (pub.source === Track.Source.ScreenShare || pub.trackName === STREAM || pub.trackName === SECOND_SCREEN || pub.trackName === CAM2))
     .sort((a, b) => rank(a) - rank(b));
   return { sharing: pubs.length > 0, track: pubs.map(videoOf).find(Boolean) ?? null };
 }
