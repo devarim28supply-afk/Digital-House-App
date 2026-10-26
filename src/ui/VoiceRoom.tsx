@@ -12,7 +12,6 @@ import {
   Track,
   type TrackPublication,
   type TrackPublishOptions,
-  type VideoCaptureOptions,
   VideoPresets,
 } from "livekit-client";
 
@@ -38,9 +37,6 @@ export async function fetchPass(serverId: string, channelId: string, wall = fals
   return { url: body.url, token: body.token };
 }
 
-/** How long a camera start or stop may take before the button stops waiting. */
-const CAMERA_TIMEOUT_MS = 10_000;
-
 type TileInfo = {
   key: string;
   participant: Participant;
@@ -48,11 +44,15 @@ type TileInfo = {
   screen: boolean;
   /** the sharer's 2nd screen */
   second?: boolean;
+  /** a webcam shown on screen 1 or screen 2 */
+  webcam?: 1 | 2;
 };
 
 // A 2nd shared screen rides its own named track: LiveKit keeps one
 // "screen share" per person, so this one is published beside it.
 const SECOND_SCREEN = "screen-2";
+// Two webcam screens. Each one is its own picture, not the face camera.
+const WEBCAM_SCREEN = { 1: "webcam-1", 2: "webcam-2" } as const;
 // Stream mode (Kaalob): still a screen share, but it rides on the sharer's
 // own tile as a small picture instead of a tile of its own.
 const STREAM = "stream";
@@ -60,12 +60,18 @@ const STREAM_AUDIO = "stream-audio";
 // While gaming, the PC and the upload are stretched (Kaalob's webcam got slow).
 // The webcam keeps its frame rate (signing needs smooth motion more than
 // sharpness) and goes first; the stream gives way.
-const CAMERA_PUBLISH: TrackPublishOptions = {
-  degradationPreference: "maintain-framerate",
-  // 1 Mbps is plenty for signing; a home upload (Kaalob's measured ~2 Mbps
-  // while streaming) cannot carry much more next to a stream
-  videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
-};
+function webcamPublish(slot: 1 | 2): TrackPublishOptions {
+  return {
+    name: WEBCAM_SCREEN[slot],
+    source: Track.Source.Unknown,
+    simulcast: false,
+    degradationPreference: "maintain-framerate",
+    // Screen 1 keeps the rate the face camera used. Screen 2 gives way.
+    videoEncoding: slot === 1
+      ? { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" }
+      : { maxBitrate: 700_000, maxFramerate: 30, priority: "low" },
+  };
+}
 // stream mode sizes: full 1080p, or a lighter 720p (about half the work and upload)
 // Sized for a home upload: every extra copy (simulcast layer) is sent too, so
 // only one small 360p copy goes with the stream, for the LIVE tile previews.
@@ -152,9 +158,8 @@ async function watchRoomCam(
  * call) connects; the mic and camera start off until you switch them on.
  */
 
-const WEBCAM_KEY = "dh_webcam";
-
 type CamChoice = { id: string; label: string };
+type WebcamSlot = 1 | 2;
 
 /** Windows lists one camera again as "Default - …" and "Communications - …". */
 function bareCameraLabel(label: string) {
@@ -168,20 +173,30 @@ function listedCameras(devices: MediaDeviceInfo[]): CamChoice[] {
     .map((d, i) => ({ id: d.deviceId, label: bareCameraLabel(d.label) || `Webcam ${i + 1}` }));
 }
 
-function savedWebcam() {
+function webcamStorageKey(slot: WebcamSlot) {
+  return slot === 1 ? "dh_webcam" : "dh_webcam_2";
+}
+
+function savedWebcam(slot: WebcamSlot) {
   try {
-    return localStorage.getItem(WEBCAM_KEY) || "";
+    return localStorage.getItem(webcamStorageKey(slot)) || "";
   } catch {
     return "";
   }
 }
 
-function rememberWebcam(id: string) {
+function rememberWebcam(slot: WebcamSlot, id: string) {
   try {
-    localStorage.setItem(WEBCAM_KEY, id);
+    localStorage.setItem(webcamStorageKey(slot), id);
   } catch {
     /* private mode */
   }
+}
+
+function screenLabel(tile: { second?: boolean; webcam?: 1 | 2 }) {
+  if (tile.webcam) return `screen ${tile.webcam}`;
+  if (tile.second) return "2nd screen";
+  return "screen";
 }
 
 export function VoiceRoom(props: {
@@ -342,6 +357,15 @@ export function VoiceRoom(props: {
     secondScreen?.track?.stop();
     secondScreen = undefined;
     setSecondOn(false);
+    slotGen[1]++;
+    slotGen[2]++;
+    for (const slot of [1, 2] as const) {
+      const pub = slotPub[slot];
+      slotPub[slot] = undefined;
+      pub?.track?.stop();
+    }
+    setSlotOn({ 1: false, 2: false });
+    setBusySlot(0);
     for (const pub of streamPubs) pub.track?.stop();
     streamPubs = [];
     setStreamOn(false);
@@ -472,7 +496,7 @@ export function VoiceRoom(props: {
       const type = (e.data as { type?: string } | null)?.type;
       if (type === "dh-seat-sit") seatControl?.sit(Number((e.data as { seat?: unknown }).seat));
       if (type === "dh-seat-stand") seatControl?.stand();
-      if (type === "dh-camera") void toggleCam();
+      if (type === "dh-camera") void toggleSlot(1);
       if (type === "dh-share") void toggle("screen");
     };
     window.addEventListener("message", fromRoom);
@@ -484,7 +508,6 @@ export function VoiceRoom(props: {
     return room()?.localParticipant;
   };
   const micOn = () => Boolean(local()?.isMicrophoneEnabled);
-  const camOn = () => Boolean(local()?.isCameraEnabled);
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
   let secondScreen: LocalTrackPublication | undefined;
   const [secondOn, setSecondOn] = createSignal(false);
@@ -699,102 +722,30 @@ export function VoiceRoom(props: {
     }
   }
 
-  // The Camera button answers at once: it shows what you asked for while the
-  // camera starts or stops, and quick extra clicks only change the wish. One
-  // loop catches the camera up to your last click, each step with a way out;
-  // the wish belongs to the call it was made in, so leaving or reconnecting
-  // drops it instead of letting a slow start write over the next call.
-  const [camWant, setCamWant] = createSignal<boolean | undefined>();
-  const camShown = () => camWant() ?? camOn();
-  let camRun = 0; // one per call: an old loop sees the change and stops
-  let camLooping = false;
-  // The webcam you picked. Empty until you pick one: the browser's default.
-  let camDevice = savedWebcam();
-  const [camMenu, setCamMenu] = createSignal(false);
+  // Two screens. Each has its own webcam menu, and the choice is remembered.
+  const slotPub: { 1?: LocalTrackPublication; 2?: LocalTrackPublication } = {};
+  const slotGen = { 1: 0, 2: 0 };
+  let device1 = savedWebcam(1);
+  let device2 = savedWebcam(2);
+  const [slotOn, setSlotOn] = createSignal({ 1: false, 2: false });
+  const [busySlot, setBusySlot] = createSignal<0 | WebcamSlot>(0);
+  const [menuSlot, setMenuSlot] = createSignal<0 | WebcamSlot>(0);
   const [camList, setCamList] = createSignal<CamChoice[]>([]);
   const [camListBusy, setCamListBusy] = createSignal(false);
-  const activeCamId = () => local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack.getSettings().deviceId ?? "";
-  const usingCam = (cam: CamChoice) => {
-    if (!camOn()) return false;
-    if (activeCamId() === cam.id) return true;
-    const label = bareCameraLabel(local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack.label ?? "");
+  const slotDevice = (slot: WebcamSlot) => (slot === 1 ? device1 : device2);
+  const slotLiveId = (slot: WebcamSlot) => slotPub[slot]?.track?.mediaStreamTrack.getSettings().deviceId ?? "";
+  const usingSlot = (slot: WebcamSlot, cam: CamChoice) => {
+    if (!slotOn()[slot]) return false;
+    if (slotLiveId(slot) === cam.id) return true;
+    const label = bareCameraLabel(slotPub[slot]?.track?.mediaStreamTrack.label ?? "");
     return label !== "" && label === bareCameraLabel(cam.label);
   };
 
+  // A click anywhere else closes whichever webcam list is open.
   createEffect(() => {
-    room();
-    camRun++;
-    camLooping = false;
-    setCamWant(undefined);
-  });
-
-  /** One camera start or stop, and a way out if the browser never answers. */
-  async function moveCamera(active: LocalParticipant, on: boolean) {
-    let timer = 0;
-    const chosen = on ? camDevice : "";
-    const capture: VideoCaptureOptions | undefined = chosen ? { deviceId: { exact: chosen } } : undefined;
-    const attempt = active
-      .setCameraEnabled(on, capture, CAMERA_PUBLISH)
-      .then(
-        () => ({ ok: true as const }),
-        (err: unknown) => ({
-          ok: false as const,
-          message: err instanceof Error ? err.message : on ? "The camera could not be turned on." : "The camera could not be turned off.",
-        }),
-      )
-      .finally(bump);
-    const slow = new Promise<{ ok: false; message: string }>((resolve) => {
-      timer = window.setTimeout(
-        () => resolve({ ok: false, message: "The camera did not answer. Check the browser's camera permission, then try again." }),
-        CAMERA_TIMEOUT_MS,
-      );
-    });
-    const result = await Promise.race([attempt, slow]);
-    window.clearTimeout(timer);
-    return result;
-  }
-
-  async function toggleCam() {
-    const me = room()?.localParticipant;
-    if (!me) return;
-    setError("");
-    const next = !camShown();
-    setCamWant(next);
-    if (!next) cameraOffInRooms();
-    if (camLooping) return;
-    camLooping = true;
-    const run = camRun;
-    try {
-      let tried: boolean | undefined;
-      for (;;) {
-        const want = camWant();
-        const active = room()?.localParticipant;
-        if (run !== camRun || want === undefined || !active) break;
-        if (active.isCameraEnabled === want) break;
-        if (tried === want) break; // it did not take; do not spin
-        tried = want;
-        const result = await moveCamera(active, want);
-        if (run !== camRun) return;
-        if (!result.ok) {
-          setError(result.message);
-          break;
-        }
-        bump();
-      }
-    } finally {
-      if (run === camRun) {
-        camLooping = false;
-        setCamWant(undefined);
-        bump();
-      }
-    }
-  }
-
-  // A click anywhere else closes the webcam list.
-  createEffect(() => {
-    if (!camMenu()) return;
+    if (!menuSlot()) return;
     const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.(".cam-wrap")) setCamMenu(false);
+      if (!(e.target as Element | null)?.closest?.(".cam-wrap")) setMenuSlot(0);
     };
     const refresh = () => void loadCameras();
     window.addEventListener("pointerdown", close);
@@ -811,20 +762,22 @@ export function VoiceRoom(props: {
     try {
       let devices = await navigator.mediaDevices.enumerateDevices();
       const named = devices.some((d) => d.kind === "videoinput" && d.deviceId && d.label);
-      if (!named && !camOn()) {
+      if (!named && !slotOn()[1] && !slotOn()[2]) {
         const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         probe.getTracks().forEach((track) => track.stop());
         devices = await navigator.mediaDevices.enumerateDevices();
       }
       let list = listedCameras(devices);
-      const live = local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
-      const liveId = live?.getSettings().deviceId ?? "";
-      const liveLabel = bareCameraLabel(live?.label ?? "");
-      if (liveId && liveLabel) list = list.map((cam) => (cam.id === liveId ? { ...cam, label: liveLabel } : cam));
+      for (const slot of [1, 2] as const) {
+        const live = slotPub[slot]?.track?.mediaStreamTrack;
+        const liveId = live?.getSettings().deviceId ?? "";
+        const liveLabel = bareCameraLabel(live?.label ?? "");
+        if (liveId && liveLabel) list = list.map((cam) => (cam.id === liveId ? { ...cam, label: liveLabel } : cam));
+      }
       setCamList(list);
       if (list.length === 0) setError("No webcam found.");
     } catch (err) {
-      setCamMenu(false);
+      setMenuSlot(0);
       if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the webcam.");
       else setError(err instanceof Error ? err.message : "The webcams could not be listed.");
     } finally {
@@ -832,45 +785,107 @@ export function VoiceRoom(props: {
     }
   }
 
-  function openCamMenu() {
-    if (camMenu()) {
-      setCamMenu(false);
+  function openSlotMenu(slot: WebcamSlot) {
+    if (menuSlot() === slot) {
+      setMenuSlot(0);
       return;
     }
     setError("");
-    setCamMenu(true);
+    setMenuSlot(slot);
     void loadCameras();
   }
 
-  /** Use this webcam. Picking the one that is already on turns the camera off. */
-  async function chooseWebcam(id: string) {
-    setCamMenu(false);
-    camDevice = id;
-    rememberWebcam(id);
+  async function stopSlot(slot: WebcamSlot) {
+    slotGen[slot]++;
+    const pub = slotPub[slot];
+    slotPub[slot] = undefined;
+    setSlotOn((prev) => ({ ...prev, [slot]: false }));
+    if (slot === 1) cameraOffInRooms();
+    if (pub?.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
+    pub?.track?.stop();
+    bump();
+  }
+
+  async function startSlot(slot: WebcamSlot) {
     const me = room()?.localParticipant;
-    const here = room();
-    if (!me || !here) return;
+    const id = slotDevice(slot);
+    if (!me || !id) {
+      setError(`Choose a webcam for screen ${slot}.`);
+      return;
+    }
+    const token = ++slotGen[slot];
+    setBusySlot(slot);
     setError("");
-    const picked = camList().find((cam) => cam.id === id);
-    if (camOn() && picked && usingCam(picked)) {
-      await toggleCam();
-      return;
-    }
-    if (camOn()) {
-      try {
-        const switched = await here.switchActiveDevice("videoinput", id, true);
-        if (!switched) setError("That webcam could not be turned on.");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "That webcam could not be turned on.");
+    let media: MediaStreamTrack | undefined;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: id },
+          frameRate: { ideal: 30 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      media = stream.getVideoTracks()[0];
+      if (token !== slotGen[slot] || !media) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
       }
-      bump();
+      media.contentHint = "motion";
+      media.addEventListener("ended", () => {
+        if (slotPub[slot]?.track?.mediaStreamTrack === media) void stopSlot(slot);
+      });
+      const published = await me.publishTrack(media, webcamPublish(slot));
+      if (token !== slotGen[slot]) {
+        await me.unpublishTrack(published.track ?? media).catch(() => {});
+        media.stop();
+        return;
+      }
+      slotPub[slot] = published;
+      setSlotOn((prev) => ({ ...prev, [slot]: true }));
+    } catch (err) {
+      media?.stop();
+      if (token === slotGen[slot]) {
+        if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the webcam.");
+        else if (err instanceof DOMException && (err.name === "NotFoundError" || err.name === "OverconstrainedError")) {
+          setError("That webcam could not be turned on.");
+        } else setError(err instanceof Error ? err.message : "That webcam could not be turned on.");
+      }
+    } finally {
+      if (token === slotGen[slot]) setBusySlot(0);
+    }
+    bump();
+  }
+
+  async function toggleSlot(slot: WebcamSlot) {
+    if (slotOn()[slot]) await stopSlot(slot);
+    else await startSlot(slot);
+  }
+
+  /** Use this webcam on this screen. Picking the one already there turns that screen off. */
+  async function chooseSlot(slot: WebcamSlot, id: string) {
+    setMenuSlot(0);
+    const other: WebcamSlot = slot === 1 ? 2 : 1;
+    const picked = camList().find((cam) => cam.id === id);
+    const otherDevice = other === 1 ? device1 : device2;
+    if (slotOn()[other] && (otherDevice === id || (picked && usingSlot(other, picked)))) {
+      setError("That webcam is on the other screen.");
       return;
     }
-    await toggleCam();
+    if (slot === 1) device1 = id;
+    else device2 = id;
+    rememberWebcam(slot, id);
+    if (slotOn()[slot] && picked && usingSlot(slot, picked)) {
+      await stopSlot(slot);
+      return;
+    }
+    if (slotOn()[slot]) await stopSlot(slot);
+    await startSlot(slot);
   }
 
   async function toggle(kind: "mic" | "cam" | "screen") {
-    if (kind === "cam") return toggleCam();
+    if (kind === "cam") return toggleSlot(1);
     const me = room()?.localParticipant;
     if (!me) return;
     setError("");
@@ -896,8 +911,9 @@ export function VoiceRoom(props: {
       for (const pub of p.trackPublications.values()) {
         if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO) continue;
         const second = pub.trackName === SECOND_SCREEN;
-        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
-        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
+        const webcam = pub.trackName === WEBCAM_SCREEN[1] ? 1 : pub.trackName === WEBCAM_SCREEN[2] ? 2 : 0;
+        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second && !webcam)) continue;
+        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second, webcam: webcam || undefined });
       }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
@@ -1366,7 +1382,7 @@ export function VoiceRoom(props: {
                 onFrame={pip() ? setPipWide : undefined}
                 tile={tile}
                 version={version()}
-                name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
+                name={tile.screen ? `${nameOf(tile.participant)}'s ${screenLabel(tile)}` : nameOf(tile.participant)}
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
@@ -1374,7 +1390,7 @@ export function VoiceRoom(props: {
                 canZoom={Boolean(spot()) && tile.screen && focus() === tile.key}
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
-                forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
+                forceOff={false}
                 stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant)}
                 swapped={swapped().has(tile.participant.identity)}
                 onSwap={() => swap(tile.participant.identity)}
@@ -1413,6 +1429,61 @@ export function VoiceRoom(props: {
           )}
         </For>
       </>
+    );
+  }
+
+  function WebcamSlotMenu(menuProps: { slot: WebcamSlot }) {
+    const slot = () => menuProps.slot;
+    return (
+      <div
+        class="cam-wrap"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && menuSlot() === slot()) {
+            setMenuSlot(0);
+            e.preventDefault();
+          }
+        }}
+      >
+        <button
+          type="button"
+          class="dock-btn"
+          aria-pressed={slotOn()[slot()]}
+          aria-haspopup="menu"
+          aria-expanded={menuSlot() === slot()}
+          onClick={() => openSlotMenu(slot())}
+        >
+          {busySlot() === slot() ? "Starting…" : `Screen ${slot()}`} ▴
+        </button>
+        <Show when={menuSlot() === slot()}>
+          <div class="dock-menu" role="menu" aria-label={`Screen ${slot()} webcam`}>
+            <Show when={camListBusy() && camList().length === 0}>
+              <button type="button" disabled>
+                <span>Finding webcams…</span>
+              </button>
+            </Show>
+            <For each={camList()}>
+              {(cam) => (
+                <button type="button" role="menuitem" onClick={() => void chooseSlot(slot(), cam.id)}>
+                  <span>{cam.label}</span>
+                  <span aria-hidden="true">{usingSlot(slot(), cam) ? "✓" : ""}</span>
+                </button>
+              )}
+            </For>
+            <Show when={slotOn()[slot()] && !camListBusy()}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuSlot(0);
+                  void stopSlot(slot());
+                }}
+              >
+                <span>Screen off</span>
+              </button>
+            </Show>
+          </div>
+        </Show>
+      </div>
     );
   }
 
@@ -1478,55 +1549,10 @@ export function VoiceRoom(props: {
           <Show
             when={props.camera}
             fallback={
-              <div
-                class="cam-wrap"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && camMenu()) {
-                    setCamMenu(false);
-                    e.preventDefault();
-                  }
-                }}
-              >
-                <button
-                  type="button"
-                  class="dock-btn"
-                  aria-pressed={camShown()}
-                  aria-haspopup="menu"
-                  aria-expanded={camMenu()}
-                  onClick={() => openCamMenu()}
-                >
-                  {camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera"} ▴
-                </button>
-                <Show when={camMenu()}>
-                  <div class="dock-menu" role="menu" aria-label="Webcams">
-                    <Show when={camListBusy() && camList().length === 0}>
-                      <button type="button" disabled>
-                        <span>Finding webcams…</span>
-                      </button>
-                    </Show>
-                    <For each={camList()}>
-                      {(cam) => (
-                        <button type="button" role="menuitem" onClick={() => void chooseWebcam(cam.id)}>
-                          <span>{cam.label}</span>
-                          <span aria-hidden="true">{usingCam(cam) ? "✓" : ""}</span>
-                        </button>
-                      )}
-                    </For>
-                    <Show when={camOn() && !camListBusy()}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setCamMenu(false);
-                          void toggleCam();
-                        }}
-                      >
-                        <span>Camera off</span>
-                      </button>
-                    </Show>
-                  </div>
-                </Show>
-              </div>
+              <>
+                <WebcamSlotMenu slot={1} />
+                <WebcamSlotMenu slot={2} />
+              </>
             }
           >
             {(cam) => (
