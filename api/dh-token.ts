@@ -93,7 +93,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const headers = { Authorization: `Bearer ${idToken}` };
   const serverRes = await fetch(`${FIRESTORE}/servers/${serverId}`, { headers });
   if (serverRes.status === 401) return send(res, 401, { error: "Your login has expired. Log in again." });
-  if (!serverRes.ok) return send(res, 403, { error: "You are not in this server" });
+  if (!serverRes.ok) {
+    const errText = await serverRes.text();
+    let fsError = "";
+    try {
+      fsError = String(JSON.parse(errText).error?.status ?? "");
+    } catch {
+      fsError = "";
+    }
+    console.log(JSON.stringify({ step: "server", fs: serverRes.status, fsError }));
+    return send(res, 403, { error: "You are not in this server" });
+  }
 
   const claims = claimsOf(idToken);
   const uid = claims.sub ?? "";
@@ -107,10 +117,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const members = server.fields?.memberUids?.arrayValue?.values?.map((v) => v.stringValue) ?? [];
   const ownerUid = server.fields?.ownerUid?.stringValue ?? "";
   const open = server.fields?.open?.booleanValue === true;
-  if (!uid || (uid !== ownerUid && !members.includes(uid) && !open)) return send(res, 403, { error: "You are not in this server" });
+  const owner = Boolean(uid) && uid === ownerUid;
+  const member = Boolean(uid) && members.includes(uid);
+  if (!owner && !member && !open) {
+    console.log(JSON.stringify({ step: "check", open, owner, member, count: members.length, uid: Boolean(uid) }));
+    return send(res, 403, { error: "You are not in this server" });
+  }
 
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
-  if (!channelRes.ok) return send(res, 404, { error: "That channel is gone" });
+  if (!channelRes.ok) {
+    console.log(JSON.stringify({ step: "channel", fs: channelRes.status }));
+    return send(res, 404, { error: "That channel is gone" });
+  }
 
   // The tile's 3D room (room.html) is its own LiveKit room, apart from the
   // videochat, so walking around in it never shows up as a call tile.
