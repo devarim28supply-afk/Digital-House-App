@@ -13,6 +13,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { Room, RoomEvent, Track } from "livekit-client";
 
 import { auth, db } from "../firebase";
+import { EYE_GAP, EYE_RADIUS, renderEyes, sampleEye } from "./eye";
 import { autoCaptions } from "./livecaptions";
 import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
@@ -818,9 +819,12 @@ function makeAvatar(mine) {
   el.append(plate, back);
   const tags = [];
   if (!mine) {
+    // The name clears the three.js eye, which sits just above the plate.
+    const aboveEye = Math.round((EYE_GAP + EYE_RADIUS * 2 + 6) * (360 / PLATE_H));
     for (const side of ["front", "back"]) {
       const tag = document.createElement("div");
       tag.className = `tag ${side}`;
+      tag.style.marginBottom = aboveEye + "px";
       el.append(tag);
       tags.push(tag);
     }
@@ -887,6 +891,7 @@ function roomBehind(bx, bz) {
 
 // Only draws when something changed.
 let queued = false;
+let eyeCam = null;
 function draw() {
   if (queued) return;
   queued = true;
@@ -902,8 +907,13 @@ function draw() {
     world.style.transform =
       `translateZ(${perspective}px) rotateX(${me.pitch}deg) rotateY(${me.yaw}deg) ` +
       `translate3d(${-cx}px, ${-cy}px, ${-cz}px)`;
+    eyeCam = {
+      x: cx, y: cy, z: cz, yaw: me.yaw, pitch: me.pitch,
+      perspective, width: innerWidth, height: innerHeight,
+    };
     mine.el.classList.toggle("hidden", !third);
-    placeAvatar(mine, { ...me, ...shown, yaw: bodyYaw() });
+    placeAvatar(mine, { ...me, ...shown, yaw: bodyYaw(), gaze: me.yaw });
+    publishEyes();
     sendPose();
   });
 }
@@ -1146,6 +1156,29 @@ function setThird(on) {
   remember("room_view", on ? "third" : "first");
   draw();
 }
+// Local check only. A plate stands in front of the camera, facing it.
+// extraYaw is the person's right. Positive pitch looks up.
+if (import.meta.env.DEV) {
+  window.__roomShowEye = (extraYaw, pitch) => {
+    const cy = H / 2 - EYE;
+    world.style.transform =
+      `translateZ(${perspective}px) rotateX(0deg) rotateY(0deg) translate3d(0px, ${-cy}px, 0px)`;
+    mine.el.classList.remove("hidden");
+    mine.el.style.transform =
+      `translate3d(0px, ${cy}px, -220px) rotateY(0deg) scale(${PLATE_H / 360})`;
+    renderEyes([{
+      x: 0,
+      y: cy - (PLATE_H / 2 + EYE_GAP + EYE_RADIUS),
+      z: -220,
+      gaze: 180 + extraYaw,
+      pitch,
+    }], {
+      x: 0, y: cy, z: 0, yaw: 0, pitch: 0,
+      perspective, width: innerWidth, height: innerHeight,
+    }, view);
+    return sampleEye();
+  };
+}
 camBtn.addEventListener("click", () => setCamera(!stream));
 shapeBtn.addEventListener("click", () => setShape(!isHex()));
 povBtn.addEventListener("click", () => setThird(!third));
@@ -1221,7 +1254,8 @@ function sendPose(force = false) {
   if (!room || room.state !== "connected") return;
   const pose = JSON.stringify({
     x: Math.round(me.x), z: Math.round(me.z),
-    yaw: Math.round(bodyYaw() * 10) / 10, pitch: Math.round(me.pitch * 10) / 10,
+    yaw: Math.round(bodyYaw() * 10) / 10, gaze: Math.round(me.yaw * 10) / 10,
+    pitch: Math.round(me.pitch * 10) / 10,
     eye: me.eye, seat: me.seat,
     hex: isHex(), cam: Boolean(stream),
     cx: Math.round(shown.cx), cy: Math.round(shown.cy), zoom: Math.round(shown.zoom * 1000) / 1000,
@@ -1252,7 +1286,7 @@ function addPerson(p, from) {
   let person = people.get(p.identity);
   if (!person) {
     person = makeAvatar(false);
-    const start = { x: 0, z: 0, yaw: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
+    const start = { x: 0, z: 0, yaw: 0, gaze: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
     person.at = { ...start };
     person.to = { ...start };
     person.poseAt = 0;
@@ -1302,14 +1336,38 @@ function onPose(p, data) {
   const first = person.el.classList.contains("hidden");
   person.el.classList.remove("hidden");
   person.el.classList.toggle("hexagon", Boolean(pose.hex));
+  const yaw = +pose.yaw || 0;
   Object.assign(person.to, {
-    x: +pose.x || 0, z: +pose.z || 0, yaw: +pose.yaw || 0, pitch: +pose.pitch || 0,
+    x: +pose.x || 0, z: +pose.z || 0, yaw,
+    gaze: Number.isFinite(+pose.gaze) ? +pose.gaze : yaw,
+    pitch: +pose.pitch || 0,
     eye: clamp(+pose.eye || EYE, 60, 200),
     cx: +pose.cx || SET_W / 2, cy: +pose.cy || SET_H / 2, zoom: +pose.zoom || 1,
   });
   person.poseAt = performance.now();
   if (first) Object.assign(person.at, person.to);
   glidePeople();
+}
+
+// The eye is the three.js mesh. y is the room's CSS y (positive down).
+function eyeEntries() {
+  const list = [];
+  const add = (av, p) => {
+    if (!p || av.el.classList.contains("hidden")) return;
+    list.push({
+      x: p.x,
+      y: H / 2 - (p.eye ?? EYE) - (PLATE_H / 2 + EYE_GAP + EYE_RADIUS),
+      z: p.z,
+      gaze: p.gaze ?? p.yaw,
+      pitch: p.pitch || 0,
+    });
+  };
+  add(mine, { ...me, yaw: bodyYaw(), gaze: me.yaw, eye: me.eye });
+  for (const person of people.values()) add(person, person.at);
+  return list;
+}
+function publishEyes() {
+  if (eyeCam) renderEyes(eyeEntries(), eyeCam, view);
 }
 
 // Others glide to where their last pose put them, then everything stops.
@@ -1326,12 +1384,18 @@ function peopleStep() {
     // yaw goes the short way round
     const turn = ((((to.yaw - at.yaw) % 360) + 540) % 360) - 180;
     at.yaw += turn * 0.3;
+    if (at.gaze == null) at.gaze = at.yaw;
+    if (to.gaze == null) to.gaze = to.yaw;
+    const gturn = ((((to.gaze - at.gaze) % 360) + 540) % 360) - 180;
+    at.gaze += gturn * 0.3;
     for (const k of ["x", "z", "pitch", "eye", "cx", "cy"]) at[k] += (to[k] - at[k]) * 0.3;
     at.zoom += (to.zoom - at.zoom) * 0.3;
-    if (Math.abs(turn) > 0.1 || ["x", "z", "pitch", "eye", "cx", "cy"].some((k) => Math.abs(to[k] - at[k]) > 0.2) ||
+    if (Math.abs(turn) > 0.1 || Math.abs(gturn) > 0.1 ||
+        ["x", "z", "pitch", "eye", "cx", "cy"].some((k) => Math.abs(to[k] - at[k]) > 0.2) ||
         Math.abs(to.zoom - at.zoom) > 0.001) moving = true;
     placeAvatar(person, at);
   }
+  publishEyes();
   if (moving) requestAnimationFrame(peopleStep);
   else peopleGliding = false;
 }
@@ -1488,7 +1552,7 @@ function placeFromCall() {
     } else {
       to = { ...(middleSpot(id) ?? { x: 0, z: 0 }), yaw: 0, eye: EYE };
     }
-    Object.assign(person.to, to, { pitch: 0, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 });
+    Object.assign(person.to, to, { pitch: 0, gaze: to.yaw, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 });
     if (person.el.classList.contains("hidden")) {
       person.el.classList.remove("hidden");
       Object.assign(person.at, person.to);
