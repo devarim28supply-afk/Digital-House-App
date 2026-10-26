@@ -3179,6 +3179,7 @@ img.live-tile-still {
   position: absolute;
   left: 10px;
   bottom: 10px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3191,11 +3192,15 @@ img.live-tile-still {
   place-items: center;
   width: 24px;
   height: 24px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
+  font: inherit;
   font-size: 10px;
   font-weight: 700;
   color: #fff;
   opacity: 0.6;
+  cursor: pointer;
   transition: width 0.4s ease, height 0.4s ease, opacity 0.4s ease, box-shadow 0.4s ease;
 }
 .team-face.on {
@@ -3204,6 +3209,14 @@ img.live-tile-still {
   font-size: 13px;
   opacity: 1;
   box-shadow: 0 0 0 2px #ff3b3b, 0 0 12px #ff3b3b;
+}
+/* held on this player until the same face is clicked again */
+.team-face.locked {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+  opacity: 1;
+  box-shadow: 0 0 0 2px #fff, 0 0 12px #fff;
 }
 
 /* ---- side panels push the page instead of covering it (Kaalob's feedback) ----

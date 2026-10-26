@@ -1950,7 +1950,8 @@ const TEAM_FADE_MS = 1000;
  * The next stream fades in over the current one (two videos, both playing
  * through the fade, so it never goes black). Instead of a name, every
  * teammate's profile photo sits in a row; the one playing now is bigger
- * and glows.
+ * and glows. Click a photo to stay on that player's stream; click it again
+ * to go back to the rotation.
  */
 function TeamScreen(props: {
   uids: string[];
@@ -1965,9 +1966,34 @@ function TeamScreen(props: {
   const [front, setFront] = createSignal(0);
   const shown: (Track | undefined)[] = [undefined, undefined];
   const [turn, setTurn] = createSignal(0);
-  const timer = window.setInterval(() => setTurn((t) => t + 1), TEAM_TURN_MS);
+  // a clicked face: stay on that stream until the same face is clicked again
+  const [locked, setLocked] = createSignal<string | undefined>();
+  const timer = window.setInterval(() => {
+    if (!locked()) setTurn((t) => t + 1);
+  }, TEAM_TURN_MS);
   onCleanup(() => window.clearInterval(timer));
-  const current = () => props.uids[turn() % props.uids.length];
+  createEffect(() => {
+    const lock = locked();
+    if (lock && !props.uids.includes(lock)) setLocked(undefined);
+  });
+  const current = () => {
+    const lock = locked();
+    if (lock && props.uids.includes(lock)) return lock;
+    return props.uids[turn() % props.uids.length];
+  };
+  // Click the face that is already locked to let the 10 s rotation resume
+  // from that player. Click any other face to hold their stream instead.
+  function toggleLock(uid: string, e: MouseEvent) {
+    e.stopPropagation();
+    setLocked((cur) => {
+      if (cur === uid) {
+        const i = props.uids.indexOf(uid);
+        if (i >= 0) setTurn(i);
+        return undefined;
+      }
+      return uid;
+    });
+  }
   const track = () => props.streamFor(current());
   let fadeTimer = 0;
   createEffect(() => {
@@ -2012,15 +2038,20 @@ function TeamScreen(props: {
         <span class="live-dot" aria-hidden="true" />
         <For each={props.uids}>
           {(uid) => (
-            <span
+            <button
+              type="button"
               class="team-face"
-              classList={{ on: uid === current() }}
+              classList={{ on: uid === current(), locked: uid === locked() }}
               style={faceStyle(props.profileOf(uid))}
-              title={props.nameOf(uid)}
-              aria-label={props.nameOf(uid)}
+              title={uid === locked() ? `Locked on ${props.nameOf(uid)}. Click again to unlock.` : `Watch ${props.nameOf(uid)}`}
+              aria-label={uid === locked() ? `Locked on ${props.nameOf(uid)}. Click again to unlock.` : `Watch ${props.nameOf(uid)}`}
+              aria-pressed={uid === locked()}
+              onClick={(e) => toggleLock(uid, e)}
+              onDblClick={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
             >
               {faceText(props.profileOf(uid), props.nameOf(uid))}
-            </span>
+            </button>
           )}
         </For>
       </span>
