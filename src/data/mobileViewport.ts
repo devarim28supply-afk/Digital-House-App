@@ -14,8 +14,10 @@ function update() {
     }
     // Don't reflow the interface during pinch zoom.
     if (viewport && Math.abs(viewport.scale - 1) > 0.05) return;
-    root.style.setProperty("--mobile-viewport-height",`${viewport?.height ?? window.innerHeight}px`);
-    root.style.setProperty("--mobile-viewport-top",`${viewport?.offsetTop ?? 0}px`);
+    const height=`${Math.round(viewport?.height ?? window.innerHeight)}px`;
+    if(root.style.getPropertyValue("--mobile-viewport-height") !== height) root.style.setProperty("--mobile-viewport-height",height);
+    const top=`${Math.round(viewport?.offsetTop ?? 0)}px`;
+    if(root.style.getPropertyValue("--mobile-viewport-top") !== top) root.style.setProperty("--mobile-viewport-top",top);
     root.dataset.mobileKeyboard = String(window.innerHeight - (viewport?.height ?? window.innerHeight) > 100);
   });
 }

@@ -3,8 +3,8 @@ import { createSignal } from "solid-js";
 export type LayoutTheme = "smoky" | "classic";
 const STORAGE_KEY = "dh_layout_theme";
 function readTheme(): LayoutTheme {
-  try { return localStorage.getItem(STORAGE_KEY) === "classic" ? "classic" : "smoky"; }
-  catch { return "smoky"; }
+  try { return localStorage.getItem(STORAGE_KEY) === "smoky" ? "smoky" : "classic"; }
+  catch { return "classic"; }
 }
 const [layoutTheme, updateTheme] = createSignal<LayoutTheme>(readTheme());
 export { layoutTheme };

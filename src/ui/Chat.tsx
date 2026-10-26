@@ -56,6 +56,20 @@ function sizeLabel(bytes: number) {
 }
 
 /** A sent picture or video shows itself; any other file is a download card. */
+/** Defer mobile media requests until an attachment approaches the viewport. */
+function prepareChatMedia(node: HTMLMediaElement, url: string) {
+  if(!window.matchMedia("(max-width:600px)").matches || !("IntersectionObserver" in window)) {node.src=url;return;}
+  node.preload="none";
+  let pending: number | undefined;
+  const observer=new IntersectionObserver(entries=>{
+    if(!entries.some(entry=>entry.isIntersecting)) return;
+    observer.disconnect();
+    pending=window.setTimeout(()=>{node.preload="metadata";node.src=url;},100);
+  },{rootMargin:"300px 0px"});
+  observer.observe(node);
+  onCleanup(()=>{observer.disconnect();clearTimeout(pending);});
+}
+
 function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
   const kind = () => props.file.type.split("/")[0];
   return (
@@ -75,14 +89,14 @@ function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
     >
       <Show when={kind() === "image"}>
         <button type="button" class="msg-media" title="Open" onClick={() => props.onOpen(props.file)}>
-          <img src={props.file.url} alt={props.file.name} loading="lazy" />
+          <img src={props.file.url} alt={props.file.name} loading="lazy" decoding="async" />
         </button>
       </Show>
       <Show when={kind() === "video"}>
-        <video class="msg-media" src={props.file.url} controls preload="metadata" playsinline />
+        <video ref={node=>prepareChatMedia(node,props.file.url)} class="msg-media" controls preload="metadata" playsinline />
       </Show>
       <Show when={kind() === "audio"}>
-        <audio class="msg-audio" src={props.file.url} controls preload="metadata" />
+        <audio ref={node=>prepareChatMedia(node,props.file.url)} class="msg-audio" controls preload="metadata" />
       </Show>
     </Show>
   );
@@ -100,7 +114,7 @@ function Bits(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<
     <For each={props.text.split(EMOJI_TOKEN)}>
       {(bit) => {
         const emoji = /^:[a-z0-9_]{2,32}:$/.test(bit) ? props.emojis.get(bit.slice(1, -1)) : undefined;
-        if (emoji) return <img class="emoji" src={emoji.url} alt={bit} title={bit} />;
+        if (emoji) return <img class="emoji" src={emoji.url} alt={bit} title={bit} decoding="async" />;
         return (
           <For each={bit.split(MENTION)}>
             {(word) => {
@@ -259,7 +273,13 @@ export function Chat(props: {
           // after the first load, any message not seen before is new
           if (seen && rows.some((r) => !seen!.has(r.id))) props.onNewMessage?.();
           seen = new Set(rows.map((r) => r.id));
-          setMessages(rows);
+          setMessages(previous => {
+            const existing=new Map(previous.map(message=>[message.id,message]));
+            return rows.map(message=>{
+              const old=existing.get(message.id);
+              return old && old.authorUid === message.authorUid && old.text === message.text && old.createdAt?.getTime() === message.createdAt?.getTime() && old.editedAt?.getTime() === message.editedAt?.getTime() && JSON.stringify(old.files) === JSON.stringify(message.files) && JSON.stringify(old.sticker) === JSON.stringify(message.sticker) && JSON.stringify(old.reactions) === JSON.stringify(message.reactions) ? old : message;
+            });
+          });
           setLoaded(true);
         });
         onCleanup(stop);
@@ -588,7 +608,7 @@ export function Chat(props: {
                       </Show>
                       <Show when={m.sticker}>
                         {(sticker) => (
-                          <img class="msg-sticker" src={sticker().url} alt={sticker().name} title={sticker().name} loading="lazy" />
+                          <img class="msg-sticker" src={sticker().url} alt={sticker().name} title={sticker().name} loading="lazy" decoding="async" />
                         )}
                       </Show>
                       <Show when={Object.values(m.reactions).some((who) => who.length)}>
