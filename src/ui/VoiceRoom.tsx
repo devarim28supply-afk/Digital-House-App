@@ -76,14 +76,8 @@ const STREAM_CAM_PUBLISH: TrackPublishOptions = {
   degradationPreference: "maintain-framerate",
   videoEncoding: { maxBitrate: 700_000, maxFramerate: 30, priority: "low" },
 };
-// stream mode sizes: full 1080p, or a lighter 720p (about half the work and upload)
-// Sized for a home upload: every extra copy (simulcast layer) is sent too, so
-// only one small 360p copy goes with the stream, for the LIVE tile previews.
-const STREAM_QUALITY = {
-  "1080": { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] },
-  "720": { width: 1280, height: 720, maxBitrate: 1_500_000, layers: [VideoPresets.h360] },
-} as const;
-type StreamQuality = keyof typeof STREAM_QUALITY;
+// Stream mode is one capture. A small copy goes with it for the LIVE tile previews.
+const STREAM_SIZE = { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] };
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
 const ATTENTION_TOPIC = "attention";
 const ATTENTION_MS = 3000;
@@ -565,35 +559,38 @@ export function VoiceRoom(props: {
   // ---- stream mode --------------------------------------------------------
   let streamPubs: LocalTrackPublication[] = [];
   const [streamOn, setStreamOn] = createSignal(false);
-  async function toggleStream(quality: StreamQuality = "1080") {
+  const [streamBusy, setStreamBusy] = createSignal(false);
+  async function toggleStream() {
     const me = room()?.localParticipant;
-    if (!me) return;
+    if (!me || streamBusy()) return;
     setError("");
     if (streamPubs.length) {
       await stopStream();
       return;
     }
+    setStreamBusy(true);
     try {
       // a game or a window, smooth, with its sound if "share audio" is ticked
-      const size = STREAM_QUALITY[quality];
       const media = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: 30 }, width: { ideal: size.width }, height: { ideal: size.height } },
+        video: { frameRate: { ideal: 30 }, width: { ideal: STREAM_SIZE.width }, height: { ideal: STREAM_SIZE.height } },
         audio: true,
       });
       const video = media.getVideoTracks()[0];
-      if (!video) return;
+      if (!video) {
+        media.getTracks().forEach((track) => track.stop());
+        return;
+      }
       video.contentHint = "motion";
       video.addEventListener("ended", () => void stopStream());
       streamPubs = [
         await me.publishTrack(video, {
           name: STREAM,
           source: Track.Source.Unknown,
-          // sent in three sizes: the small LIVE tile previews and small tiles
-          // take a small one, the big view takes the full 1080p
+          // the small LIVE tile previews and small tiles take the small copy
           simulcast: true,
           // low priority: when the upload is tight, the stream gives way to the webcam
-          videoEncoding: { maxBitrate: size.maxBitrate, maxFramerate: 30, priority: "low" },
-          videoSimulcastLayers: [...size.layers],
+          videoEncoding: { maxBitrate: STREAM_SIZE.maxBitrate, maxFramerate: 30, priority: "low" },
+          videoSimulcastLayers: [...STREAM_SIZE.layers],
           degradationPreference: "balanced",
         }),
       ];
@@ -606,6 +603,8 @@ export function VoiceRoom(props: {
       if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
         setError(err instanceof Error ? err.message : "That could not be streamed.");
       }
+    } finally {
+      setStreamBusy(false);
     }
     bump();
   }
@@ -897,9 +896,10 @@ export function VoiceRoom(props: {
       setStreamMenu(false);
       return;
     }
+    if (streamOn() && otherStreamers().length === 0 && !team()) return;
     setError("");
     setStreamMenu(true);
-    void loadCameras();
+    if (!streamOn()) void loadCameras();
   }
 
   async function stopStreamCam() {
@@ -1551,15 +1551,22 @@ export function VoiceRoom(props: {
           }
         }}
       >
+        <Show when={CAN_SHARE}>
+          <button type="button" class="dock-btn" aria-pressed={streamOn()} onClick={() => void toggleStream()}>
+            {streamBusy() ? "Starting…" : "Stream mode"}
+          </button>
+        </Show>
         <button
           type="button"
           class="dock-btn"
-          aria-pressed={streamOn() || streamCamOn()}
+          classList={{ "menu-caret": CAN_SHARE }}
+          aria-pressed={streamCamOn()}
           aria-haspopup="menu"
           aria-expanded={streamMenu()}
+          aria-label={CAN_SHARE ? "Stream" : undefined}
           onClick={() => openStreamMenu()}
         >
-          {streamOn() ? "Stream mode" : streamCamBusy() ? "Starting…" : "Stream"} ▴
+          {streamCamBusy() ? "Starting…" : CAN_SHARE ? "▴" : "Stream ▴"}
         </button>
         <Show when={streamMenu()}>
           <div class="dock-menu" role="menu" aria-label={streamOn() ? "Stream mode" : "Stream"}>
@@ -1592,41 +1599,9 @@ export function VoiceRoom(props: {
                       <span>Stream off</span>
                     </button>
                   </Show>
-                  <Show when={CAN_SHARE}>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setStreamMenu(false);
-                        void toggleStream("1080");
-                      }}
-                    >
-                      <span>Start stream mode (1080p)</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setStreamMenu(false);
-                        void toggleStream("720");
-                      }}
-                    >
-                      <span>Start stream mode (720p, lighter)</span>
-                    </button>
-                  </Show>
                 </>
               }
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setStreamMenu(false);
-                  void toggleStream("1080");
-                }}
-              >
-                <span>Stop stream mode</span>
-              </button>
               <For each={otherStreamers()}>
                 {(p) => (
                   <button
