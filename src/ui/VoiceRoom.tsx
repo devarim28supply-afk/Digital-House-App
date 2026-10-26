@@ -20,6 +20,7 @@ import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
 import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
+import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 
@@ -80,6 +81,7 @@ const STREAM_CAM_PUBLISH: TrackPublishOptions = {
 const STREAM_SIZE = { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] };
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
 const ATTENTION_TOPIC = "attention";
+const TEAM_TOPIC = "dh-team";
 const ATTENTION_MS = 3000;
 type InsetCorner = "tl" | "tr" | "bl" | "br";
 // the small picture's width, in % of its tile: from this big down to this small
@@ -663,13 +665,60 @@ export function VoiceRoom(props: {
 
   // ---- team up: two (or more) streams of the same game share one LIVE tile ---
   const [team, setTeam] = createSignal<string | undefined>();
+  const [teamOffer, setTeamOffer] = createSignal(false);
+  const [teamWait, setTeamWait] = createSignal<string | undefined>();
+  const [teamAsk, setTeamAsk] = createSignal<string | undefined>();
   /** Team up with another streamer here (their uid), or undefined to leave the team. */
   function teamUp(uid: string | undefined) {
     setTeam(uid);
-    if (streamOn()) setStreamingIn({ serverId: props.serverId, channelId: props.channel.id, ...(uid ? { team: uid } : {}) });
+    if (streamOn() || streamCamOn()) setStreamingIn({ serverId: props.serverId, channelId: props.channel.id, ...(uid ? { team: uid } : {}) });
   }
+  const streamingNow = () => streamOn() || streamCamOn();
   // the other people streaming in this videochat: who you can team up with
-  const otherStreamers = () => [...(room()?.remoteParticipants.values() ?? [])].filter((p) => streamOf(p));
+  const otherStreamers = () => [...(room()?.remoteParticipants.values() ?? [])].filter((p) => streamOf(p) || streamCamOf(p));
+  async function sendTeam(to: string, type: "ask" | "yes" | "no" | "cancel" | "leave") {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    await me.publishData(new TextEncoder().encode(JSON.stringify({ type })), {
+      reliable: true,
+      topic: TEAM_TOPIC,
+      destinationIdentities: [to],
+    });
+  }
+  function leaveTeam() {
+    const mate = team();
+    setTeamOffer(false);
+    setTeamWait(undefined);
+    if (mate) void sendTeam(mate, "leave");
+    teamUp(undefined);
+  }
+  async function askTeam(uid: string) {
+    setTeamOffer(false);
+    setTeamWait(uid);
+    try {
+      await sendTeam(uid, "ask");
+    } catch {
+      setTeamWait(undefined);
+      setError("Could not send that. Check your connection.");
+    }
+  }
+  function cancelAsk() {
+    const uid = teamWait();
+    setTeamWait(undefined);
+    if (uid) void sendTeam(uid, "cancel");
+  }
+  async function answerTeam(yes: boolean) {
+    const uid = teamAsk();
+    setTeamAsk(undefined);
+    if (!uid) return;
+    try {
+      await sendTeam(uid, yes ? "yes" : "no");
+    } catch {
+      setError("Could not send that. Check your connection.");
+      return;
+    }
+    if (yes) teamUp(uid);
+  }
 
   async function stopStream() {
     const pubs = streamPubs;
@@ -914,8 +963,15 @@ export function VoiceRoom(props: {
     const pub = streamCamPub;
     streamCamPub = undefined;
     setStreamCamOn(false);
+    const mate = team();
+    setTeam(undefined);
+    setTeamOffer(false);
+    setTeamWait(undefined);
+    setTeamAsk(undefined);
+    if (mate) void sendTeam(mate, "leave");
     if (pub?.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
     pub?.track?.stop();
+    if (!streamOn()) setStreamingIn(undefined);
     bump();
   }
 
@@ -967,6 +1023,8 @@ export function VoiceRoom(props: {
       }
       streamCamPub = published;
       setStreamCamOn(true);
+      setStreamingIn({ serverId: props.serverId, channelId: props.channel.id });
+      if (otherStreamers().length > 0) setTeamOffer(true);
     } catch (err) {
       media?.stop();
       if (token === streamCamGen) {
@@ -1039,6 +1097,47 @@ export function VoiceRoom(props: {
     const profile = props.profiles.get(p.identity);
     return displayName(profile, p.name || "Member");
   };
+  const personName = (uid: string) => {
+    const here = room();
+    const person = uid === here?.localParticipant.identity ? here.localParticipant : here?.remoteParticipants.get(uid);
+    return person ? nameOf(person) : displayName(props.profiles.get(uid), "Member");
+  };
+  createEffect(() => {
+    const current = room();
+    if (!current) return;
+    const onTeam = (payload: Uint8Array, participant?: Participant, _kind?: unknown, topic?: string) => {
+      if (topic !== TEAM_TOPIC || !participant) return;
+      let type = "";
+      try {
+        type = (JSON.parse(new TextDecoder().decode(payload)) as { type?: string }).type ?? "";
+      } catch {
+        return;
+      }
+      const from = participant.identity;
+      if (type === "ask") {
+        if (!streamingNow() || teamAsk() || teamWait() || team()) {
+          void sendTeam(from, "no");
+          return;
+        }
+        setTeamOffer(false);
+        setTeamAsk(from);
+        return;
+      }
+      if (type === "yes" && teamWait() === from) {
+        setTeamWait(undefined);
+        teamUp(from);
+        return;
+      }
+      if ((type === "no" || type === "cancel") && (teamWait() === from || teamAsk() === from)) {
+        setTeamWait(undefined);
+        if (teamAsk() === from) setTeamAsk(undefined);
+        return;
+      }
+      if (type === "leave" && team() === from) teamUp(undefined);
+    };
+    current.on(RoomEvent.DataReceived, onTeam);
+    onCleanup(() => current.off(RoomEvent.DataReceived, onTeam));
+  });
   // The side-bar TV, opened big, shows this same row of webcams underneath.
   // A watch-only wall must not replace the call you are actually in.
   createEffect(() => {
@@ -1121,7 +1220,7 @@ export function VoiceRoom(props: {
     const here = room();
     if (!here) return undefined;
     const participant = uid === here.localParticipant.identity ? here.localParticipant : here.remoteParticipants.get(uid);
-    return participant ? streamOf(participant) : undefined;
+    return participant ? streamOf(participant) ?? streamCamOf(participant) : undefined;
   };
   const people = () => tiles().length + loneRoomFaces().length + teamScreens().length;
   const readPip = (): PipSpot => {
@@ -1458,7 +1557,7 @@ export function VoiceRoom(props: {
       return;
     }
     const tile = tiles().find((t) => !t.screen && t.participant.identity === uid);
-    if (!tile || !streamOf(tile.participant)) return;
+    if (!tile || !(streamOf(tile.participant) || streamCamOf(tile.participant))) return;
     setFocus(tile.key);
     setSwapped((prev) => new Set(prev).add(uid));
     setWatchRequest(undefined);
@@ -1582,6 +1681,18 @@ export function VoiceRoom(props: {
                 </button>
               )}
             </For>
+            <Show when={team()}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setStreamMenu(false);
+                  leaveTeam();
+                }}
+              >
+                <span>Leave the team</span>
+              </button>
+            </Show>
             <Show when={streamCamOn() && !camListBusy()}>
               <button
                 type="button"
@@ -1766,6 +1877,44 @@ export function VoiceRoom(props: {
             Disconnect
           </button>
         </div>
+        <Modal title="Team up" open={teamOffer()} onClose={() => setTeamOffer(false)}>
+          <p class="modal-text">Team up with someone who is live? They have to say yes. Your face cameras stay on.</p>
+          <div class="team-picks">
+            <For each={otherStreamers()}>
+              {(p) => (
+                <button type="button" class="dock-btn" onClick={() => void askTeam(p.identity)}>
+                  {nameOf(p)}
+                </button>
+              )}
+            </For>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="dock-btn" onClick={() => setTeamOffer(false)}>
+              No
+            </button>
+          </div>
+        </Modal>
+        <Modal title="Team up" open={Boolean(teamWait())} onClose={cancelAsk}>
+          <p class="modal-text">Waiting for {teamWait() ? personName(teamWait()!) : "them"} to say yes.</p>
+          <div class="modal-actions">
+            <button type="button" class="dock-btn" onClick={cancelAsk}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+        <Modal title="Team up" open={Boolean(teamAsk())} onClose={() => void answerTeam(false)}>
+          <p class="modal-text">
+            {teamAsk() ? personName(teamAsk()!) : "Someone"} wants to team up. One screen shows each stream for 10 seconds.
+          </p>
+          <div class="modal-actions">
+            <button type="button" class="dock-btn" onClick={() => void answerTeam(false)}>
+              No
+            </button>
+            <button type="button" class="dock-btn" onClick={() => void answerTeam(true)}>
+              Approve
+            </button>
+          </div>
+        </Modal>
       </Show>
     </div>
   );

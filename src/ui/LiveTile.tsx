@@ -9,6 +9,8 @@ import { faceStyle, faceText } from "./Shell";
 
 // A team's LIVE tile shows each member this long, then the next (Kaalob).
 const ROTATE_MS = 10_000;
+/** The sidebar picture: a screen stream, or the Stream webcam. Never the primary camera. */
+const isLivePicture = (name: string) => name === "stream" || name === "webcam-2";
 
 /** A still picture of a video element (a small JPEG), or undefined with no frame yet. */
 function still(video: HTMLVideoElement | undefined, width: number) {
@@ -21,10 +23,10 @@ function still(video: HTMLVideoElement | undefined, width: number) {
 }
 
 /**
- * Someone is in stream mode: a LIVE tile at the top of the sidebar playing
- * their stream (no sound, never their webcam), their name at the bottom and a
- * glowing red LIVE (Kaalob's drawings). Clicking it takes you into that
- * videochat with their stream big.
+ * Someone is using Stream: a LIVE tile at the top of the sidebar playing
+ * their Stream webcam (no sound, never the primary webcam), their name at the
+ * bottom and a glowing red LIVE (Kaalob's drawings). Clicking it takes you
+ * into that videochat with their stream big.
  *
  * A team (streamers who teamed up for the same game) shares one tile: it
  * shows each member's stream for 10 seconds, then the next, round and round,
@@ -120,16 +122,16 @@ export function LiveTile(props: {
         if (!res.ok || !pass.url || !pass.token || gone) throw new Error("no pass");
         const next = new Room({ adaptiveStream: true });
         next
-          // only the members' streams: never a webcam (Kaalob), so none is downloaded
+          // the Stream picture only: the named stream, or the Stream webcam. Never the primary camera.
           .on(RoomEvent.TrackPublished, (pub, participant) => {
-            if (pub.trackName === "stream" && members.has(participant.identity)) pub.setSubscribed(true);
+            if (isLivePicture(pub.trackName) && members.has(participant.identity)) pub.setSubscribed(true);
           })
           .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
             if (!members.has(participant.identity) || track.kind !== Track.Kind.Video) return;
-            if (pub.trackName === "stream") put(participant.identity, track);
+            if (isLivePicture(pub.trackName)) put(participant.identity, track);
           })
           .on(RoomEvent.TrackUnsubscribed, (_track, pub, participant) => {
-            if (pub.trackName === "stream") put(participant.identity, undefined);
+            if (isLivePicture(pub.trackName)) put(participant.identity, undefined);
           })
           .on(RoomEvent.Disconnected, () => {
             setStreams(new Map());
@@ -139,7 +141,7 @@ export function LiveTile(props: {
         if (gone) return void next.disconnect();
         for (const p of next.remoteParticipants.values()) {
           if (!members.has(p.identity)) continue;
-          for (const pub of p.trackPublications.values()) if (pub.trackName === "stream") pub.setSubscribed(true);
+          for (const pub of p.trackPublications.values()) if (isLivePicture(pub.trackName)) pub.setSubscribed(true);
         }
         room = next;
       } catch {
