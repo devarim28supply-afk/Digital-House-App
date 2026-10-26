@@ -21,6 +21,7 @@ import { setCallFaces } from "../data/callFaces";
 import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { faceStyle, faceText } from "./Shell";
+import { type PipSpot, type ShareView, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 export async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -82,6 +83,9 @@ const INSET_MIN = 12;
 
 // the call grid: gap between tiles, and the small Room view's width (of a tile)
 const GAP = 10;
+// A phone's short side. Desktop windows are not phones, even when narrow.
+const PHONE_SHORT = 540;
+const COARSE_POINTER = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 const SMALL_ROOM_VIEW = 0.4;
 // double-click layout: this many small screens in the row under the big one
 const SPOT_ROW_MAX = 4;
@@ -202,7 +206,19 @@ export function VoiceRoom(props: {
       /* private mode */
     }
   }
-  const showingRoomView = () => Boolean(roomCamTrack()) && !roomViewHidden() && !props.noRoomViewTile;
+  // A phone call is only the people. The room itself is the Room button, so the
+  // in-call room camera stays out of these layouts. A desktop window, even a
+  // narrow one, is unchanged.
+  const [box, setBox] = createSignal({ w: 0, h: 0 });
+  const coarsePhone = () =>
+    COARSE_POINTER && Math.min(window.innerWidth, window.innerHeight) < PHONE_SHORT;
+  const phoneNow = () => {
+    const { w, h } = box();
+    if (w > 0 && h > 0) return COARSE_POINTER && Math.min(w, h) < PHONE_SHORT;
+    return coarsePhone();
+  };
+  const showingRoomView = () =>
+    Boolean(roomCamTrack()) && !roomViewHidden() && !props.noRoomViewTile && !phoneNow();
   let roomCamWatcher: Room | undefined;
   // Webcams of the people standing in the 3D room (their name -> video).
   const [roomFaces, setRoomFaces] = createSignal(new Map<string, RemoteTrack>());
@@ -787,19 +803,32 @@ export function VoiceRoom(props: {
   });
 
   // ---- the layout (Kaalob's drawings) --------------------------------------
-  // Every tile is one 16:9 size; the Room view is one of the tiles:
+  // Desktop: every tile is one 16:9 size; the Room view is one of the tiles:
   //   1 person   [you][Room view]
   //   2 people   the two stacked on the left, the Room view on the right, centred
   //   3 people   a 2x2 grid, the Room view in the last spot
   //   4 or more  everyone in the grid, the Room view small at the top right
-  const [box, setBox] = createSignal({ w: 0, h: 0 });
+  // Phone (pointer is coarse and the short side is under 540px): the room view
+  // stays hidden. 1-on-1 is the other person full-screen and your camera small,
+  // dragged to the top, left, right, or bottom. 3 people: two across the top,
+  // one across a taller bottom. 4 sideways: an even 2x2. 4 upright: one column.
+  // 5 or more stack and scroll. The picture inside each cell stays whole 16:9.
+  // A screen share is not one of those cells. It sits on the next page: swipe
+  // right to left to see the shares, tap one to open it beside the person
+  // sharing it, both as 16:9. Swipe left to right to come back.
+  let tilesEl: HTMLDivElement | undefined;
   let boxObserver: ResizeObserver | undefined;
   function watchBox(el: HTMLDivElement) {
+    tilesEl = el;
     boxObserver?.disconnect();
     boxObserver = new ResizeObserver(([entry]) => setBox({ w: entry.contentRect.width, h: entry.contentRect.height }));
     boxObserver.observe(el);
   }
-  onCleanup(() => boxObserver?.disconnect());
+  let shareAlive = true;
+  onCleanup(() => {
+    shareAlive = false;
+    boxObserver?.disconnect();
+  });
 
   // A team (streamers who teamed up, Kaalob): one extra screen in the grid,
   // showing each member's stream for 10 s in turn. Only members here now.
@@ -832,6 +861,31 @@ export function VoiceRoom(props: {
     return participant ? streamOf(participant) : undefined;
   };
   const people = () => tiles().length + loneRoomFaces().length + teamScreens().length;
+  const readPip = (): PipSpot => {
+    try {
+      const saved = localStorage.getItem("dh_phone_pip");
+      if (saved === "top" || saved === "left" || saved === "right" || saved === "bottom") return saved;
+    } catch {
+      /* private mode */
+    }
+    return "top";
+  };
+  const [pipSpot, setPipSpot] = createSignal<PipSpot>(readPip());
+  const [pipWide, setPipWide] = createSignal(window.innerWidth >= window.innerHeight);
+  const setPip = (spot: PipSpot) => {
+    setPipSpot(spot);
+    try {
+      localStorage.setItem("dh_phone_pip", spot);
+    } catch {
+      /* private mode */
+    }
+  };
+  // Phone share pager. The shelf and an entered share are the same page, to
+  // the right of the people. A tap enters; a swipe never does.
+  const [shareView, setShareView] = createSignal<ShareView>("people");
+  const [openShare, setOpenShare] = createSignal<string | undefined>();
+  const [shareDragX, setShareDragX] = createSignal(0);
+  const [shareDragging, setShareDragging] = createSignal(false);
   const layout = createMemo(() => {
     const n = people();
     const rv = showingRoomView();
@@ -839,7 +893,54 @@ export function VoiceRoom(props: {
     let rows: number;
     let small = false;
     const { w: boxW, h: boxH } = box();
-    // a phone held upright: one column, every tile full width, scrolling
+    const phone = phoneNow() && n > 0;
+    if (phone) {
+      const cams = tiles().filter((t) => !t.screen);
+      const screens = tiles().filter((t) => t.screen);
+      const local = cams.find((t) => t.participant.isLocal);
+      const keys = [
+        ...cams.filter((t) => t !== local).map((t) => t.key),
+        ...loneRoomFaces().map(([name]) => `face:${name}`),
+        ...teamScreens().map(teamKey),
+        ...(local ? [local.key] : []),
+      ];
+      const landscape = (boxW || window.innerWidth) >= (boxH || window.innerHeight);
+      const width = boxW || window.innerWidth;
+      const height = boxH || window.innerHeight;
+      const plan = phonePlan({
+        keys,
+        localKey: local?.key,
+        landscape,
+        width,
+        height,
+        pipSpot: pipSpot(),
+        pipWide: pipWide(),
+      });
+      const open = screens.find((t) => t.key === openShare());
+      const entered = shareView() === "open" && open ? open : undefined;
+      const sharePlaces = phoneSharePlaces({
+        screenKeys: screens.map((t) => t.key),
+        openKey: entered?.key,
+        sharerKey: entered ? `${entered.participant.identity}:cam` : undefined,
+        landscape,
+        width,
+        height,
+      });
+      return {
+        n: keys.length,
+        narrow: false,
+        phone: true,
+        scroll: plan.scroll,
+        pipKey: plan.pipKey,
+        places: { ...plan.places, ...sharePlaces } as Record<string, JSX.CSSProperties>,
+        small: false,
+        grid: plan.grid as JSX.CSSProperties,
+        cols: 1,
+        tileH: 0,
+        smallSize: { width: "0px", height: "0px" },
+      };
+    }
+    // a tall narrow desktop window: one column, every tile full width, scrolling
     const narrow = boxW > 0 && boxW < 560 && boxH > boxW;
     if (narrow) {
       cols = 1;
@@ -863,6 +964,10 @@ export function VoiceRoom(props: {
     return {
       n,
       narrow,
+      phone: false,
+      scroll: false,
+      pipKey: undefined as string | undefined,
+      places: undefined as Record<string, JSX.CSSProperties> | undefined,
       small,
       grid: {
         "grid-template-columns": `repeat(${cols}, ${tileW}px)${small ? ` ${smallW}px` : ""}`,
@@ -925,7 +1030,7 @@ export function VoiceRoom(props: {
   });
   const spot = createMemo(() => {
     const big = focus();
-    if (!big) return undefined;
+    if (!big || layout().phone) return undefined;
     const rest = order().filter((k) => k !== big);
     const { w, h } = box();
     // The first 4 small ones sit in a row under the big one; from the 6th
@@ -982,7 +1087,100 @@ export function VoiceRoom(props: {
     }
     return rects;
   });
-  const placeOf = (key: string, gridPlace: JSX.CSSProperties) => spot()?.get(key) ?? gridPlace;
+  const placeOf = (key: string, gridPlace: JSX.CSSProperties) => spot()?.get(key) ?? layout().places?.[key] ?? gridPlace;
+  const openBig = (key: string) => {
+    if (!layout().phone) toggleFocus(key);
+  };
+  // A share left the call: drop back. None left: the people page only.
+  createEffect(() => {
+    const keys = tiles()
+      .filter((t) => t.screen)
+      .map((t) => t.key);
+    if (keys.length === 0) {
+      setShareDragging(false);
+      setShareDragX(0);
+      setOpenShare(undefined);
+      setShareView("people");
+      return;
+    }
+    const open = openShare();
+    if (open && !keys.includes(open)) {
+      setOpenShare(undefined);
+      if (shareView() === "open") setShareView("shelf");
+    }
+  });
+  const shareOn = () => layout().phone && tiles().some((t) => t.screen) && shareView() !== "people";
+  const shareShift = () => {
+    const w = box().w;
+    const page = shareOn() ? 1 : 0;
+    return `translate3d(${Math.round(-page * w + shareDragX())}px, 0, 0)`;
+  };
+  // Follow the finger. The shelf does not slide onward into an entered share,
+  // and an entered share only nudges: letting go is what returns to the shelf.
+  function shareFollow(dx: number): number {
+    const w = Math.max(1, box().w);
+    const view = shareView();
+    if (view === "open") return Math.max(-72, Math.min(72, dx * 0.35));
+    if (view === "people") return dx > 0 ? Math.min(72, dx * 0.35) : Math.max(-w, dx);
+    return dx < 0 ? Math.max(-72, dx * 0.35) : Math.min(w, dx);
+  }
+  let shareGesture: { x: number; y: number; id: number; locked: boolean } | undefined;
+  function shareDown(e: PointerEvent) {
+    if (!layout().phone) return;
+    const el = e.target as HTMLElement | null;
+    if (!el || el.closest(".pip, .tile-inset, .inset-resize, .share-zoom, button")) return;
+    shareGesture = { x: e.clientX, y: e.clientY, id: e.pointerId, locked: false };
+  }
+  function shareMove(e: PointerEvent) {
+    const g = shareGesture;
+    if (!g || e.pointerId !== g.id) return;
+    const dx = e.clientX - g.x;
+    const dy = e.clientY - g.y;
+    if (!g.locked) {
+      if (Math.abs(dx) < 10) return;
+      if (Math.abs(dx) <= Math.abs(dy) || !tiles().some((t) => t.screen)) {
+        shareGesture = undefined;
+        return;
+      }
+      g.locked = true;
+      setShareDragging(true);
+      if (tilesEl) tilesEl.scrollTop = 0;
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* the pointer already ended */
+      }
+    }
+    if (e.cancelable) e.preventDefault();
+    setShareDragX(shareFollow(dx));
+  }
+  function shareUp(e: PointerEvent) {
+    const g = shareGesture;
+    if (!g || e.pointerId !== g.id) return;
+    shareGesture = undefined;
+    if (!g.locked) return;
+    const dx = e.clientX - g.x;
+    const next = shareSwipeTarget(shareView(), dx, box().w || 1);
+    setShareDragging(false);
+    requestAnimationFrame(() => {
+      if (!shareAlive) return;
+      setShareDragX(0);
+      if (next !== "open") setOpenShare(undefined);
+      if (next !== shareView()) setShareView(next);
+      if (tilesEl) tilesEl.scrollTop = 0;
+    });
+  }
+  function enterShare(key: string) {
+    if (!layout().phone || shareView() !== "shelf") return;
+    if (!tiles().some((t) => t.screen && t.key === key)) return;
+    setOpenShare(key);
+    setShareView("open");
+    if (tilesEl) tilesEl.scrollTop = 0;
+  }
+  const onSharePage = (key: string) => {
+    const left = layout().places?.[key]?.left;
+    return typeof left === "string" && left.startsWith("calc(100%");
+  };
 
   // A LIVE tile brought you here: once the streamer's tile is up, it goes big
   // with their stream big (webcam small), then the request is done.
@@ -1003,41 +1201,36 @@ export function VoiceRoom(props: {
     setWatchRequest(undefined);
   });
 
-  return (
-    <div class="voice">
-      <Show
-        when={room()}
-        fallback={
-          <div class="voice-lobby">
-            <h2>◉ {props.channel.name}</h2>
-            <p>Voice and video. Your mic and camera stay off until you turn them on.</p>
-            <button class="btn primary" type="button" disabled={joining()} onClick={() => void join()}>
-              {joining() ? "Joining…" : "Join"}
-            </button>
-            <Show when={error()}>
-              <p class="form-error">{error()}</p>
-            </Show>
-          </div>
-        }
-      >
-        <div class="tiles" classList={{ spotlight: Boolean(spot()), narrow: !spot() && layout().narrow }} ref={watchBox} style={spot() ? {} : layout().grid}>
-          <Show when={showingRoomView() && roomCamTrack()}>
-            {(track) => (
-              <RoomViewTile
-                track={track()}
-                name={`${props.channel.name} · Room view`}
-                small={!spot() && layout().small}
-                style={placeOf(ROOM_VIEW_KEY, roomViewCell())}
-                onHide={() => hideRoomView(true)}
-                onDblClick={() => toggleFocus(ROOM_VIEW_KEY)}
-              />
-            )}
-          </Show>
-          <For each={tiles()}>
-            {(tile, i) => (
+  // One tile tree. On a phone it lives in the sliding track; on a desktop it
+  // stays the direct grid. The function is created once for this call, so
+  // switching the wrapper does not invent a new component type each render.
+  function CallTiles() {
+    return (
+      <>
+        <Show when={showingRoomView() && roomCamTrack()}>
+          {(track) => (
+            <RoomViewTile
+              track={track()}
+              name={`${props.channel.name} · Room view`}
+              small={!spot() && layout().small}
+              style={placeOf(ROOM_VIEW_KEY, roomViewCell())}
+              onHide={() => hideRoomView(true)}
+              onDblClick={() => openBig(ROOM_VIEW_KEY)}
+            />
+          )}
+        </Show>
+        <For each={tiles()}>
+          {(tile, i) => {
+            const pip = () => layout().pipKey === tile.key && !onSharePage(tile.key);
+            return (
               <Tile
                 style={placeOf(tile.key, cellOf(i()))}
-                onDblClick={() => toggleFocus(tile.key)}
+                onDblClick={() => openBig(tile.key)}
+                onPress={layout().phone && tile.screen ? () => enterShare(tile.key) : undefined}
+                shareSlot={onSharePage(tile.key)}
+                pip={pip()}
+                onPipDrop={setPip}
+                onFrame={pip() ? setPipWide : undefined}
                 tile={tile}
                 version={version()}
                 name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
@@ -1057,34 +1250,90 @@ export function VoiceRoom(props: {
                 insetSize={insetSizes().get(tile.participant.identity) ?? INSET_MAX}
                 onInsetSize={(size) => setInsetSize(tile.participant.identity, size)}
               />
-            )}
-          </For>
-          {/* people standing in the 3D room but not in the call: their webcams too */}
-          <For each={loneRoomFaces()}>
-            {([name, track], i) => (
-              <RoomFaceTile
-                style={placeOf(faceKey(name), cellOf(tiles().length + i()))}
-                onDblClick={() => toggleFocus(faceKey(name))}
-                track={track}
-                name={`${roomFaceName(name)} · in room`}
-                username={[...props.profiles.values()].find(p => roomName(p.username || "") === name)?.username}
-                color={roomFaceColor(name)}
-              />
-            )}
-          </For>
-          {/* a team's screen: each member's stream for 10 s in turn */}
-          <For each={teamScreens()}>
-            {(members, i) => (
-              <TeamScreen
-                style={placeOf(teamKey(members), cellOf(tiles().length + loneRoomFaces().length + i()))}
-                onDblClick={() => toggleFocus(teamKey(members))}
-                uids={members.split(",")}
-                streamFor={streamFor}
-                profileOf={(uid) => props.profiles.get(uid)}
-                nameOf={(uid) => displayName(props.profiles.get(uid))}
-              />
-            )}
-          </For>
+            );
+          }}
+        </For>
+        {/* people standing in the 3D room but not in the call: their webcams too */}
+        <For each={loneRoomFaces()}>
+          {([name, track], i) => (
+            <RoomFaceTile
+              style={placeOf(faceKey(name), cellOf(tiles().length + i()))}
+              onDblClick={() => openBig(faceKey(name))}
+              track={track}
+              name={`${roomFaceName(name)} · in room`}
+              username={[...props.profiles.values()].find(p => roomName(p.username || "") === name)?.username}
+              color={roomFaceColor(name)}
+            />
+          )}
+        </For>
+        {/* a team's screen: each member's stream for 10 s in turn */}
+        <For each={teamScreens()}>
+          {(members, i) => (
+            <TeamScreen
+              style={placeOf(teamKey(members), cellOf(tiles().length + loneRoomFaces().length + i()))}
+              onDblClick={() => openBig(teamKey(members))}
+              uids={members.split(",")}
+              streamFor={streamFor}
+              profileOf={(uid) => props.profiles.get(uid)}
+              nameOf={(uid) => displayName(props.profiles.get(uid))}
+            />
+          )}
+        </For>
+      </>
+    );
+  }
+
+  return (
+    <div class="voice" classList={{ phone: Boolean(room()) && layout().phone }}>
+      <Show
+        when={room()}
+        fallback={
+          <div class="voice-lobby">
+            <h2>◉ {props.channel.name}</h2>
+            <p>Voice and video. Your mic and camera stay off until you turn them on.</p>
+            <button class="btn primary" type="button" disabled={joining()} onClick={() => void join()}>
+              {joining() ? "Joining…" : "Join"}
+            </button>
+            <Show when={error()}>
+              <p class="form-error">{error()}</p>
+            </Show>
+          </div>
+        }
+      >
+        <div
+          class="tiles"
+          classList={{
+            spotlight: Boolean(spot()),
+            narrow: !spot() && layout().narrow,
+            phone: layout().phone,
+            "phone-scroll": layout().phone && layout().scroll,
+            "share-away": shareOn(),
+          }}
+          ref={watchBox}
+          style={spot() || layout().phone ? {} : layout().grid}
+        >
+          <Show
+            when={layout().phone}
+            fallback={<CallTiles />}
+          >
+            <div
+              class="phone-track"
+              classList={{ dragging: shareDragging() }}
+              style={{
+                ...(layout().scroll ? layout().grid : {}),
+                transform: shareShift(),
+              }}
+              onPointerDown={shareDown}
+              onPointerMove={shareMove}
+              onPointerUp={shareUp}
+              onPointerCancel={shareUp}
+              onTouchStart={(e) => {
+                if (layout().phone && tiles().some((t) => t.screen)) e.stopPropagation();
+              }}
+            >
+              <CallTiles />
+            </div>
+          </Show>
         </div>
         <Show when={error()}>
           <p class="form-error voice-error">{error()}</p>
@@ -1240,7 +1489,7 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
-          <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile}>
+          <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile && !layout().phone}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
             </button>
@@ -1423,6 +1672,10 @@ function RoomViewTile(props: {
 
 function Tile(props: {
   onDblClick: () => void;
+  /** a single tap that did not turn into a drag. Phone shares use this to enter. */
+  onPress?: () => void;
+  /** this tile is drawn on the phone's share page, even inside a scrolling column */
+  shareSlot?: boolean;
   style: JSX.CSSProperties;
   tile: TileInfo;
   version: number;
@@ -1450,6 +1703,11 @@ function Tile(props: {
   canZoom?: boolean;
   zoomed?: boolean;
   onToggleZoom?: () => void;
+  /** phone 1-on-1: this tile is your camera, dragged onto an edge of the call */
+  pip?: boolean;
+  onPipDrop?: (spot: PipSpot) => void;
+  /** your camera's own picture: wide when landscape, tall when portrait */
+  onFrame?: (wide: boolean) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let inset: HTMLVideoElement | undefined;
@@ -1470,9 +1728,20 @@ function Tile(props: {
 
   createEffect(() => {
     const t = big();
-    if (!t || !video) return;
-    t.attach(video);
-    onCleanup(() => t.detach(video!));
+    const el = video;
+    if (!t || !el) return;
+    t.attach(el);
+    const report = () => {
+      if (el.videoWidth) props.onFrame?.(el.videoWidth >= el.videoHeight);
+    };
+    el.addEventListener("loadedmetadata", report);
+    el.addEventListener("resize", report);
+    report();
+    onCleanup(() => {
+      el.removeEventListener("loadedmetadata", report);
+      el.removeEventListener("resize", report);
+      t.detach(el);
+    });
   });
   createEffect(() => {
     const t = small();
@@ -1539,7 +1808,37 @@ function Tile(props: {
     resizeFrom = undefined;
   }
 
+  const tapTile = doubleTap(() => props.onDblClick());
   const insetTap = doubleTap(() => props.onSwap?.());
+  // Phone self-view: follow the finger, then sit on the nearest edge.
+  const [pipDrag, setPipDrag] = createSignal<{ x: number; y: number } | undefined>();
+  let pipFrom: { x: number; y: number; moved: boolean } | undefined;
+  let pressFrom: { x: number; y: number } | undefined;
+  function pipDown(e: PointerEvent) {
+    if (props.onPress) pressFrom = { x: e.clientX, y: e.clientY };
+    if (!props.pip) return;
+    if ((e.target as HTMLElement).closest(".tile-inset, .inset-resize, .share-zoom")) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    pipFrom = { x: e.clientX, y: e.clientY, moved: false };
+  }
+  function pipMove(e: PointerEvent) {
+    if (!pipFrom) return;
+    const dx = e.clientX - pipFrom.x;
+    const dy = e.clientY - pipFrom.y;
+    if (!pipFrom.moved && Math.hypot(dx, dy) < 8) return;
+    pipFrom.moved = true;
+    setPipDrag({ x: dx, y: dy });
+  }
+  function pipUp(e: PointerEvent) {
+    const from = pipFrom;
+    pipFrom = undefined;
+    setPipDrag(undefined);
+    if (!from?.moved) return;
+    e.stopPropagation();
+    const stage = (e.currentTarget as HTMLElement).closest(".tiles")?.getBoundingClientRect();
+    if (!stage) return;
+    props.onPipDrop?.(pipSpotAt(e.clientX - stage.left, e.clientY - stage.top, stage.width, stage.height));
+  }
   function dragEnd(e: PointerEvent) {
     // the tile's own double-tap (make it big) must not see this one
     e.stopPropagation();
@@ -1557,11 +1856,39 @@ function Tile(props: {
   return (
     <article
       class="tile"
-      classList={{ speaking: props.speaking, screen: props.tile.screen, attention: Boolean(props.flashing), zoomed: props.zoomed }}
-      style={props.style}
+      classList={{
+        speaking: props.speaking,
+        screen: props.tile.screen,
+        "share-slot": props.shareSlot,
+        attention: Boolean(props.flashing),
+        zoomed: props.zoomed,
+        pip: props.pip,
+        dragging: Boolean(pipDrag()),
+      }}
+      style={{
+        ...props.style,
+        ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
+      }}
       onDblClick={props.onDblClick}
-      onPointerUp={doubleTap(props.onDblClick)}
-      onPointerMove={trackZoom}
+      onPointerDown={pipDown}
+      onPointerUp={(e) => {
+        if (pipFrom || pipDrag()) {
+          pressFrom = undefined;
+          pipUp(e);
+          return;
+        }
+        tapTile(e);
+        const from = pressFrom;
+        pressFrom = undefined;
+        if (!from || !props.onPress) return;
+        if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > 10) return;
+        props.onPress();
+      }}
+      onPointerMove={(e) => {
+        if (pipFrom) pipMove(e);
+        else trackZoom(e);
+      }}
+      onPointerCancel={pipUp}
     >
       <video
         ref={video}
