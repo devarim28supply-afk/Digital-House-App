@@ -20,6 +20,7 @@ export type AuditAction =
   | "server.settings"
   | "server.rename"
   | "server.open"
+  | "server.invite"
   | "member.add"
   | "member.remove"
   | "tile.create"
