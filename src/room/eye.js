@@ -16,14 +16,28 @@ export const EYE_GAP = 8;
 
 const RAD = Math.PI / 180;
 const URL = `${import.meta.env.BASE_URL}room/Eye.glb`;
+// The statue is the Sketchfab file unchanged. 100 px is 1 m, so she is 1.7 m
+// tall. Her toes and nose sit on +z; the room's front wall is −z.
+// Credit: "3dexport Lisa Nude 1548127115" by andrew.sheff2012, CC-BY-4.0.
+// https://sketchfab.com/3d-models/3dexport-lisa-nude-1548127115-98a289358ee84359952d2f298981438f
+const LISA_URL = `${import.meta.env.BASE_URL}room/lisa/scene.gltf`;
+const PERSON_H = 170;
+const FLOOR_Y = -150;
 
 let renderer = null;
 let scene = null;
 let camera = null;
 let template = null;
 let failed = false;
+let eyeFailed = false;
 let loading = false;
 let queued = null;
+let figure = null;
+let figureLoading = false;
+let pending = null;
+const solidMeshes = [];
+let solidGeo = null;
+let solidMat = null;
 const eyes = [];
 const blockers = [];
 let hexGeo = null;
@@ -40,6 +54,65 @@ function lookDir(yawDeg, pitchDeg, out) {
   const pitch = pitchDeg * RAD;
   const cp = Math.cos(pitch);
   return out.set(Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+}
+
+const _gaze = new THREE.Vector3();
+
+/**
+ * Degrees. The plate yaw whose level look points from (fromX, fromZ) toward
+ * (toX, toZ). lookDir(yaw, 0) is (sin yaw, 0, −cos yaw), so this is
+ * atan2(dx, −dz). Check: target on −z → 0; on +x → 90; on +z → 180.
+ */
+export function yawFacing(fromX, fromZ, toX, toZ) {
+  const dx = toX - fromX;
+  const dz = toZ - fromZ;
+  if (dx * dx + dz * dz < 1) return 0;
+  return Math.atan2(dx, -dz) / RAD;
+}
+
+// Looking at the camera: the first 30° stays fully solid. Looking the
+// opposite way: the last 30° stays fully gone. The fade is the span between.
+const GAZE_SOLID = 30;
+const GAZE_GONE = 180 - 30;
+
+/**
+ * 1 while lookDir(gaze, pitch) is within 30° of `to`, 0 while it is within
+ * 30° of the opposite way, linear between those. Positions are three.js y-up.
+ * Check: gaze 0 pitch 0, target on −z → 1; 30° off −z → 1; on +x (90°) → 0.5;
+ * 150° off −z → 0; on +z → 0.
+ */
+export function gazeOpacity(gazeDeg, pitchDeg, from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 1) return 1;
+  lookDir(gazeDeg, pitchDeg, _gaze);
+  const dot = Math.max(-1, Math.min(1, (_gaze.x * dx + _gaze.y * dy + _gaze.z * dz) / len));
+  const angle = Math.acos(dot) / RAD;
+  if (angle <= GAZE_SOLID) return 1;
+  if (angle >= GAZE_GONE) return 0;
+  return 1 - (angle - GAZE_SOLID) / (GAZE_GONE - GAZE_SOLID);
+}
+
+/** The checks named above. Returns the numbers so a caller can assert them. */
+export function checkFacing() {
+  const eye = { x: 0, y: 0, z: 0 };
+  const at = (deg) => ({
+    x: Math.sin(deg * RAD) * 10,
+    y: 0,
+    z: -Math.cos(deg * RAD) * 10,
+  });
+  return {
+    front: gazeOpacity(0, 0, eye, { x: 0, y: 0, z: -10 }),
+    solid: gazeOpacity(0, 0, eye, at(30)),
+    side: gazeOpacity(0, 0, eye, { x: 10, y: 0, z: 0 }),
+    gone: gazeOpacity(0, 0, eye, at(150)),
+    back: gazeOpacity(0, 0, eye, { x: 0, y: 0, z: 10 }),
+    y0: yawFacing(0, 0, 0, -10),
+    y90: yawFacing(0, 0, 10, 0),
+    y180: yawFacing(0, 0, 0, 10),
+  };
 }
 
 function boot(parent) {
@@ -69,6 +142,11 @@ function boot(parent) {
   parent.append(canvas);
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(60, 1, 1, 4000);
+  // Room light only, so her own materials can be seen. Nothing is added to her.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+  sun.position.set(160, 280, 120);
+  scene.add(sun);
 }
 
 // The photo is 4096 in the source file. On screen the eye is small, so the
@@ -257,7 +335,7 @@ function mountEye(root) {
 }
 
 function startLoad() {
-  if (template || loading || failed) return;
+  if (template || loading || eyeFailed) return;
   loading = true;
   new GLTFLoader().load(URL, (gltf) => {
     template = mountEye(gltf.scene);
@@ -267,13 +345,81 @@ function startLoad() {
       const next = queued;
       queued = null;
       lastKey = "";
-      renderEyes(next.entries, next.plates, next.cam, next.parent);
+      renderEyes(next.entries, next.plates, next.cam, next.parent, next.solids);
     }
   }, undefined, (err) => {
-    failed = true;
+    eyeFailed = true;
     loading = false;
     console.warn("[eye] load failed", err);
+    if (pending) {
+      const next = pending;
+      lastKey = "";
+      renderEyes(next.entries, next.plates, next.cam, next.parent, next.solids);
+    }
   });
+}
+
+// Whole model only: scale, turn, and stand her on the floor. Her meshes,
+// materials, and pose stay as they are in the file.
+function mountLisa(root, floorY) {
+  const holder = new THREE.Group();
+  holder.add(root);
+  holder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1));
+  holder.updateMatrixWorld(true);
+  const size = new THREE.Box3().setFromObject(holder).getSize(new THREE.Vector3());
+  holder.scale.setScalar(PERSON_H / (size.y || 1));
+  holder.updateMatrixWorld(true);
+  const fitted = new THREE.Box3().setFromObject(holder);
+  holder.position.set(
+    -(fitted.min.x + fitted.max.x) / 2,
+    floorY - fitted.min.y,
+    -(fitted.min.z + fitted.max.z) / 2,
+  );
+  holder.traverse((o) => {
+    if (!o.isMesh) return;
+    o.frustumCulled = false;
+    o.renderOrder = 1;
+  });
+  return holder;
+}
+
+function startFigure() {
+  if (figure || figureLoading || !scene) return;
+  figureLoading = true;
+  new GLTFLoader().load(LISA_URL, (gltf) => {
+    figure = mountLisa(gltf.scene, pending?.cam?.floorY ?? FLOOR_Y);
+    scene.add(figure);
+    figureLoading = false;
+    lastKey = "";
+    if (pending) {
+      const next = pending;
+      renderEyes(next.entries, next.plates, next.cam, next.parent, next.solids);
+    }
+  }, undefined, (err) => {
+    figureLoading = false;
+    console.warn("[lisa] load failed", err);
+  });
+}
+
+function syncSolids(list, floorY) {
+  if (!solidGeo) {
+    solidGeo = new THREE.BoxGeometry(1, 1, 1);
+    solidMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true });
+  }
+  while (solidMeshes.length < list.length) {
+    const mesh = new THREE.Mesh(solidGeo, solidMat);
+    mesh.renderOrder = 0;
+    scene.add(mesh);
+    solidMeshes.push(mesh);
+  }
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    const mesh = solidMeshes[i];
+    mesh.visible = true;
+    mesh.scale.set(s.halfX * 2, s.height, s.halfZ * 2);
+    mesh.position.set(s.x, floorY + s.height / 2, s.z);
+  }
+  for (let i = list.length; i < solidMeshes.length; i++) solidMeshes[i].visible = false;
 }
 
 function makeEye() {
@@ -329,33 +475,30 @@ function makeBlocker() {
  * cam: { x, y, z, yaw, pitch, perspective, width, height } in that same room.
  * @param {HTMLElement} parent the room view, where the one WebGL canvas sits
  */
-export function renderEyes(entries, plates, cam, parent) {
-  if (failed) return;
+export function renderEyes(entries, plates, cam, parent, solids) {
+  if (failed || !cam) return;
   plates = plates || [];
-  if (!entries.length) {
-    if (renderer && lastKey !== "0") {
-      for (const eye of eyes) eye.visible = false;
-      for (const block of blockers) block.visible = false;
-      renderer.clear();
-      lastKey = "0";
-    }
-    return;
+  solids = solids || [];
+  pending = { entries, plates, cam, parent, solids };
+  boot(parent);
+  if (!renderer) return;
+  startFigure();
+  if (!template && !eyeFailed) {
+    queued = pending;
+    startLoad();
   }
+  if (!figure && !template) return;
+  const floorY = cam.floorY ?? FLOOR_Y;
   const key = [
+    figure ? 1 : 0, template ? 1 : 0,
     cam.width, cam.height, Math.round(cam.perspective),
     Math.round(cam.x), Math.round(cam.y), Math.round(cam.z),
     cam.yaw.toFixed(1), cam.pitch.toFixed(1),
     ...entries.flatMap((e) => [Math.round(e.x), Math.round(e.y), Math.round(e.z), (+e.gaze).toFixed(1), (+e.pitch).toFixed(1), hueWrap(e.hue)]),
     ...plates.flatMap((p) => [Math.round(p.x), Math.round(p.y), Math.round(p.z), (+p.yaw).toFixed(1)]),
+    ...solids.map((s) => `${s.x},${s.z},${s.halfX},${s.halfZ},${s.height}`),
   ].join(",");
-  if (key === lastKey && template) return;
-  boot(parent);
-  if (!renderer) return;
-  if (!template) {
-    queued = { entries, plates, cam, parent };
-    startLoad();
-    return;
-  }
+  if (key === lastKey) return;
   renderer.setPixelRatio(1);
   renderer.setSize(cam.width, cam.height, false);
   const fov = 2 * Math.atan(cam.height / (2 * cam.perspective)) * (180 / Math.PI);
@@ -368,27 +511,35 @@ export function renderEyes(entries, plates, cam, parent) {
   camera.up.set(0, 1, 0);
   lookDir(cam.yaw, cam.pitch, _look);
   camera.lookAt(_target.copy(camera.position).add(_look));
-  while (blockers.length < plates.length) blockers.push(makeBlocker());
-  for (let i = 0; i < plates.length; i++) {
-    const plate = plates[i];
-    const block = blockers[i];
-    block.visible = true;
-    block.position.set(plate.x, -plate.y, plate.z);
-    block.rotation.set(0, (180 - plate.yaw) * RAD, 0);
-    block.scale.setScalar(plate.scale || 1);
+  syncSolids(solids, floorY);
+  if (template) {
+    while (blockers.length < plates.length) blockers.push(makeBlocker());
+    for (let i = 0; i < plates.length; i++) {
+      const plate = plates[i];
+      const block = blockers[i];
+      block.visible = true;
+      block.position.set(plate.x, -plate.y, plate.z);
+      block.rotation.set(0, (180 - plate.yaw) * RAD, 0);
+      block.scale.setScalar(plate.scale || 1);
+    }
+    for (let i = plates.length; i < blockers.length; i++) blockers[i].visible = false;
+    while (eyes.length < entries.length) eyes.push(makeEye());
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const eye = eyes[i];
+      eye.visible = true;
+      eye.position.set(entry.x, -entry.y, entry.z);
+      lookDir(entry.gaze, entry.pitch, _look);
+      eye.lookAt(_target.copy(eye.position).add(_look));
+      paintHue(eye, entry.hue);
+    }
+    for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
   }
-  for (let i = plates.length; i < blockers.length; i++) blockers[i].visible = false;
-  while (eyes.length < entries.length) eyes.push(makeEye());
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    const eye = eyes[i];
-    eye.visible = true;
-    eye.position.set(entry.x, -entry.y, entry.z);
-    lookDir(entry.gaze, entry.pitch, _look);
-    eye.lookAt(_target.copy(eye.position).add(_look));
-    paintHue(eye, entry.hue);
+  if (!entries.length && !figure) {
+    renderer.clear();
+    lastKey = key;
+    return;
   }
-  for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
   renderer.render(scene, camera);
   lastKey = key;
 }

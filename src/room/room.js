@@ -13,7 +13,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { Room, RoomEvent, Track } from "livekit-client";
 
 import { auth, db } from "../firebase";
-import { EYE_GAP, EYE_RADIUS, renderEyes, sampleEye } from "./eye";
+import { EYE_GAP, EYE_RADIUS, gazeOpacity, renderEyes, sampleEye, yawFacing } from "./eye";
 import { autoCaptions } from "./livecaptions";
 import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
@@ -831,16 +831,36 @@ function makeAvatar(mine) {
     }
   }
   world.append(el);
-  return { el, video, tags, backName };
+  return { el, video, plate, back, tags, backName };
 }
 
-/** Where a plate stands and faces, and the face crop inside it. */
-function placeAvatar(av, p) {
-  // Worn like a body: it turns left/right with where its person looks, but
-  // stays upright (never tips up or down when they look up or down).
+/** CSS y of the eye (positive down), the same spot the three.js eye uses. */
+function eyeCssY(p) {
+  return H / 2 - (p.eye ?? EYE) - (PLATE_H / 2 + EYE_GAP + EYE_RADIUS);
+}
+/** That eye in three.js y-up, which is what lookDir and gazeOpacity use. */
+function eyeThree(p) {
+  return { x: p.x, y: -eyeCssY(p), z: p.z };
+}
+/** The camera in three.js y-up. Room y is CSS, positive down. */
+function camThree(cam) {
+  return { x: cam.x, y: -cam.y, z: cam.z };
+}
+
+/**
+ * Where a plate stands. It always faces the camera and stays upright.
+ * The hex stays solid while the eye is within 30° of the camera, and is
+ * gone while the eye is within 30° of the opposite way. Between those it fades.
+ */
+function placeAvatar(av, p, cam) {
+  const yaw = yawFacing(p.x, p.z, cam.x, cam.z);
+  const opacity = gazeOpacity(p.gaze ?? p.yaw ?? 0, p.pitch || 0, eyeThree(p), camThree(cam));
   av.el.style.transform =
-    `translate3d(${p.x}px, ${H / 2 - (p.eye ?? EYE)}px, ${p.z}px) rotateY(${180 - p.yaw}deg) ` +
+    `translate3d(${p.x}px, ${H / 2 - (p.eye ?? EYE)}px, ${p.z}px) rotateY(${180 - yaw}deg) ` +
     `scale(${PLATE_H / 360})`;
+  const shownOpacity = opacity.toFixed(3);
+  av.plate.style.opacity = shownOpacity;
+  av.back.style.opacity = shownOpacity;
   av.video.style.transform = cropTransform(p.cx, p.cy, p.zoom);
 }
 
@@ -900,6 +920,21 @@ function roomBehind(bx, bz) {
   return Math.max(0, t);
 }
 
+// The one camera. First person sits at your eye. Third person sits behind
+// you, along the same look (yaw 0 is −z, so behind is (−sin yaw, +cos yaw)).
+function viewerCam() {
+  const a = (me.yaw * Math.PI) / 180;
+  let x = me.x, y = H / 2 - me.eye, z = me.z;
+  if (third) {
+    const bx = -Math.sin(a), bz = Math.cos(a);
+    const t = roomBehind(bx, bz);
+    x += bx * t;
+    z += bz * t;
+    y -= ABOVE;
+  }
+  return { x, y, z, yaw: me.yaw, pitch: me.pitch };
+}
+
 // Only draws when something changed.
 let queued = false;
 let eyeCam = null;
@@ -908,22 +943,18 @@ function draw() {
   queued = true;
   requestAnimationFrame(() => {
     queued = false;
-    const a = (me.yaw * Math.PI) / 180;
-    let cx = me.x, cy = H / 2 - me.eye, cz = me.z;
-    if (third) {
-      const bx = -Math.sin(a), bz = Math.cos(a); // straight behind you
-      const t = roomBehind(bx, bz);
-      cx += bx * t; cz += bz * t; cy -= ABOVE;
-    }
+    const cam = viewerCam();
     world.style.transform =
-      `translateZ(${perspective}px) rotateX(${me.pitch}deg) rotateY(${me.yaw}deg) ` +
-      `translate3d(${-cx}px, ${-cy}px, ${-cz}px)`;
+      `translateZ(${perspective}px) rotateX(${cam.pitch}deg) rotateY(${cam.yaw}deg) ` +
+      `translate3d(${-cam.x}px, ${-cam.y}px, ${-cam.z}px)`;
     eyeCam = {
-      x: cx, y: cy, z: cz, yaw: me.yaw, pitch: me.pitch,
+      ...cam,
       perspective, width: innerWidth, height: innerHeight,
+      floorY: -H / 2,
     };
     mine.el.classList.toggle("hidden", !third);
-    placeAvatar(mine, { ...me, ...shown, yaw: bodyYaw(), gaze: me.yaw });
+    placeAvatar(mine, { ...me, ...shown, gaze: me.yaw }, cam);
+    for (const person of people.values()) placeAvatar(person, person.at, cam);
     publishEyes();
     sendPose();
   });
@@ -1364,36 +1395,53 @@ function eyeEntries() {
     if (!p || av.el.classList.contains("hidden")) return;
     list.push({
       x: p.x,
-      y: H / 2 - (p.eye ?? EYE) - (PLATE_H / 2 + EYE_GAP + EYE_RADIUS),
+      y: eyeCssY(p),
       z: p.z,
       gaze: p.gaze ?? p.yaw,
       pitch: p.pitch || 0,
       hue: p.iris || 0,
     });
   };
-  add(mine, { ...me, yaw: bodyYaw(), gaze: me.yaw, eye: me.eye });
+  add(mine, { ...me, gaze: me.yaw, eye: me.eye });
   for (const person of people.values()) add(person, person.at);
   return list;
 }
 // The plate the webcam is drawn on. Same place and facing as placeAvatar.
+// A hex that has faded past halfway does not block the eye behind it.
 function plateEntries() {
+  const cam = viewerCam();
   const list = [];
   const add = (av, p) => {
     if (!p || av.el.classList.contains("hidden")) return;
+    const opacity = gazeOpacity(p.gaze ?? p.yaw ?? 0, p.pitch || 0, eyeThree(p), camThree(cam));
+    if (opacity < 0.5) return;
     list.push({
       x: p.x,
       y: H / 2 - (p.eye ?? EYE),
       z: p.z,
-      yaw: p.yaw,
+      yaw: yawFacing(p.x, p.z, cam.x, cam.z),
       scale: PLATE_H / 360,
     });
   };
-  add(mine, { ...me, yaw: bodyYaw(), eye: me.eye });
+  add(mine, { ...me, gaze: me.yaw, eye: me.eye });
   for (const person of people.values()) add(person, person.at);
   return list;
 }
+function roomSolids() {
+  const list = [];
+  for (const c of CHAIRS) list.push({ x: c.x, z: c.z, halfX: c.half, halfZ: c.halfZ, height: CHAIR.tall });
+  for (const d of DESKS) list.push({ x: d.x, z: d.z, halfX: d.half, halfZ: d.halfZ, height: DESK.tall });
+  const t = 6;
+  list.push(
+    { x: 0, z: -D / 2, halfX: W / 2, halfZ: t, height: H },
+    { x: 0, z: D / 2, halfX: W / 2, halfZ: t, height: H },
+    { x: -W / 2, z: 0, halfX: t, halfZ: D / 2, height: H },
+    { x: W / 2, z: 0, halfX: t, halfZ: D / 2, height: H },
+  );
+  return list;
+}
 function publishEyes() {
-  if (eyeCam) renderEyes(eyeEntries(), plateEntries(), eyeCam, view);
+  if (eyeCam) renderEyes(eyeEntries(), plateEntries(), eyeCam, view, roomSolids());
 }
 
 // Others glide to where their last pose put them, then everything stops.
@@ -1405,6 +1453,7 @@ function glidePeople() {
 }
 function peopleStep() {
   let moving = false;
+  const cam = viewerCam();
   for (const person of people.values()) {
     const { at, to } = person;
     // yaw goes the short way round
@@ -1420,7 +1469,7 @@ function peopleStep() {
     if (Math.abs(turn) > 0.1 || Math.abs(gturn) > 0.1 ||
         ["x", "z", "pitch", "eye", "cx", "cy"].some((k) => Math.abs(to[k] - at[k]) > 0.2) ||
         Math.abs(to.zoom - at.zoom) > 0.001) moving = true;
-    placeAvatar(person, at);
+    placeAvatar(person, at, cam);
   }
   publishEyes();
   if (moving) requestAnimationFrame(peopleStep);
