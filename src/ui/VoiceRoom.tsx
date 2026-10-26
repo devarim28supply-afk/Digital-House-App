@@ -1108,18 +1108,28 @@ export function VoiceRoom(props: {
             )}
           </Show>
           {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
-          <div class="share-wrap" classList={{ hidden: !CAN_SHARE }}>
+          <div
+            class="share-wrap"
+            classList={{ hidden: !CAN_SHARE }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && shareMenu()) {
+                setShareMenu(false);
+                e.preventDefault();
+              }
+            }}
+          >
             <button
               type="button"
               class="dock-btn"
               aria-pressed={sharedCount() > 0}
+              aria-haspopup="menu"
               aria-expanded={shareMenu()}
               onClick={() => setShareMenu(!shareMenu())}
             >
               {sharedCount() === 0 ? "Share screen" : `Sharing ${sharedCount()}`} ▴
             </button>
             <Show when={shareMenu()}>
-              <div class="share-menu" role="menu">
+              <div class="dock-menu" role="menu" aria-label="Share screen">
                 <button
                   type="button"
                   role="menuitem"
@@ -1128,7 +1138,7 @@ export function VoiceRoom(props: {
                     void toggle("screen");
                   }}
                 >
-                  {screenOn() ? "Stop screen 1" : "Share screen 1"}
+                  <span>{screenOn() ? "Stop screen 1" : "Share screen 1"}</span>
                 </button>
                 <button
                   type="button"
@@ -1138,7 +1148,7 @@ export function VoiceRoom(props: {
                     void toggleSecondScreen();
                   }}
                 >
-                  {secondOn() ? "Stop screen 2" : "Share screen 2"}
+                  <span>{secondOn() ? "Stop screen 2" : "Share screen 2"}</span>
                 </button>
                 <button
                   type="button"
@@ -1148,7 +1158,7 @@ export function VoiceRoom(props: {
                     void toggleStream("1080");
                   }}
                 >
-                  {streamOn() ? "Stop stream mode" : "Start stream mode (1080p)"}
+                  <span>{streamOn() ? "Stop stream mode" : "Start stream mode (1080p)"}</span>
                 </button>
                 <Show when={!streamOn()}>
                   <button
@@ -1159,7 +1169,7 @@ export function VoiceRoom(props: {
                       void toggleStream("720");
                     }}
                   >
-                    Start stream mode (720p, lighter)
+                    <span>Start stream mode (720p, lighter)</span>
                   </button>
                 </Show>
                 {/* streaming: team up with another streamer here (one LIVE tile) */}
@@ -1174,7 +1184,8 @@ export function VoiceRoom(props: {
                           teamUp(p.identity);
                         }}
                       >
-                        {team() === p.identity ? `✓ Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}
+                        <span>{team() === p.identity ? `Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}</span>
+                        <span aria-hidden="true">{team() === p.identity ? "✓" : ""}</span>
                       </button>
                     )}
                   </For>
@@ -1187,7 +1198,7 @@ export function VoiceRoom(props: {
                         teamUp(undefined);
                       }}
                     >
-                      Leave the team
+                      <span>Leave the team</span>
                     </button>
                   </Show>
                 </Show>
@@ -1195,25 +1206,34 @@ export function VoiceRoom(props: {
             </Show>
           </div>
           {/* Attention: flash your tile for everyone, or for one person only */}
-          <div class="share-wrap attention-wrap">
+          <div
+            class="share-wrap attention-wrap"
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && attentionMenu()) {
+                setAttentionMenu(false);
+                e.preventDefault();
+              }
+            }}
+          >
             <button
               type="button"
               class="dock-btn attention-btn"
               title="Make your tile flash white (3 s)"
+              aria-haspopup="menu"
               aria-expanded={attentionMenu()}
               onClick={() => setAttentionMenu(!attentionMenu())}
             >
               ✦ Attention ▴
             </button>
             <Show when={attentionMenu()}>
-              <div class="share-menu" role="menu">
+              <div class="dock-menu" role="menu" aria-label="Attention">
                 <button type="button" role="menuitem" onClick={() => void callAttention()}>
-                  Everyone
+                  <span>Everyone</span>
                 </button>
                 <For each={others()}>
                   {(p) => (
                     <button type="button" role="menuitem" onClick={() => void callAttention(p.identity)}>
-                      Only {nameOf(p)}
+                      <span>Only {nameOf(p)}</span>
                     </button>
                   )}
                 </For>

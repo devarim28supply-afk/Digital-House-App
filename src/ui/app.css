@@ -1729,43 +1729,9 @@ video.msg-media {
   font-size: 11px;
 }
 
-/* the Share screen button's menu: screen 1 and screen 2 */
+/* Share screen and Attention sit on the dock; their lists open above them. */
 .share-wrap {
   position: relative;
-}
-
-.share-menu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
-  min-width: 170px;
-  padding: 6px;
-  border: 1px solid var(--line-2);
-  border-radius: 12px;
-  background: #0b0b0b;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  transform: translateX(-50%);
-}
-
-.share-menu button {
-  height: 36px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.share-menu button:hover {
-  background: var(--panel-2);
-  color: var(--green);
 }
 
 /* a file dragged in from a folder: the whole chat says where it will go */
@@ -2458,6 +2424,68 @@ img.live-tile-still {
 .attention-btn:active {
   border-color: #fff;
   color: #fff;
+}
+
+/* Same list as the feedback status menu (New, Working on it, Done).
+   Share screen and Attention both use it, opening above the dock. */
+.dock-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  width: max-content;
+  min-width: 160px;
+  max-width: min(280px, calc(100vw - 24px));
+  max-height: min(50vh, 320px);
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 10px 24px #0003;
+  backdrop-filter: blur(18px);
+}
+
+.dock-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: auto;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock-menu button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-menu button:hover,
+.dock-menu button:focus-visible {
+  background: var(--panel-2);
+  color: inherit;
+}
+
+:root[data-layout-theme="smoky"] .dock-menu {
+  background: linear-gradient(140deg, #a9b5bbf5, #919fa8f5);
+  color: #000;
+}
+
+:root[data-layout-theme="smoky"] .dock-menu button:hover,
+:root[data-layout-theme="smoky"] .dock-menu button:focus-visible {
+  background: #ffffff30;
+  color: #000;
 }
 
 /* a team's LIVE tile: every member's picture top left; the one showing is lit */
