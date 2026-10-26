@@ -25,6 +25,9 @@ let failed = false;
 let loading = false;
 let queued = null;
 const eyes = [];
+const blockers = [];
+let hexGeo = null;
+let blockMat = null;
 let lastKey = "";
 const _look = new THREE.Vector3();
 const _target = new THREE.Vector3();
@@ -264,7 +267,7 @@ function startLoad() {
       const next = queued;
       queued = null;
       lastKey = "";
-      renderEyes(next.entries, next.cam, next.parent);
+      renderEyes(next.entries, next.plates, next.cam, next.parent);
     }
   }, undefined, (err) => {
     failed = true;
@@ -276,23 +279,63 @@ function startLoad() {
 function makeEye() {
   const group = template.clone(true);
   group.traverse((o) => {
-    if (o.isMesh && o.material) o.material = o.material.clone();
+    if (!o.isMesh || !o.material) return;
+    o.material = o.material.clone();
+    o.renderOrder = 1;
   });
   scene.add(group);
   return group;
 }
 
+// The hexagon the CSS webcam is clipped to, in the plate's own pixels
+// (origin at the plate center, y down). One shared shape.
+function hexagonGeometry() {
+  if (hexGeo) return hexGeo;
+  const shape = new THREE.Shape();
+  const pts = [[0.14, 0], [0.86, 0], [1, 0.5], [0.86, 1], [0.14, 1], [0, 0.5]];
+  pts.forEach(([u, v], i) => {
+    const x = (u - 0.5) * 640;
+    const y = (0.5 - v) * 360;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  });
+  hexGeo = new THREE.ShapeGeometry(shape);
+  return hexGeo;
+}
+
+function makeBlocker() {
+  if (!blockMat) {
+    blockMat = new THREE.MeshBasicMaterial({
+      colorWrite: false,
+      depthWrite: true,
+      side: THREE.DoubleSide,
+    });
+  }
+  const mesh = new THREE.Mesh(hexagonGeometry(), blockMat);
+  mesh.renderOrder = 0;
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return mesh;
+}
+
 /**
  * entries: { x, y, z, gaze, pitch, hue } in room pixels. y is CSS, positive down.
  * hue is degrees added to the iris. 0 keeps the green from the file.
+ * plates: the webcam hexagons, { x, y, z, yaw, scale }. They are drawn into the
+ * depth buffer only, before the eyes, so a nearer webcam covers an eye behind it.
+ * The CSS plate then shows through. y is the plate center, CSS positive down.
+ * yaw is the plate's body yaw: CSS rotateY(180 − yaw), which is the same angle
+ * on three's Y once the plate's local Y is flipped to point up.
  * cam: { x, y, z, yaw, pitch, perspective, width, height } in that same room.
  * @param {HTMLElement} parent the room view, where the one WebGL canvas sits
  */
-export function renderEyes(entries, cam, parent) {
+export function renderEyes(entries, plates, cam, parent) {
   if (failed) return;
+  plates = plates || [];
   if (!entries.length) {
     if (renderer && lastKey !== "0") {
       for (const eye of eyes) eye.visible = false;
+      for (const block of blockers) block.visible = false;
       renderer.clear();
       lastKey = "0";
     }
@@ -303,12 +346,13 @@ export function renderEyes(entries, cam, parent) {
     Math.round(cam.x), Math.round(cam.y), Math.round(cam.z),
     cam.yaw.toFixed(1), cam.pitch.toFixed(1),
     ...entries.flatMap((e) => [Math.round(e.x), Math.round(e.y), Math.round(e.z), (+e.gaze).toFixed(1), (+e.pitch).toFixed(1), hueWrap(e.hue)]),
+    ...plates.flatMap((p) => [Math.round(p.x), Math.round(p.y), Math.round(p.z), (+p.yaw).toFixed(1)]),
   ].join(",");
   if (key === lastKey && template) return;
   boot(parent);
   if (!renderer) return;
   if (!template) {
-    queued = { entries, cam, parent };
+    queued = { entries, plates, cam, parent };
     startLoad();
     return;
   }
@@ -324,6 +368,16 @@ export function renderEyes(entries, cam, parent) {
   camera.up.set(0, 1, 0);
   lookDir(cam.yaw, cam.pitch, _look);
   camera.lookAt(_target.copy(camera.position).add(_look));
+  while (blockers.length < plates.length) blockers.push(makeBlocker());
+  for (let i = 0; i < plates.length; i++) {
+    const plate = plates[i];
+    const block = blockers[i];
+    block.visible = true;
+    block.position.set(plate.x, -plate.y, plate.z);
+    block.rotation.set(0, (180 - plate.yaw) * RAD, 0);
+    block.scale.setScalar(plate.scale || 1);
+  }
+  for (let i = plates.length; i < blockers.length; i++) blockers[i].visible = false;
   while (eyes.length < entries.length) eyes.push(makeEye());
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];

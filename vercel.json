@@ -3,6 +3,18 @@
   "buildCommand": "rm -rf dist && vite build",
   "outputDirectory": "dist",
   "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "header", "key": "user-agent", "value": { "re": "Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini" } }],
+      "destination": "/app/",
+      "permanent": false
+    },
+    {
+      "source": "/m2a-access",
+      "has": [{ "type": "header", "key": "user-agent", "value": { "re": "Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini" } }],
+      "destination": "/app/",
+      "permanent": false
+    },
     { "source": "/app", "destination": "/app/", "permanent": false },
     { "source": "/living", "destination": "/living/", "permanent": false },
     { "source": "/m2a-access", "destination": "/", "permanent": false },

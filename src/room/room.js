@@ -1,5 +1,5 @@
 // Darkwood Room: a plain CSS 3D room where everyone is their own webcam on a
-// diamond (or hexagon) plate, walking around together.
+// hexagon plate, walking around together.
 //
 // Opened from a Darkwood Node tile's Room side (room.html?s=<server>&c=<tile>),
 // so it shares the app's Firebase login. /api/dh-token gives a LiveKit pass
@@ -37,7 +37,6 @@ const view = document.getElementById("view");
 const world = document.getElementById("world");
 const statusBox = document.getElementById("status");
 const camBtn = document.getElementById("cam");
-const shapeBtn = document.getElementById("shape");
 const povBtn = document.getElementById("pov");
 const fovSlider = document.querySelector("#fov input");
 const fovText = document.querySelector("#fov output");
@@ -802,7 +801,7 @@ addEventListener("keydown", (e) => {
 // ---- a person on a plate (you, or someone else)
 function makeAvatar(mine) {
   const el = document.createElement("div");
-  el.className = "avatar" + (mine ? " mine" : "");
+  el.className = "avatar hexagon" + (mine ? " mine" : "");
   const plate = document.createElement("div");
   plate.className = "plate";
   const video = document.createElement("video");
@@ -1155,13 +1154,6 @@ function showMyCam(track) {
   camBtn.textContent = stream ? "Camera on (C)" : "Camera off (C)";
   sendPose(true);
 }
-function setShape(hex) {
-  mine.el.classList.toggle("hexagon", hex);
-  shapeBtn.textContent = hex ? "Diamond (G)" : "Hexagon (G)";
-  remember("room_shape", hex ? "hexagon" : "diamond");
-  glideCrop();
-  sendPose(true);
-}
 function setThird(on) {
   third = on;
   povBtn.textContent = on ? "First person (V)" : "Third person (V)";
@@ -1171,13 +1163,17 @@ function setThird(on) {
 // Local check only. A plate stands in front of the camera, facing it.
 // extraYaw is the person's right. Positive pitch looks up.
 if (import.meta.env.DEV) {
-  window.__roomShowEye = (extraYaw, pitch) => {
+  window.__roomShowEye = (extraYaw, pitch, coverZ) => {
     const cy = H / 2 - EYE;
     world.style.transform =
       `translateZ(${perspective}px) rotateX(0deg) rotateY(0deg) translate3d(0px, ${-cy}px, 0px)`;
     mine.el.classList.remove("hidden");
+    const plateZ = coverZ == null ? -220 : coverZ;
     mine.el.style.transform =
-      `translate3d(0px, ${cy}px, -220px) rotateY(0deg) scale(${PLATE_H / 360})`;
+      `translate3d(0px, ${cy}px, ${plateZ}px) rotateY(0deg) scale(${PLATE_H / 360})`;
+    const plates = coverZ == null ? [] : [{
+      x: 0, y: cy, z: coverZ, yaw: 180, scale: PLATE_H / 360,
+    }];
     renderEyes([{
       x: 0,
       y: cy - (PLATE_H / 2 + EYE_GAP + EYE_RADIUS),
@@ -1185,7 +1181,7 @@ if (import.meta.env.DEV) {
       gaze: 180 + extraYaw,
       pitch,
       hue: me.iris,
-    }], {
+    }], plates, {
       x: 0, y: cy, z: 0, yaw: 0, pitch: 0,
       perspective, width: innerWidth, height: innerHeight,
     }, view);
@@ -1193,12 +1189,10 @@ if (import.meta.env.DEV) {
   };
 }
 camBtn.addEventListener("click", () => setCamera(!stream));
-shapeBtn.addEventListener("click", () => setShape(!isHex()));
 povBtn.addEventListener("click", () => setThird(!third));
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if (e.code === "KeyC") setCamera(!stream);
-  if (e.code === "KeyG") setShape(!isHex());
   if (e.code === "KeyV") setThird(!third);
   if (e.code === "BracketLeft") setFov(fov - 5);
   if (e.code === "BracketRight") setFov(fov + 5);
@@ -1348,7 +1342,7 @@ function onPose(p, data) {
   const person = addPerson(p, "room");
   const first = person.el.classList.contains("hidden");
   person.el.classList.remove("hidden");
-  person.el.classList.toggle("hexagon", Boolean(pose.hex));
+  person.el.classList.add("hexagon");
   const yaw = +pose.yaw || 0;
   Object.assign(person.to, {
     x: +pose.x || 0, z: +pose.z || 0, yaw,
@@ -1381,8 +1375,25 @@ function eyeEntries() {
   for (const person of people.values()) add(person, person.at);
   return list;
 }
+// The plate the webcam is drawn on. Same place and facing as placeAvatar.
+function plateEntries() {
+  const list = [];
+  const add = (av, p) => {
+    if (!p || av.el.classList.contains("hidden")) return;
+    list.push({
+      x: p.x,
+      y: H / 2 - (p.eye ?? EYE),
+      z: p.z,
+      yaw: p.yaw,
+      scale: PLATE_H / 360,
+    });
+  };
+  add(mine, { ...me, yaw: bodyYaw(), eye: me.eye });
+  for (const person of people.values()) add(person, person.at);
+  return list;
+}
 function publishEyes() {
-  if (eyeCam) renderEyes(eyeEntries(), eyeCam, view);
+  if (eyeCam) renderEyes(eyeEntries(), plateEntries(), eyeCam, view);
 }
 
 // Others glide to where their last pose put them, then everything stops.
@@ -1603,7 +1614,6 @@ function syncMe() {
 // ---- start
 setIris(Number(recall("room_iris")) || 0);
 setFov(fov);
-setShape(recall("room_shape") === "hexagon");
 setThird(recall("room_view") === "third");
 camBtn.textContent = "Camera off (C)"; // until the videochat's webcam shows up
 

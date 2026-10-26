@@ -10,7 +10,7 @@
    * moves when someone does. The eye above a webcam is a three.js mesh,
    * not a CSS shape.
    * Room size in px (100 px = 1 m): 6 m wide, 6 m deep, 3 m high.
-   * Everyone in it is their webcam on a diamond (or hexagon) plate.
+   * Everyone in it is their webcam on a hexagon plate.
    * The look: Matrix rain. Every wall is black with columns of green
    * characters falling down it (CSS animations, nothing drawn by script),
    * between a glowing grid floor and ceiling.
@@ -310,10 +310,7 @@
   .chair-face.rear { background: #020a06; }
 
   /*
-   * A person: their webcam on a 16:9 plate (640 x 360), cut to a diamond or
-   * a hexagon by clip-path. Both shapes have the same six corners in the
-   * same order (the diamond's flat top and bottom squeezed to a point), so
-   * the browser slides every corner from one shape to the other.
+   * A person: their webcam on a 16:9 plate (640 x 360), cut to a hexagon.
    * The name floats above, readable from the front and from behind.
    */
   .avatar {
@@ -331,8 +328,7 @@
     inset: 0;
     overflow: hidden;
     background: #1c1c22;
-    transition: clip-path .4s ease;
-    clip-path: polygon(50% 0, 50% 0, 69.4% 50%, 50% 100%, 50% 100%, 30.6% 50%);
+    clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%);
     backface-visibility: hidden; /* the webcam shows on the front only */
   }
   /* the back: the same shape in black, with the username in the middle */
@@ -344,22 +340,17 @@
     background: #000;
     transform: rotateY(180deg);
     backface-visibility: hidden;
-    transition: clip-path .4s ease;
-    clip-path: polygon(50% 0, 50% 0, 69.4% 50%, 50% 100%, 50% 100%, 30.6% 50%);
+    clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%);
   }
   .plate-back span {
-    max-width: 210px; /* the diamond is ~248 px wide across its middle */
+    max-width: 520px;
     font-size: 40px;
     font-weight: 600;
     color: #fff;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    transition: max-width .4s ease;
   }
-  .avatar.hexagon .plate,
-  .avatar.hexagon .plate-back { clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%); }
-  .avatar.hexagon .plate-back span { max-width: 520px; }
   /* face tracking slides and zooms the picture inside the plate */
   .plate video {
     width: 100%;
@@ -580,7 +571,6 @@
 </div>
 <div id="bar">
   <button type="button" id="cam" aria-pressed="false">Camera (C)</button>
-  <button type="button" id="shape">Hexagon (G)</button>
   <button type="button" id="pov">First person (V)</button>
   <label id="iris">Iris <input type="range" min="0" max="360" step="1" value="0" aria-label="Iris hue"> <span id="iris-swatch"></span></label>
 </div>
@@ -601,7 +591,7 @@
   </div>
 </div>
 <div id="status"></div>
-<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera (the videochat's) · G diamond/hexagon · V first/third person · P share your screen to your desk · F view a screen big · T TV channels · M TV sound · E sit / stand · R turn a chair · [ and ] FOV · on a phone, drag to look</div>
+<div id="hint">Click to look around (Esc to let go) · W A S D or arrows to walk · C camera (the videochat's) · V first/third person · P share your screen to your desk · F view a screen big · T TV channels · M TV sound · E sit / stand · R turn a chair · [ and ] FOV · on a phone, drag to look</div>
 <script type="module" src="/src/room/room.js"></script>
 </body>
 </html>
