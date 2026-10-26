@@ -1,5 +1,5 @@
 // Each person's eye is the Eye.glb mesh. One WebGL view covers the room and
-// is redrawn only when the camera or a gaze changes. Nothing here is a CSS shape.
+// is redrawn only when the camera, a gaze, or an iris hue changes. Nothing here is a CSS shape.
 //
 // The view camera uses the same yaw and pitch as the CSS room. lookDir() is
 // that direction (yaw 0 looks down −z, positive yaw is the person's right,
@@ -10,7 +10,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-export const EYE_RADIUS = 22;
+// 22 was the full ball. 70% smaller leaves 30% of that.
+export const EYE_RADIUS = 22 * 0.3;
 export const EYE_GAP = 8;
 
 const RAD = Math.PI / 180;
@@ -27,6 +28,9 @@ const eyes = [];
 let lastKey = "";
 const _look = new THREE.Vector3();
 const _target = new THREE.Vector3();
+let baseMap = null;
+let irisSrc = null;
+const hueTextures = new Map();
 
 function lookDir(yawDeg, pitchDeg, out) {
   const yaw = yawDeg * RAD;
@@ -74,6 +78,7 @@ function shrinkMap(tex) {
     tex.magFilter = THREE.LinearFilter;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
+    captureBase(tex);
     return;
   }
   const canvas = document.createElement("canvas");
@@ -86,6 +91,91 @@ function shrinkMap(tex) {
   tex.magFilter = THREE.LinearFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
+  captureBase(tex);
+}
+
+// The painted iris is the green part of the picture. A hue keeps its shading
+// and leaves the white, the veins, and the pupil alone. One picture per hue,
+// shared by everyone who picked that hue. 0 is the color in the file.
+function captureBase(tex) {
+  const img = tex.image;
+  if (!img || baseMap) return;
+  baseMap = tex;
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const image = ctx.getImageData(0, 0, img.width, img.height);
+  irisSrc = { w: img.width, h: img.height, data: new Uint8ClampedArray(image.data) };
+}
+
+function hueWrap(hue) {
+  return ((Math.round(+hue) % 360) + 360) % 360;
+}
+
+function hsvToRgb(h, s, v) {
+  const c = v * s;
+  const hp = h / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let r = 0, g = 0, b = 0;
+  if (hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const m = v - c;
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+function irisMap(hue) {
+  hue = hueWrap(hue);
+  if (!hue || !irisSrc) return baseMap;
+  const cached = hueTextures.get(hue);
+  if (cached) return cached;
+  const { w, h, data } = irisSrc;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const image = ctx.createImageData(w, h);
+  const out = image.data;
+  out.set(data);
+  for (let i = 0; i < out.length; i += 4) {
+    const r = out[i], g = out[i + 1], b = out[i + 2];
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const d = max - min;
+    if (d < 20 || max < 30 || d / max < 0.28) continue;
+    let hh;
+    if (max === r) hh = ((g - b) / d) % 6;
+    else if (max === g) hh = (b - r) / d + 2;
+    else hh = (r - g) / d + 4;
+    hh = (hh * 60 + 360) % 360;
+    if (hh < 50 || hh > 170) continue;
+    const rgb = hsvToRgb((hh + hue) % 360, d / max, max / 255);
+    out[i] = rgb[0];
+    out[i + 1] = rgb[1];
+    out[i + 2] = rgb[2];
+  }
+  ctx.putImageData(image, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.flipY = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  hueTextures.set(hue, tex);
+  return tex;
+}
+
+function paintHue(eye, hue) {
+  const map = irisMap(hue);
+  if (!map) return;
+  eye.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.map === map) return;
+    o.material.map = map;
+  });
 }
 
 function greenCount(buf) {
@@ -184,14 +274,17 @@ function startLoad() {
 }
 
 function makeEye() {
-  const group = new THREE.Group();
-  group.add(template.clone(true));
+  const group = template.clone(true);
+  group.traverse((o) => {
+    if (o.isMesh && o.material) o.material = o.material.clone();
+  });
   scene.add(group);
   return group;
 }
 
 /**
- * entries: { x, y, z, gaze, pitch } in room pixels. y is CSS, positive down.
+ * entries: { x, y, z, gaze, pitch, hue } in room pixels. y is CSS, positive down.
+ * hue is degrees added to the iris. 0 keeps the green from the file.
  * cam: { x, y, z, yaw, pitch, perspective, width, height } in that same room.
  * @param {HTMLElement} parent the room view, where the one WebGL canvas sits
  */
@@ -209,7 +302,7 @@ export function renderEyes(entries, cam, parent) {
     cam.width, cam.height, Math.round(cam.perspective),
     Math.round(cam.x), Math.round(cam.y), Math.round(cam.z),
     cam.yaw.toFixed(1), cam.pitch.toFixed(1),
-    ...entries.flatMap((e) => [Math.round(e.x), Math.round(e.y), Math.round(e.z), (+e.gaze).toFixed(1), (+e.pitch).toFixed(1)]),
+    ...entries.flatMap((e) => [Math.round(e.x), Math.round(e.y), Math.round(e.z), (+e.gaze).toFixed(1), (+e.pitch).toFixed(1), hueWrap(e.hue)]),
   ].join(",");
   if (key === lastKey && template) return;
   boot(parent);
@@ -239,6 +332,7 @@ export function renderEyes(entries, cam, parent) {
     eye.position.set(entry.x, -entry.y, entry.z);
     lookDir(entry.gaze, entry.pitch, _look);
     eye.lookAt(_target.copy(eye.position).add(_look));
+    paintHue(eye, entry.hue);
   }
   for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
   renderer.render(scene, camera);
@@ -252,15 +346,34 @@ export function sampleEye() {
   const h = gl.drawingBufferHeight;
   const buf = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-  let gw = 0, gx = 0, gy = 0;
+  const take = (ink) => {
+    let n = 0, sx = 0, sy = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (buf[i + 3] < 30 || !ink(buf[i], buf[i + 1], buf[i + 2])) continue;
+        n++; sx += x; sy += h - 1 - y;
+      }
+    }
+    return n ? { x: Math.round(sx / n), y: Math.round(sy / n), n } : null;
+  };
+  let minX = w, minY = h, maxX = 0, maxY = 0, opaque = 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      if (buf[i + 3] < 30) continue;
-      if (!(buf[i + 1] > buf[i] + 15 && buf[i + 1] > buf[i + 2] + 8 && buf[i + 1] > 30)) continue;
+      if (buf[(y * w + x) * 4 + 3] < 30) continue;
+      opaque++;
       const sy = h - 1 - y;
-      gw++; gx += x; gy += sy;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
     }
   }
-  return gw ? { iris: { x: Math.round(gx / gw), y: Math.round(gy / gw), n: gw } } : { iris: null };
+  const green = (r, g, b) => g > r + 15 && g > b + 8 && g > 30;
+  const blue = (r, g, b) => b > r + 15 && b > g + 8 && b > 30;
+  return {
+    iris: take(green),
+    blue: take(blue),
+    ball: opaque ? { w: maxX - minX + 1, h: maxY - minY + 1, n: opaque } : null,
+  };
 }

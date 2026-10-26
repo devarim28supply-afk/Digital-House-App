@@ -41,6 +41,8 @@ const shapeBtn = document.getElementById("shape");
 const povBtn = document.getElementById("pov");
 const fovSlider = document.querySelector("#fov input");
 const fovText = document.querySelector("#fov output");
+const irisSlider = document.querySelector("#iris input");
+const irisSwatch = document.getElementById("iris-swatch");
 
 const remember = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 const recall = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -855,7 +857,7 @@ function cropTransform(cx, cy, zoom) {
 // You start in the aisle between the two rows of chairs, facing the front
 // wall (somewhere left to right, so people do not land on each other).
 // (2.4 to 2.7 m left or right of the middle)
-const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(240 + Math.random() * 30), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1 };
+const me = { x: (Math.random() < 0.5 ? -1 : 1) * Math.round(240 + Math.random() * 30), z: 0, yaw: 0, pitch: 0, eye: EYE, seat: -1, iris: 0 };
 const mine = makeAvatar(true);
 updateSitButton(); // its label needs you (me) to exist
 // Your sight starts at your webcam plate (first person). V steps out behind
@@ -876,6 +878,16 @@ function setFov(next) {
 }
 fovSlider.addEventListener("input", () => setFov(Number(fovSlider.value)));
 addEventListener("resize", () => setFov(fov));
+
+// Iris hue, degrees added to the green in the eye picture. 0 leaves it.
+function setIris(next) {
+  me.iris = ((Math.round(next) % 360) + 360) % 360;
+  irisSlider.value = me.iris;
+  irisSwatch.style.background = `hsl(${(120 + me.iris) % 360} 70% 42%)`;
+  remember("room_iris", me.iris);
+  draw();
+}
+irisSlider.addEventListener("input", () => setIris(Number(irisSlider.value)));
 
 // How far the camera can back away from you before it leaves the room.
 function roomBehind(bx, bz) {
@@ -1172,6 +1184,7 @@ if (import.meta.env.DEV) {
       z: -220,
       gaze: 180 + extraYaw,
       pitch,
+      hue: me.iris,
     }], {
       x: 0, y: cy, z: 0, yaw: 0, pitch: 0,
       perspective, width: innerWidth, height: innerHeight,
@@ -1256,7 +1269,7 @@ function sendPose(force = false) {
     x: Math.round(me.x), z: Math.round(me.z),
     yaw: Math.round(bodyYaw() * 10) / 10, gaze: Math.round(me.yaw * 10) / 10,
     pitch: Math.round(me.pitch * 10) / 10,
-    eye: me.eye, seat: me.seat,
+    eye: me.eye, seat: me.seat, iris: me.iris,
     hex: isHex(), cam: Boolean(stream),
     cx: Math.round(shown.cx), cy: Math.round(shown.cy), zoom: Math.round(shown.zoom * 1000) / 1000,
   });
@@ -1286,7 +1299,7 @@ function addPerson(p, from) {
   let person = people.get(p.identity);
   if (!person) {
     person = makeAvatar(false);
-    const start = { x: 0, z: 0, yaw: 0, gaze: 0, pitch: 0, eye: EYE, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
+    const start = { x: 0, z: 0, yaw: 0, gaze: 0, pitch: 0, eye: EYE, iris: 0, cx: SET_W / 2, cy: SET_H / 2, zoom: 1 };
     person.at = { ...start };
     person.to = { ...start };
     person.poseAt = 0;
@@ -1342,6 +1355,7 @@ function onPose(p, data) {
     gaze: Number.isFinite(+pose.gaze) ? +pose.gaze : yaw,
     pitch: +pose.pitch || 0,
     eye: clamp(+pose.eye || EYE, 60, 200),
+    iris: Number.isFinite(+pose.iris) ? ((Math.round(+pose.iris) % 360) + 360) % 360 : 0,
     cx: +pose.cx || SET_W / 2, cy: +pose.cy || SET_H / 2, zoom: +pose.zoom || 1,
   });
   person.poseAt = performance.now();
@@ -1360,6 +1374,7 @@ function eyeEntries() {
       z: p.z,
       gaze: p.gaze ?? p.yaw,
       pitch: p.pitch || 0,
+      hue: p.iris || 0,
     });
   };
   add(mine, { ...me, yaw: bodyYaw(), gaze: me.yaw, eye: me.eye });
@@ -1388,6 +1403,7 @@ function peopleStep() {
     if (to.gaze == null) to.gaze = to.yaw;
     const gturn = ((((to.gaze - at.gaze) % 360) + 540) % 360) - 180;
     at.gaze += gturn * 0.3;
+    at.iris = to.iris || 0;
     for (const k of ["x", "z", "pitch", "eye", "cx", "cy"]) at[k] += (to[k] - at[k]) * 0.3;
     at.zoom += (to.zoom - at.zoom) * 0.3;
     if (Math.abs(turn) > 0.1 || Math.abs(gturn) > 0.1 ||
@@ -1585,6 +1601,7 @@ function syncMe() {
 }
 
 // ---- start
+setIris(Number(recall("room_iris")) || 0);
 setFov(fov);
 setShape(recall("room_shape") === "hexagon");
 setThird(recall("room_view") === "third");

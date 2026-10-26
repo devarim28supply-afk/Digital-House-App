@@ -404,7 +404,7 @@
     flex-wrap: wrap;
     gap: 6px;
   }
-  #bar button, #status a {
+  #bar button, #bar label, #status a {
     font: inherit;
     color: #fff;
     background: #000a;
@@ -413,6 +413,15 @@
     padding: 6px 10px;
     cursor: pointer;
     text-decoration: none;
+  }
+  #iris { display: flex; align-items: center; gap: 8px; cursor: default; }
+  #iris input { width: 100px; cursor: pointer; }
+  #iris-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: hsl(120 70% 42%);
+    box-shadow: inset 0 0 0 1px #fff6;
   }
   #bar button[aria-pressed="true"] { border-color: #7fe0b4; color: #7fe0b4; }
   #bar button:disabled { opacity: .45; cursor: default; }
@@ -573,6 +582,7 @@
   <button type="button" id="cam" aria-pressed="false">Camera (C)</button>
   <button type="button" id="shape">Hexagon (G)</button>
   <button type="button" id="pov">First person (V)</button>
+  <label id="iris">Iris <input type="range" min="0" max="360" step="1" value="0" aria-label="Iris hue"> <span id="iris-swatch"></span></label>
 </div>
 <label id="fov">FOV <input type="range" min="60" max="120" step="1" value="90"> <output>90</output>°</label>
 <div id="strip"></div>
