@@ -164,9 +164,14 @@ export const hasDarkwoodRoom = (channel: Channel) => DARKWOOD_ROOM_TILES.has(cha
 
 /**
  * Link tiles whose Room side is on: their link opens there. Other link tiles
- * (Don't Lie, White Torture) stay videochat only, Room greyed out.
+ * (Don't Lie) stay videochat only, Room greyed out.
+ * White Torture still refuses to be framed, so its Room side offers to open
+ * the game in its own tab.
  */
-const ROOM_LINK_SITES = new Set(["viperoneone.com"]); // VIPER 11 theater
+const ROOM_LINK_SITES = new Set([
+  "viperoneone.com", // VIPER 11 theater
+  "rimyshrimp-white-torture-br.vercel.app", // White Torture
+]);
 
 function linkSite(url?: string) {
   try {
