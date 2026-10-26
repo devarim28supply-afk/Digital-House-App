@@ -1472,6 +1472,17 @@
   gap: 8px;
 }
 
+.team-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.team-picks .dock-btn {
+  width: 100%;
+}
+
 .people-list,
 .find-list {
   display: flex;
