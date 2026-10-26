@@ -54,7 +54,7 @@ type TileInfo = {
 // A 2nd shared screen rides its own named track: LiveKit keeps one
 // "screen share" per person, so this one is published beside it.
 const SECOND_SCREEN = "screen-2";
-// The Stream menu. A second webcam, beside the primary camera, shown as its own screen.
+// The Stream menu. A second webcam, shown on the primary webcam tile. Not a screen share.
 const STREAM_CAM = "webcam-2";
 // Stream mode (Kaalob): still a screen share, but it rides on the sharer's
 // own tile as a small picture instead of a tile of its own.
@@ -690,6 +690,14 @@ export function VoiceRoom(props: {
     }
     return undefined;
   };
+  /** Stream's webcam, shown on the primary webcam tile. This is not a screen share. */
+  const streamCamOf = (participant: Participant) => {
+    void version();
+    for (const pub of participant.trackPublications.values()) {
+      if (pub.trackName === STREAM_CAM && pub.kind === Track.Kind.Video && !pub.isMuted && pub.track) return pub.track;
+    }
+    return undefined;
+  };
   // Whose tile shows the stream big and the webcam small: your own choice,
   // only on your screen (double-click the small picture).
   const [swapped, setSwapped] = createSignal(new Set<string>());
@@ -896,10 +904,9 @@ export function VoiceRoom(props: {
       setStreamMenu(false);
       return;
     }
-    if (streamOn() && otherStreamers().length === 0 && !team()) return;
     setError("");
     setStreamMenu(true);
-    if (!streamOn()) void loadCameras();
+    void loadCameras();
   }
 
   async function stopStreamCam() {
@@ -1017,11 +1024,10 @@ export function VoiceRoom(props: {
     const cams: TileInfo[] = [];
     for (const p of people) {
       for (const pub of p.trackPublications.values()) {
-        if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO) continue;
+        if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO || pub.trackName === STREAM_CAM) continue;
         const second = pub.trackName === SECOND_SCREEN;
-        const streamCam = pub.trackName === STREAM_CAM;
-        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second && !streamCam)) continue;
-        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second, streamCam });
+        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
+        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
       }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
@@ -1499,7 +1505,7 @@ export function VoiceRoom(props: {
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
-                stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant)}
+                stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant) ?? streamCamOf(tile.participant)}
                 swapped={swapped().has(tile.participant.identity)}
                 onSwap={() => swap(tile.participant.identity)}
                 corner={corners().get(tile.participant.identity) ?? "tl"}
@@ -1551,84 +1557,42 @@ export function VoiceRoom(props: {
           }
         }}
       >
-        <Show when={CAN_SHARE}>
-          <button type="button" class="dock-btn" aria-pressed={streamOn()} onClick={() => void toggleStream()}>
-            {streamBusy() ? "Starting…" : "Stream mode"}
-          </button>
-        </Show>
         <button
           type="button"
           class="dock-btn"
-          classList={{ "menu-caret": CAN_SHARE }}
           aria-pressed={streamCamOn()}
           aria-haspopup="menu"
           aria-expanded={streamMenu()}
-          aria-label={CAN_SHARE ? "Stream" : undefined}
           onClick={() => openStreamMenu()}
         >
-          {streamCamBusy() ? "Starting…" : CAN_SHARE ? "▴" : "Stream ▴"}
+          {streamCamBusy() ? "Starting…" : "Stream"} ▴
         </button>
         <Show when={streamMenu()}>
-          <div class="dock-menu" role="menu" aria-label={streamOn() ? "Stream mode" : "Stream"}>
-            <Show
-              when={streamOn()}
-              fallback={
-                <>
-                  <Show when={camListBusy() && camList().length === 0}>
-                    <button type="button" disabled>
-                      <span>Finding webcams…</span>
-                    </button>
-                  </Show>
-                  <For each={camList()}>
-                    {(cam) => (
-                      <button type="button" role="menuitem" onClick={() => void chooseStreamCam(cam.id)}>
-                        <span>{cam.label}</span>
-                        <span aria-hidden="true">{usingStream(cam) ? "✓" : ""}</span>
-                      </button>
-                    )}
-                  </For>
-                  <Show when={streamCamOn() && !camListBusy()}>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setStreamMenu(false);
-                        void stopStreamCam();
-                      }}
-                    >
-                      <span>Stream off</span>
-                    </button>
-                  </Show>
-                </>
-              }
-            >
-              <For each={otherStreamers()}>
-                {(p) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setStreamMenu(false);
-                      teamUp(p.identity);
-                    }}
-                  >
-                    <span>{team() === p.identity ? `Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}</span>
-                    <span aria-hidden="true">{team() === p.identity ? "✓" : ""}</span>
-                  </button>
-                )}
-              </For>
-              <Show when={team()}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setStreamMenu(false);
-                    teamUp(undefined);
-                  }}
-                >
-                  <span>Leave the team</span>
+          <div class="dock-menu" role="menu" aria-label="Stream">
+            <Show when={camListBusy() && camList().length === 0}>
+              <button type="button" disabled>
+                <span>Finding webcams…</span>
+              </button>
+            </Show>
+            <For each={camList()}>
+              {(cam) => (
+                <button type="button" role="menuitem" onClick={() => void chooseStreamCam(cam.id)}>
+                  <span>{cam.label}</span>
+                  <span aria-hidden="true">{usingStream(cam) ? "✓" : ""}</span>
                 </button>
-              </Show>
+              )}
+            </For>
+            <Show when={streamCamOn() && !camListBusy()}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setStreamMenu(false);
+                  void stopStreamCam();
+                }}
+              >
+                <span>Stream off</span>
+              </button>
             </Show>
           </div>
         </Show>

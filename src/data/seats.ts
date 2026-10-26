@@ -19,8 +19,9 @@ export const SEAT_ATTR = "dw-seat"; // "0".."3", or "" with no desk
 export const WAIT_ATTR = "dw-wait"; // "1": in the middle, waiting for a desk
 export const STAND_ATTR = "dw-stand"; // "1": up from the desk, keeping it (sharing)
 
-// the video chat's own track names (VoiceRoom): stream mode, a second screen, the Stream webcam
-const SHARE_NAMES = new Set(["stream", "screen-2", "webcam-2"]);
+// the video chat's own track names (VoiceRoom): stream mode, a second screen.
+// The Stream webcam is not a share. It shows on the primary webcam tile.
+const SHARE_NAMES = new Set(["stream", "screen-2"]);
 
 /** A real person in the call (watchers and extras are "uid:...") */
 export const isPerson = (p: Participant) => !p.identity.includes(":");
