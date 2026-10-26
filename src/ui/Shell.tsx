@@ -27,6 +27,7 @@ import {
   denyJoinRequest,
   ensureHomeServer,
   ensureHomeTiles,
+  joinOpenServers,
   joinWithInviteCode,
   publishServerName,
   removeServerMember,
@@ -232,8 +233,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
 
   onMount(() => {
     void saveProfile(props.uid, props.name, props.username);
-    // the operator gets the home server made on first sign-in
+    // the operator gets the home server made on first sign-in, and reopens it
     if (props.admin) void ensureHomeServer(props.uid).catch(() => {});
+    // everyone who got in through M2A-access is in every open server
+    void joinOpenServers(props.uid).catch(() => {});
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     createEffect(() => me.setWhere(whereNow()));
@@ -256,12 +259,11 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   // The ✉ button at the top of the server rail shows your DMs in the left
   // column; servers keep their own buttons below it.
   const realServers = createMemo(() => servers().filter((x) => !isDm(x)));
-  // Publish names for search, and close any server that still auto-joins people.
+  // Publish names for search. Open servers stay open.
   const publishedNames = new Set<string>();
   createEffect(() => {
     for (const s of realServers()) {
       if (s.ownerUid !== props.uid && !props.admin) continue;
-      if (s.open) void setServerOpen(s.id, false).catch(() => {});
       const mark = `${s.id}:${s.name}`;
       if (publishedNames.has(mark)) continue;
       publishedNames.add(mark);
@@ -368,8 +370,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       if (!tileChecked && isHome && s?.ownerUid === props.uid) {
         tileChecked = true;
         void ensureHomeTiles(sid, list).catch(() => {});
-        // Digital House used to take in every new member. It does not anymore.
-        if (s.open) void setServerOpen(sid, false).catch(() => {});
+        // Digital House is open to everyone who got in through M2A-access.
+        if (s.open !== true) void setServerOpen(sid, true).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
