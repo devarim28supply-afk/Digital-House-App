@@ -12,6 +12,7 @@ import {
   Track,
   type TrackPublication,
   type TrackPublishOptions,
+  type VideoCaptureOptions,
   VideoPresets,
 } from "livekit-client";
 
@@ -47,11 +48,16 @@ type TileInfo = {
   screen: boolean;
   /** the sharer's 2nd screen */
   second?: boolean;
+  /** a second webcam, shown as its own screen */
+  cam2?: boolean;
 };
 
 // A 2nd shared screen rides its own named track: LiveKit keeps one
 // "screen share" per person, so this one is published beside it.
 const SECOND_SCREEN = "screen-2";
+// A second webcam rides its own named track and is drawn as a screen, so the
+// main camera tile stays the face. LiveKit keeps one camera source per person.
+const CAM2 = "cam-2";
 // Stream mode (Kaalob): still a screen share, but it rides on the sharer's
 // own tile as a small picture instead of a tile of its own.
 const STREAM = "stream";
@@ -64,6 +70,14 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
   // 1 Mbps is plenty for signing; a home upload (Kaalob's measured ~2 Mbps
   // while streaming) cannot carry much more next to a stream
   videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
+};
+// The second camera gives way to the face camera. One size, no extra copy.
+const CAM2_PUBLISH: TrackPublishOptions = {
+  name: CAM2,
+  source: Track.Source.Unknown,
+  simulcast: false,
+  degradationPreference: "maintain-framerate",
+  videoEncoding: { maxBitrate: 700_000, maxFramerate: 30, priority: "low" },
 };
 // stream mode sizes: full 1080p, or a lighter 720p (about half the work and upload)
 // Sized for a home upload: every extra copy (simulcast layer) is sent too, so
@@ -150,6 +164,38 @@ async function watchRoomCam(
  * A voice/video channel. Join (or autoJoin, when the app opens it as your
  * call) connects; the mic and camera start off until you switch them on.
  */
+/** Windows lists one camera again as "Default - …" and "Communications - …". */
+function bareCameraLabel(label: string) {
+  return label.replace(/^(Default|Communications) - /i, "").trim();
+}
+
+function realCameras(devices: MediaDeviceInfo[]) {
+  return devices.filter(
+    (d) => d.kind === "videoinput" && d.deviceId !== "" && d.deviceId !== "default" && d.deviceId !== "communications",
+  );
+}
+
+/** The other physical camera. With the main camera off, the first stays free for it. */
+function pickSecondCameraId(cams: MediaDeviceInfo[], main?: MediaStreamTrack) {
+  if (cams.length < 2) return undefined;
+  if (!main) return cams[1].deviceId;
+  const mainId = main.getSettings().deviceId ?? "";
+  const mainLabel = bareCameraLabel(main.label);
+  return cams.find((c) => c.deviceId !== mainId && (!mainLabel || bareCameraLabel(c.label) !== mainLabel))?.deviceId;
+}
+
+/** A camera that is not the second one, so the two buttons do not open one device. */
+function pickMainCameraId(cams: MediaDeviceInfo[], secondId: string, secondLabel: string) {
+  const bare = bareCameraLabel(secondLabel);
+  return cams.find((c) => c.deviceId !== secondId && (!bare || bareCameraLabel(c.label) !== bare))?.deviceId;
+}
+
+function screenKind(tile: { second?: boolean; cam2?: boolean }) {
+  if (tile.cam2) return "2nd camera";
+  if (tile.second) return "2nd screen";
+  return "screen";
+}
+
 export function VoiceRoom(props: {
   serverId: string;
   channel: Channel;
@@ -308,6 +354,13 @@ export function VoiceRoom(props: {
     secondScreen?.track?.stop();
     secondScreen = undefined;
     setSecondOn(false);
+    cam2Gen++;
+    cam2Pub?.track?.stop();
+    cam2Pub = undefined;
+    cam2DeviceId = "";
+    cam2Label = "";
+    setCam2On(false);
+    setCam2Busy(false);
     for (const pub of streamPubs) pub.track?.stop();
     streamPubs = [];
     setStreamOn(false);
@@ -650,6 +703,111 @@ export function VoiceRoom(props: {
     bump();
   }
 
+  // ---- second webcam: its own screen, not a second face tile ---------------
+  let cam2Pub: LocalTrackPublication | undefined;
+  let cam2DeviceId = "";
+  let cam2Label = "";
+  let cam2Gen = 0;
+  const [cam2On, setCam2On] = createSignal(false);
+  const [cam2Busy, setCam2Busy] = createSignal(false);
+
+  async function listCameras() {
+    let cams = realCameras(await navigator.mediaDevices.enumerateDevices());
+    if (cams.length > 0) return cams;
+    // Labels and ids stay blank until the browser has been allowed a camera.
+    const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    probe.getTracks().forEach((track) => track.stop());
+    cams = realCameras(await navigator.mediaDevices.enumerateDevices());
+    return cams;
+  }
+
+  async function stopCam2() {
+    const pub = cam2Pub;
+    cam2Pub = undefined;
+    cam2DeviceId = "";
+    cam2Label = "";
+    setCam2On(false);
+    if (pub?.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
+    pub?.track?.stop();
+    bump();
+  }
+
+  /** Open the other camera and publish it as a screen. */
+  async function toggleCam2() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    if (cam2Pub || cam2Busy()) {
+      cam2Gen++;
+      await stopCam2();
+      setCam2Busy(false);
+      return;
+    }
+    const gen = ++cam2Gen;
+    setCam2Busy(true);
+    try {
+      const main = me.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
+      const deviceId = pickSecondCameraId(await listCameras(), main);
+      if (gen !== cam2Gen) return;
+      if (!deviceId) {
+        setError("No second camera found. Plug one in, then try again.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: deviceId },
+          frameRate: { ideal: 30 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      const media = stream.getVideoTracks()[0];
+      if (gen !== cam2Gen || !media) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      media.contentHint = "motion";
+      media.addEventListener("ended", () => void stopCam2());
+      cam2DeviceId = media.getSettings().deviceId || deviceId;
+      cam2Label = media.label;
+      const published = await me.publishTrack(media, CAM2_PUBLISH);
+      if (gen !== cam2Gen) {
+        await me.unpublishTrack(published.track ?? media).catch(() => {});
+        media.stop();
+        return;
+      }
+      cam2Pub = published;
+      setCam2On(true);
+    } catch (err) {
+      if (gen === cam2Gen) {
+        cam2DeviceId = "";
+        cam2Label = "";
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          setError("The browser blocked the second camera.");
+        } else if (err instanceof DOMException && (err.name === "NotFoundError" || err.name === "OverconstrainedError")) {
+          setError("No second camera found. Plug one in, then try again.");
+        } else {
+          setError(err instanceof Error ? err.message : "The second camera could not be turned on.");
+        }
+      }
+    } finally {
+      if (gen === cam2Gen) setCam2Busy(false);
+    }
+    bump();
+  }
+
+  /** Keep the main camera off the device the second camera is using. */
+  async function mainCameraCapture(): Promise<VideoCaptureOptions | undefined> {
+    if (!cam2DeviceId) return undefined;
+    try {
+      const id = pickMainCameraId(await listCameras(), cam2DeviceId, cam2Label);
+      return id ? { deviceId: { exact: id } } : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Camera off is off everywhere (Kaalob): the 3D room open in this app (a
    * tile's Room side) turns its webcam off too, or your face would still
@@ -685,8 +843,10 @@ export function VoiceRoom(props: {
   /** One camera start or stop, and a way out if the browser never answers. */
   async function moveCamera(active: LocalParticipant, on: boolean) {
     let timer = 0;
-    const attempt = active
-      .setCameraEnabled(on, undefined, CAMERA_PUBLISH)
+    const attempt = (async () => {
+      const capture = on ? await mainCameraCapture() : undefined;
+      await active.setCameraEnabled(on, capture, CAMERA_PUBLISH);
+    })()
       .then(
         () => ({ ok: true as const }),
         (err: unknown) => ({
@@ -757,6 +917,7 @@ export function VoiceRoom(props: {
   }
 
   // One tile per person, plus one per screen being shared (shown first).
+  // A second webcam is one of those screens.
   const tiles = createMemo<TileInfo[]>(() => {
     version();
     const current = room();
@@ -769,8 +930,9 @@ export function VoiceRoom(props: {
       for (const pub of p.trackPublications.values()) {
         if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO) continue;
         const second = pub.trackName === SECOND_SCREEN;
-        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
-        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
+        const cam2 = pub.trackName === CAM2;
+        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second && !cam2)) continue;
+        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second, cam2 });
       }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
@@ -1032,7 +1194,7 @@ export function VoiceRoom(props: {
   const [zoomOn, setZoomOn] = createSignal(false);
   createEffect(() => {
     const key = focus();
-    if (!tiles().some((t) => t.key === key && t.screen)) setZoomOn(false);
+    if (!tiles().some((t) => t.key === key && t.screen && !t.cam2)) setZoomOn(false);
   });
   const spot = createMemo(() => {
     const big = focus();
@@ -1239,12 +1401,12 @@ export function VoiceRoom(props: {
                 onFrame={pip() ? setPipWide : undefined}
                 tile={tile}
                 version={version()}
-                name={tile.screen ? `${nameOf(tile.participant)}'s ${tile.second ? "2nd screen" : "screen"}` : nameOf(tile.participant)}
+                name={tile.screen ? `${nameOf(tile.participant)}'s ${screenKind(tile)}` : nameOf(tile.participant)}
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
-                canZoom={Boolean(spot()) && tile.screen && focus() === tile.key}
+                canZoom={Boolean(spot()) && tile.screen && !tile.cam2 && focus() === tile.key}
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
@@ -1361,6 +1523,17 @@ export function VoiceRoom(props: {
                 {cam().on ? "Camera on" : "Camera off"}
               </button>
             )}
+          </Show>
+          <Show when={CAN_CAM2}>
+            <button
+              type="button"
+              class="dock-btn"
+              aria-pressed={cam2On()}
+              title="Open your other camera as its own screen"
+              onClick={() => void toggleCam2()}
+            >
+              {cam2Busy() ? "Starting 2nd camera…" : cam2On() ? "2nd camera on" : "2nd camera"}
+            </button>
           </Show>
           {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
           <div
@@ -1527,6 +1700,7 @@ function doubleTap(handler: () => void) {
 
 // Phone browsers cannot share a screen: hide Share screen and stream mode there.
 const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
+const CAN_CAM2 = typeof navigator.mediaDevices?.getUserMedia === "function";
 
 // A team screen shows each member this long, then the next (Kaalob).
 const TEAM_TURN_MS = 10_000;
