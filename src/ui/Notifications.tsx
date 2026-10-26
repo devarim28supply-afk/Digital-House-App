@@ -1,15 +1,12 @@
 import { Portal } from "solid-js/web";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { watchAllFeedback, watchMyFeedback, type Feedback } from "../data/feedback";
-import { feedbackReceipt } from "../data/notifications";
+import { feedbackReceipt, unreadNotifications } from "../data/notifications";
 import "./notifications.css";
 
 export type Notice = { id: string; title: string; detail: string; at: number; target: "mine" | "inbox" };
 export function Notifications(props: { uid: string; admin: boolean; unreadInbox: number; latestInboxAt?: number; onOpen: () => void; onItems: (items: Notice[]) => void; onError: (error: string) => void }) {
-  const readKey = () => `dh_notifications_read_${props.uid}`;
-  const [readAt, setReadAt] = createSignal((() => {try {return Number(localStorage.getItem(readKey())) || 0;} catch {return 0;}})());
-  const unreadCount = () => props.unreadInbox + items().filter(item => item.at > readAt()).length;
-  function openFeedback() { const now = Date.now(); setReadAt(now); try {localStorage.setItem(readKey(),String(now));} catch {} props.onOpen(); }
+  const unreadCount = () => props.unreadInbox + unreadNotifications(props.uid,items());
   const [items, setItems] = createSignal<Notice[]>([]);
   const [error, setError] = createSignal("");
   const [toast, setToast] = createSignal<Notice>();
@@ -19,9 +16,21 @@ export function Notifications(props: { uid: string; admin: boolean; unreadInbox:
   let feedbackButton: HTMLButtonElement | undefined;
   const [anchor, setAnchor] = createSignal({left:12,top:80,width:96,height:40});
   let timer: number | undefined, exit: number | undefined;
-  function announce(notice: Notice) {
+  function positionToast() {
     const box = feedbackButton?.getBoundingClientRect();
-    if (box) setAnchor({left:Math.max(12,box.left - box.width - 10),top:box.top + box.height / 2,width:box.width,height:box.height});
+    if (!box) return;
+    const fitsLeft = box.left - 10 - box.width - 24 >= 12;
+    setAnchor({left:fitsLeft ? box.left - box.width - 10 : Math.max(12,Math.min(box.left,window.innerWidth-box.width-36)),top:fitsLeft ? box.top+box.height/2 : box.bottom+10+box.height/2,width:box.width,height:box.height});
+  }
+  createEffect(() => {
+    if (!toast()) return;
+    queueMicrotask(positionToast);
+    window.addEventListener("resize",positionToast);
+    window.addEventListener("scroll",positionToast,true);
+    onCleanup(() => {window.removeEventListener("resize",positionToast);window.removeEventListener("scroll",positionToast,true);});
+  });
+  function announce(notice: Notice) {
+    positionToast();
     clearTimeout(timer); clearTimeout(exit);
     setLeaving(false); setToast(notice);
     timer = window.setTimeout(() => {
@@ -77,7 +86,7 @@ export function Notifications(props: { uid: string; admin: boolean; unreadInbox:
   });
   onCleanup(() => { clearTimeout(timer); clearTimeout(exit); });
   return <div class="notifications">
-    <button ref={feedbackButton} class="btn feedback-btn" type="button" title="Feedback and notifications" aria-label={`Feedback${unreadCount() ? `, ${unreadCount()} unread notifications` : ""}`} onClick={openFeedback}>Feedback<Show when={unreadCount() > 0}><span class="feedback-unread" aria-hidden="true"><i />{unreadCount() > 99 ? "99+" : unreadCount()}</span></Show></button>
+    <button ref={feedbackButton} class="btn feedback-btn" type="button" title="Feedback and notifications" aria-label={`Feedback${unreadCount() ? `, ${unreadCount()} unread notifications` : ""}`} onClick={props.onOpen}>Feedback<Show when={unreadCount() > 0}><span class="feedback-unread" aria-hidden="true"><i />{unreadCount() > 99 ? "99+" : unreadCount()}</span></Show></button>
     <Portal><Show when={toast()}>{item => <div style={{position:"fixed",left:`${anchor().left}px`,top:`${anchor().top}px`,right:"auto",width:`${anchor().width}px`,height:`${anchor().height}px`}} title={`${item().title}: ${item().detail}`} aria-label={`${item().title}: ${item().detail}`} class="notification-toast" classList={{"is-leaving":leaving()}} role="status" aria-live="polite"><span class="notification-success" aria-hidden="true">{item().title === "New inbox message" ? "✉" : "✓"}</span><div><strong>{item().title === "New inbox message" ? "New inbox" : item().title === "Bug report sent" ? "Bug sent" : item().title === "Feedback sent" ? "Sent" : item().title.includes("reply") ? "New reply" : "Updated"}</strong></div></div>}</Show></Portal>
   </div>;
 }

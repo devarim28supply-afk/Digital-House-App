@@ -1,0 +1,104 @@
+/* Phone-only layout; desktop retains its existing geometry and controls. */
+@media (max-width: 600px) {
+  :root[data-layout-theme] .main-head,
+  :root[data-layout-theme] .main > .main-head,
+  :root[data-layout-theme] .main:has(.room-pane) > .main-head {
+    display:grid;
+    grid-template-columns:36px minmax(0,1fr) auto minmax(80px,120px);
+    grid-template-rows:32px 36px;
+    align-items:center;
+    gap:6px;
+    box-sizing:border-box;
+    height:90px;
+    min-height:90px;
+    max-height:none;
+    flex:0 0 90px;
+    padding:6px 10px 8px;
+  }
+  .main-head .menu-btn{grid-column:1;grid-row:1;display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0}
+  .main-head .main-title{grid-column:2 / -1;grid-row:1;min-width:0;font-size:14px;line-height:20px}
+  .main-head:has(.dm-call-btn) .main-title{grid-column:2 / 4}
+  .main-head .dm-call-btn{grid-column:4;grid-row:1}
+  .main-head .notifications{grid-column:1 / 3;grid-row:2;margin:0;min-width:0}
+  .main-head .activity-btn{grid-column:3;grid-row:2}
+  .main-head .side-chat-btn{grid-column:4;grid-row:2;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  :root[data-layout-theme] .main-head :is(.feedback-btn,.activity-btn,.side-chat-btn,.dm-call-btn){
+    box-sizing:border-box;
+    height:36px;
+    min-height:36px;
+    max-width:100%;
+    padding:0 10px;
+    border-radius:10px;
+    font-size:12px;
+    line-height:34px;
+    white-space:nowrap;
+  }
+  :root[data-layout-theme] .main-head .feedback-btn{width:100%;gap:6px}
+  .main-head .feedback-unread{font-size:10px}
+  .main-head .side-chat-btn{display:block!important}
+  :root[data-layout-theme] .voice{padding:10px;gap:8px;min-width:0}
+  :root[data-layout-theme] .voice-lobby{gap:12px;padding:24px 14px;min-width:0}
+  :root[data-layout-theme] .voice-lobby h2{margin:0;font-size:21px;line-height:1.3}
+  :root[data-layout-theme] .voice-lobby p{width:100%;max-width:280px;margin:0;font-size:13px;line-height:1.55}
+  :root[data-layout-theme] .voice-lobby .btn{width:auto;min-width:136px;min-height:40px;padding:0 24px;font-size:13px;border-radius:11px}
+  .fb-tabs{gap:5px}
+  .fb-tabs button{padding:7px 9px;font-size:11px;min-height:34px}
+  .fb .modal-form{gap:12px}
+  .fb-reply-form{flex-wrap:wrap}
+  .fb-reply-form input{min-width:0;flex:1 1 160px}
+  .fb-status-dropdown{max-width:100%}
+}
+
+.mobile-panel-switch{display:none}
+@media(max-width:600px){
+  .side-chat .mobile-panel-switch{display:flex;justify-content:center;flex:none;padding:8px 12px}
+  .mobile-panel-track{position:relative;isolation:isolate;display:grid;grid-template-columns:1fr 1fr;width:min(280px,100%);height:36px;background:none;border:0}
+  .mobile-panel-track::before{content:"";position:absolute;inset:2px auto 2px 0;width:50%;border-radius:999px;background:rgba(238,245,247,.34);z-index:-1;transition:transform 220ms ease;pointer-events:none}
+  .mobile-panel-track.people-selected::before{transform:translateX(100%)}
+  :root[data-layout-theme] .mobile-panel-track>button{display:flex;align-items:center;justify-content:center;gap:5px;padding:0 10px;border:0;border-radius:999px;background:transparent;color:var(--text);font:inherit;font-size:12px;cursor:pointer;box-shadow:none}
+  .mobile-panel-track>button[aria-pressed="true"]{font-weight:700}
+  .mobile-panel-track>button span{font-size:10px;opacity:.7}
+  .mobile-panel-track>button:focus-visible{outline:2px solid var(--text);outline-offset:1px}
+  .side-chat[data-mobile-panel="chat"]>.side-online{display:none}
+  .side-chat[data-mobile-panel="people"]>.chat,.side-chat[data-mobile-panel="people"]>.side-tv{display:none}
+  .side-chat[data-mobile-panel="people"]>.side-online{flex:1;min-height:0;max-height:none;overflow-y:auto;border-bottom:0;padding-bottom:env(safe-area-inset-bottom)}
+}
+@media(prefers-reduced-motion:reduce){.mobile-panel-track::before{transition:none}}
+
+@media(max-width:600px){
+  html,body{overflow:hidden}
+  #root{height:var(--mobile-viewport-height,100dvh);min-height:0}
+  .shell{height:100%;min-height:0}
+  .shell :is(.side-chat,.members,.side,.rail){top:var(--mobile-viewport-top,0px);bottom:auto;height:var(--mobile-viewport-height,100dvh);max-height:var(--mobile-viewport-height,100dvh)}
+  .side-chat>.chat{min-height:0;flex:1;overflow:hidden}
+  .chat .chat-scroll{min-height:0;overscroll-behavior:contain}
+  :root[data-layout-theme] .chat .composer{flex:none;gap:6px;align-items:flex-end;padding:8px 10px calc(8px + env(safe-area-inset-bottom));margin:0}
+  :root[data-layout-theme] .chat .composer textarea{flex:1;width:0;min-width:0;min-height:38px;max-height:min(100px,25dvh);padding:8px 10px;font-size:16px;line-height:20px;scroll-margin-bottom:12px}
+  :root[data-layout-theme] .chat .composer textarea:placeholder-shown{height:38px}
+  :root[data-layout-theme] .chat .composer .send{flex:none;min-width:52px;height:38px;min-height:38px;padding:0 10px;font-size:12px}
+  :root[data-layout-theme] .chat .composer .icon-btn{flex:none;width:32px;min-width:32px;height:38px;min-height:38px;padding:0}
+  :root[data-mobile-keyboard="true"] .chat .composer{padding-bottom:8px}
+}
+
+/* Touch actions replace the always-visible mobile toolbar. */
+@media(max-width:600px){
+  .chat .msg-tools{display:none!important}
+  .chat .msg{-webkit-touch-callout:none;user-select:none;touch-action:pan-y}
+  .chat .msg :is(input,textarea){user-select:text;-webkit-touch-callout:default}
+}
+.message-actions-backdrop{position:fixed;inset:0;z-index:2000;display:flex;align-items:flex-end;justify-content:center;padding:12px 12px calc(12px + env(safe-area-inset-bottom));background:#0005;backdrop-filter:blur(3px)}
+.message-actions-menu{width:min(360px,100%);padding:8px;border:1px solid var(--line-2);border-radius:16px;background:var(--panel);color:var(--text);box-shadow:0 12px 40px #0004;animation:message-menu-in 160ms ease}
+.message-actions-menu p{margin:8px 12px;font-size:11px;color:var(--muted)}
+.message-actions-menu button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:9px;background:transparent;color:inherit;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.message-actions-menu button:hover,.message-actions-menu button:focus-visible{background:var(--panel-2)}
+.message-actions-menu button:disabled{opacity:.4;cursor:default}
+.message-actions-menu .message-action-delete{color:#f17379}
+.message-actions-menu .message-action-cancel{margin-top:5px;border-top:1px solid var(--line);border-radius:0 0 9px 9px;justify-content:center;font-weight:600}
+:root[data-layout-theme="smoky"] .message-actions-menu{background:linear-gradient(140deg,#a9b5bbf5,#919fa8f5);color:#182b36}
+:root[data-layout-theme="smoky"] .message-actions-menu button:hover,:root[data-layout-theme="smoky"] .message-actions-menu button:focus-visible{background:#ffffff30}
+:root[data-layout-theme="smoky"] .message-actions-menu .message-action-delete{color:#8e242c}
+@keyframes message-menu-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.message-actions-menu{animation:none}}
+
+/* Keep Android's selection/copy toolbar off the app's touch action sheet. */
+.message-actions-backdrop,.message-actions-menu,.message-actions-menu *{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}

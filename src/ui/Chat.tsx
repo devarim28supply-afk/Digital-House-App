@@ -1,3 +1,4 @@
+import { Portal } from "solid-js/web";
 import { DeveloperBadge } from "./DeveloperBadge";
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
@@ -193,6 +194,56 @@ export function Chat(props: {
   let scroller: HTMLDivElement | undefined;
   let input: HTMLTextAreaElement | undefined;
   let stickToBottom = true;
+  const [messageActions,setMessageActions] = createSignal<Message>();
+  let holdTimer: number | undefined;
+  let holdStart = {x:0,y:0};
+  let held = false;
+  let actionMenu: HTMLDivElement | undefined;
+  let previousFocus: HTMLElement | null = null;
+  const phoneActions = () => window.matchMedia("(max-width:600px)").matches;
+  function cancelHold() {clearTimeout(holdTimer);holdTimer=undefined;}
+  function closeActions() {setMessageActions(undefined);previousFocus?.focus({preventScroll:true});}
+  function startHold(event: PointerEvent,m:Message) {
+    if(!phoneActions() || event.pointerType === "mouse" || !event.isPrimary || (event.target as HTMLElement).closest("button,a,input,textarea,video,audio")) return;
+    cancelHold();held=false;holdStart={x:event.clientX,y:event.clientY};
+    holdTimer=window.setTimeout(()=>{held=true;previousFocus=document.activeElement as HTMLElement;setMessageActions(m);},450);
+  }
+  createEffect(()=>{
+    if(!messageActions()) return;
+    window.getSelection()?.removeAllRanges();
+    queueMicrotask(()=>actionMenu?.querySelector<HTMLButtonElement>("button")?.focus());
+    const escape=(event:KeyboardEvent)=>{if(event.key === "Escape"){event.preventDefault();closeActions();}};
+    window.addEventListener("keydown",escape);
+    onCleanup(()=>window.removeEventListener("keydown",escape));
+  });
+  onCleanup(cancelHold);
+  function replyTo(m:Message) {
+    const quote=(m.text || m.files?.map(file=>file.name).join(", ") || "Attachment").slice(0,300).replace(/\n/g," ");
+    setDraft(`> ${nameOf(m.authorUid)}: ${quote}\n\n${draft()}`);
+    closeActions();input?.focus();
+  }
+  async function copyMessage(m:Message) {
+    try {
+      if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(m.text);
+      else {
+        // LAN HTTP doesn't expose Clipboard API; copy during the user's tap.
+        const field=document.createElement("textarea");field.value=m.text;field.style.cssText="position:fixed;top:0;left:-9999px";
+        document.body.appendChild(field);
+        try {field.select();field.setSelectionRange(0,field.value.length);if(!document.execCommand("copy")) throw Error("copy");}
+        finally {field.remove();}
+      }
+      closeActions();
+    } catch {setError("Could not copy the message on this browser.");closeActions();}
+  }
+  async function removeMessage(m:Message) {
+    if(m.authorUid !== props.uid && !props.canModerate) return;
+    closeActions();
+    try {
+      await deleteMessage(props.serverId,props.channel.id,m.id);
+      if(m.authorUid !== props.uid) audit("message.delete",{serverId:props.serverId,target:m.authorUid,detail:`#${props.channel.name}: ${m.text.slice(0,120)}`});
+    } catch {setError("Could not delete the message. Try again.");}
+  }
+
 
   createEffect(
     on(
@@ -201,6 +252,7 @@ export function Chat(props: {
         setMessages([]);
         setLoaded(false);
         setEditing(undefined);
+        setMessageActions(undefined);cancelHold();
         stickToBottom = true;
         let seen: Set<string> | undefined;
         const stop = watchMessages(sid, cid, (rows) => {
@@ -460,6 +512,22 @@ export function Chat(props: {
         onFileDrop(e);
       }}
     >
+      <Portal><Show when={messageActions()}>{message => <div class="message-actions-backdrop" onContextMenu={event=>event.preventDefault()} onClick={closeActions}>
+        <div ref={actionMenu} class="message-actions-menu" role="dialog" aria-modal="true" aria-label="Message actions" onClick={event=>event.stopPropagation()} onKeyDown={event=>{
+          if(!["Tab","ArrowDown","ArrowUp"].includes(event.key)) return;
+          const buttons=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+          const at=buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const direction=event.key === "ArrowUp" || event.key === "Tab" && event.shiftKey ? -1 : 1;
+          buttons[(at+direction+buttons.length)%buttons.length]?.focus();event.preventDefault();
+        }}>
+          <p>Message actions</p>
+          <button type="button" onClick={()=>replyTo(message())}>Reply <span aria-hidden="true">↩</span></button>
+          <button type="button" disabled={!message().text} onClick={()=>void copyMessage(message())}>Copy text <span aria-hidden="true">⧉</span></button>
+          <Show when={message().authorUid === props.uid}><button type="button" onClick={()=>{const id=message().id;closeActions();setEditing(id);}}>Edit <span aria-hidden="true">✎</span></button></Show>
+          <Show when={message().authorUid === props.uid || props.canModerate}><button class="message-action-delete" type="button" onClick={()=>void removeMessage(message())}>Delete <span aria-hidden="true">×</span></button></Show>
+          <button class="message-action-cancel" type="button" onClick={closeActions}>Cancel</button>
+        </div>
+      </div>}</Show></Portal>
       <Show when={dragging()}>
         <div class="drop-hint" aria-hidden="true">
           <span>Drop to send in # {props.channel.name}</span>
@@ -474,7 +542,13 @@ export function Chat(props: {
         </Show>
         <For each={messages()}>
           {(m, i) => (
-            <article class="msg" classList={{ grouped: !startsGroup(i()), "mentions-me": mentionsMe(m) }}>
+            <article class="msg" classList={{ grouped: !startsGroup(i()), "mentions-me": mentionsMe(m) }}
+              onPointerDown={event=>startHold(event,m)}
+              onPointerMove={event=>{if(Math.hypot(event.clientX-holdStart.x,event.clientY-holdStart.y)>10) cancelHold();}}
+              onPointerUp={cancelHold} onPointerCancel={cancelHold}
+              onContextMenu={event=>{if(phoneActions() && !(event.target as HTMLElement).closest("input,textarea")){event.preventDefault();cancelHold();previousFocus=document.activeElement as HTMLElement;setMessageActions(m);}}}
+              on:click={(event:MouseEvent)=>{if(held){event.preventDefault();event.stopPropagation();held=false;}}}>
+
               <Show when={startsGroup(i())}>
                 <button
                   type="button"

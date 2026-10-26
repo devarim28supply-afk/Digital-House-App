@@ -1,3 +1,4 @@
+
 import { Notifications, NotificationList, type Notice } from "./Notifications";
 import { SelfControls } from "./SelfControls";
 import { availabilityStatus, availabilityLabel } from "../data/status";
@@ -133,6 +134,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const [customizeOpen, setCustomizeOpen] = createSignal(false);
   const [navOpen, setNavOpen] = createSignal(false);
   const [sideChatOpen, setSideChatOpen] = createSignal(false);
+  const [mobilePanel, setMobilePanel] = createSignal<"chat" | "people">("chat");
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
@@ -758,6 +760,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       {/* ---- the channel ---- */}
       <main class="main">
         <header class="main-head">
+
           <button class="icon-btn menu-btn" type="button" aria-label="Channels" onClick={() => setNavOpen(true)}>
             ☰
           </button>
@@ -880,6 +883,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         {(chat) => (
           <aside
             class="side-chat"
+            data-mobile-panel={mobilePanel()}
             aria-label={`# ${chat().name}`}
             onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }}
             onMouseLeave={leaveRight}
@@ -898,6 +902,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                 ✕
               </button>
             </header>
+            <div class="mobile-panel-switch" role="group" aria-label="Chat or people">
+              <div class="mobile-panel-track" classList={{"people-selected":mobilePanel() === "people"}}>
+                <button type="button" aria-pressed={mobilePanel() === "chat"} onClick={() => setMobilePanel("chat")}>Chat</button>
+                <button type="button" aria-pressed={mobilePanel() === "people"} onClick={() => setMobilePanel("people")}>People <span>{onlineHere().length}</span></button>
+              </div>
+            </div>
             {/* the first TV on in this tile's Darkwood Room, above everything (Kaalob) */}
             <Show when={channel() && hasDarkwoodRoom(channel()!) ? channel()!.id : undefined}>
               {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} profiles={profiles()} />}
@@ -1044,6 +1054,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       <FeedbackDialog
         open={feedbackOpen()}
         initialTab={feedbackTab()}
+        notificationItems={notificationItems()}
+        unreadMessages={unreadDms()}
         notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => setFeedbackTab(tab)} />}
         onClose={() => setFeedbackOpen(false)}
         uid={props.uid}
