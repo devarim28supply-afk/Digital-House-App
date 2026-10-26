@@ -1487,8 +1487,8 @@ const ROW = 4; // small screens under the room; the rest go in the column
 // identity -> { el, video, who, center, name, and for a person: p, seat, stand, wait, sharing, share }
 const callers = new Map();
 let callRoom = null;
-// the videochat's own share track names (VoiceRoom): stream mode, a second screen, two webcam screens
-const STREAM = "stream", SECOND_SCREEN = "screen-2", WEBCAM_1 = "webcam-1", WEBCAM_2 = "webcam-2";
+// the videochat's own share track names (VoiceRoom): stream mode, a second screen, the Stream webcam
+const STREAM = "stream", SECOND_SCREEN = "screen-2", WEBCAM_2 = "webcam-2";
 
 async function watchCall(pass) {
   const call = new Room({ adaptiveStream: false, dynacast: false });
@@ -1498,7 +1498,7 @@ async function watchCall(pass) {
     .on(RoomEvent.ParticipantConnected, (p) => { addCaller(p); syncCall(); })
     .on(RoomEvent.ParticipantDisconnected, (p) => { removeCaller(p.identity); syncCall(); })
     .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
-      if (pub.source === Track.Source.Camera || pub.trackName === WEBCAM_1) track.attach(addCaller(p).video);
+      if (pub.source === Track.Source.Camera) track.attach(addCaller(p).video);
       syncCall();
     })
     .on(RoomEvent.TrackUnsubscribed, (track) => { track.detach(); later(); })
@@ -1557,17 +1557,16 @@ function layoutCall() {
 
 /** A publication's video, when it is coming in and not paused. */
 const videoOf = (pub) => (pub?.track && pub.isSubscribed && !pub.isMuted ? pub.track.mediaStreamTrack : null);
-/** What someone shares: a stream, then a display, then webcam screen 1, then webcam screen 2. */
+/** What someone shares: a stream, then a display, then the Stream webcam. */
 function shareOf(p) {
   const rank = (pub) =>
     pub.trackName === STREAM ? 0
       : pub.trackName === SECOND_SCREEN ? 2
-        : pub.trackName === WEBCAM_1 ? 3
-          : pub.trackName === WEBCAM_2 ? 4
-            : 1;
+        : pub.trackName === WEBCAM_2 ? 4
+          : 1;
   const pubs = [...p.trackPublications.values()]
     .filter((pub) => pub.kind === Track.Kind.Video && !pub.isMuted &&
-      (pub.source === Track.Source.ScreenShare || pub.trackName === STREAM || pub.trackName === SECOND_SCREEN || pub.trackName === WEBCAM_1 || pub.trackName === WEBCAM_2))
+      (pub.source === Track.Source.ScreenShare || pub.trackName === STREAM || pub.trackName === SECOND_SCREEN || pub.trackName === WEBCAM_2))
     .sort((a, b) => rank(a) - rank(b));
   return { sharing: pubs.length > 0, track: pubs.map(videoOf).find(Boolean) ?? null };
 }
@@ -1577,8 +1576,7 @@ function syncCall() {
   for (const p of callRoom.remoteParticipants.values()) {
     const c = callers.get(p.identity);
     if (!c) continue;
-    const cam = videoOf(p.getTrackPublication(Track.Source.Camera))
-      || videoOf([...p.trackPublications.values()].find((pub) => pub.trackName === WEBCAM_1));
+    const cam = videoOf(p.getTrackPublication(Track.Source.Camera));
     c.el.classList.toggle("live", Boolean(cam));
     if (p.identity.includes(":")) continue; // not a person (watchers, extras)
     const seat = Number.parseInt(p.attributes["dw-seat"] ?? "", 10);
