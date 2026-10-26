@@ -293,6 +293,7 @@ export function VoiceRoom(props: {
   // Bumped on every hang-up: a join still connecting when you hang up (or
   // switch away) sees it changed and drops its connection instead of keeping it.
   let joinGen = 0;
+  let joinTries = 0;
   function leave() {
     joinGen++;
     const current = room();
@@ -407,12 +408,17 @@ export function VoiceRoom(props: {
         return;
       }
       setRoom(next);
+      joinTries = 0;
       bump();
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not join the call.");
+      if (gen === joinGen && joinTries < 6) {
+        joinTries += 1;
+        window.setTimeout(() => void join(), 5000);
+      }
     } finally {
       setJoining(false);
     }
