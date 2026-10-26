@@ -525,7 +525,7 @@ export function VoiceRoom(props: {
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
   let secondScreen: LocalTrackPublication | undefined;
   const [secondOn, setSecondOn] = createSignal(false);
-  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0) + (streamOn() ? 1 : 0);
+  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0);
   const [shareMenu, setShareMenu] = createSignal(false);
   // a click anywhere else closes the share menu
   createEffect(() => {
@@ -1554,39 +1554,106 @@ export function VoiceRoom(props: {
         <button
           type="button"
           class="dock-btn"
-          aria-pressed={streamCamOn()}
+          aria-pressed={streamOn() || streamCamOn()}
           aria-haspopup="menu"
           aria-expanded={streamMenu()}
           onClick={() => openStreamMenu()}
         >
-          {streamCamBusy() ? "Starting…" : "Stream"} ▴
+          {streamOn() ? "Stream mode" : streamCamBusy() ? "Starting…" : "Stream"} ▴
         </button>
         <Show when={streamMenu()}>
-          <div class="dock-menu" role="menu" aria-label="Stream">
-            <Show when={camListBusy() && camList().length === 0}>
-              <button type="button" disabled>
-                <span>Finding webcams…</span>
-              </button>
-            </Show>
-            <For each={camList()}>
-              {(cam) => (
-                <button type="button" role="menuitem" onClick={() => void chooseStreamCam(cam.id)}>
-                  <span>{cam.label}</span>
-                  <span aria-hidden="true">{usingStream(cam) ? "✓" : ""}</span>
-                </button>
-              )}
-            </For>
-            <Show when={streamCamOn() && !camListBusy()}>
+          <div class="dock-menu" role="menu" aria-label={streamOn() ? "Stream mode" : "Stream"}>
+            <Show
+              when={streamOn()}
+              fallback={
+                <>
+                  <Show when={camListBusy() && camList().length === 0}>
+                    <button type="button" disabled>
+                      <span>Finding webcams…</span>
+                    </button>
+                  </Show>
+                  <For each={camList()}>
+                    {(cam) => (
+                      <button type="button" role="menuitem" onClick={() => void chooseStreamCam(cam.id)}>
+                        <span>{cam.label}</span>
+                        <span aria-hidden="true">{usingStream(cam) ? "✓" : ""}</span>
+                      </button>
+                    )}
+                  </For>
+                  <Show when={streamCamOn() && !camListBusy()}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setStreamMenu(false);
+                        void stopStreamCam();
+                      }}
+                    >
+                      <span>Stream off</span>
+                    </button>
+                  </Show>
+                  <Show when={CAN_SHARE}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setStreamMenu(false);
+                        void toggleStream("1080");
+                      }}
+                    >
+                      <span>Start stream mode (1080p)</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setStreamMenu(false);
+                        void toggleStream("720");
+                      }}
+                    >
+                      <span>Start stream mode (720p, lighter)</span>
+                    </button>
+                  </Show>
+                </>
+              }
+            >
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   setStreamMenu(false);
-                  void stopStreamCam();
+                  void toggleStream("1080");
                 }}
               >
-                <span>Stream off</span>
+                <span>Stop stream mode</span>
               </button>
+              <For each={otherStreamers()}>
+                {(p) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setStreamMenu(false);
+                      teamUp(p.identity);
+                    }}
+                  >
+                    <span>{team() === p.identity ? `Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}</span>
+                    <span aria-hidden="true">{team() === p.identity ? "✓" : ""}</span>
+                  </button>
+                )}
+              </For>
+              <Show when={team()}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setStreamMenu(false);
+                    teamUp(undefined);
+                  }}
+                >
+                  <span>Leave the team</span>
+                </button>
+              </Show>
             </Show>
           </div>
         </Show>
@@ -1713,58 +1780,6 @@ export function VoiceRoom(props: {
                 >
                   <span>{secondOn() ? "Stop screen 2" : "Share screen 2"}</span>
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setShareMenu(false);
-                    void toggleStream("1080");
-                  }}
-                >
-                  <span>{streamOn() ? "Stop stream mode" : "Start stream mode (1080p)"}</span>
-                </button>
-                <Show when={!streamOn()}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setShareMenu(false);
-                      void toggleStream("720");
-                    }}
-                  >
-                    <span>Start stream mode (720p, lighter)</span>
-                  </button>
-                </Show>
-                {/* streaming: team up with another streamer here (one LIVE tile) */}
-                <Show when={streamOn()}>
-                  <For each={otherStreamers()}>
-                    {(p) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setShareMenu(false);
-                          teamUp(p.identity);
-                        }}
-                      >
-                        <span>{team() === p.identity ? `Teamed up with ${nameOf(p)}` : `Team up with ${nameOf(p)}`}</span>
-                        <span aria-hidden="true">{team() === p.identity ? "✓" : ""}</span>
-                      </button>
-                    )}
-                  </For>
-                  <Show when={team()}>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setShareMenu(false);
-                        teamUp(undefined);
-                      }}
-                    >
-                      <span>Leave the team</span>
-                    </button>
-                  </Show>
-                </Show>
               </div>
             </Show>
           </div>
