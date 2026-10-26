@@ -22,6 +22,9 @@ import {
   ensureHomeServer,
   ensureHomeTiles,
   joinOpenServers,
+  lookupInvite,
+  redeemInvite,
+  setInviteCode,
   setServerOpen,
   imageSrc,
   isBuiltInTile,
@@ -181,7 +184,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
   }
-  const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
+  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
@@ -297,6 +300,15 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     setDmHome(false);
     setServerId(id);
   }
+  // The joined server shows up on the next member-list snapshot. Switch to it then.
+  const [pendingJoin, setPendingJoin] = createSignal("");
+  createEffect(() => {
+    const id = pendingJoin();
+    if (id && servers().some((s) => s.id === id)) {
+      openServer(id);
+      setPendingJoin("");
+    }
+  });
   function goDms() {
     setDmHome(true);
     const first = dmsByLatest()[0];
@@ -606,6 +618,9 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         </For>
         <button type="button" class="rail-add" title="New server" aria-label="New server" onClick={() => setModal("new-server")}>
           +
+        </button>
+        <button type="button" class="rail-add" title="Join with an invite code" aria-label="Join with an invite code" onClick={() => setModal("join")}>
+          #
         </button>
       </nav>
 
@@ -1068,6 +1083,14 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           setServerId(id);
         }}
       />
+      <JoinServerDialog
+        open={modal() === "join"}
+        servers={servers()}
+        uid={props.uid}
+        onOpen={openServer}
+        onJoined={setPendingJoin}
+        onClose={() => setModal("")}
+      />
       <ServerSettingsDialog
         open={modal() === "rename"}
         server={server()}
@@ -1436,6 +1459,123 @@ function NewChannelDialog(props: {
   );
 }
 
+function explain(err: unknown, fallback: string) {
+  const message = err instanceof Error ? err.message : "";
+  if (/permission|insufficient/i.test(message)) return "That was refused. An approved member can use a code the server still has.";
+  return message || fallback;
+}
+
+/** Enter an invite code and join that server. */
+function JoinServerDialog(props: {
+  open: boolean;
+  servers: Server[];
+  uid: string;
+  onOpen: (id: string) => void;
+  onJoined: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [error, setError] = createSignal("");
+  const [joining, setJoining] = createSignal(false);
+  const close = () => {
+    setError("");
+    props.onClose();
+  };
+  return (
+    <Modal title="Join a server" open={props.open} onClose={close}>
+      <form
+        class="modal-form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const raw = String(new FormData(e.currentTarget).get("code") ?? "");
+          setJoining(true);
+          setError("");
+          try {
+            const { serverId, code } = await lookupInvite(raw);
+            if (props.servers.some((s) => s.id === serverId)) props.onOpen(serverId);
+            else {
+              await redeemInvite(props.uid, serverId, code);
+              props.onJoined(serverId);
+            }
+            close();
+          } catch (err) {
+            setError(explain(err, "Could not join with that code."));
+          } finally {
+            setJoining(false);
+          }
+        }}
+      >
+        <p class="modal-text">Ask the server’s owner for the code in Server settings. Your account still has to be approved.</p>
+        <label class="field">
+          <span>Invite code</span>
+          <input name="code" class="invite-input" maxLength={16} autocapitalize="characters" autocomplete="off" required />
+        </label>
+        <Show when={error()}>
+          <p class="form-error">{error()}</p>
+        </Show>
+        <div class="modal-actions">
+          <button class="btn" type="button" onClick={close}>
+            Cancel
+          </button>
+          <button class="btn primary" type="submit" disabled={joining()}>
+            {joining() ? "Joining…" : "Join"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** The code for this server. Creating a new one replaces the old one. */
+function InviteCodeField(props: { server?: Server }) {
+  const [error, setError] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  const [copied, setCopied] = createSignal(false);
+
+  async function mint() {
+    if (!props.server) return;
+    setBusy(true);
+    setError("");
+    try {
+      await setInviteCode(props.server.id);
+    } catch (err) {
+      setError(explain(err, "Could not make a code."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    const code = props.server?.inviteCode;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError("Could not copy. Select the code and copy it.");
+    }
+  }
+
+  return (
+    <div class="field">
+      <span>Invite code</span>
+      <div class="invite-row">
+        <code class="invite-code">{props.server?.inviteCode ?? "No code yet"}</code>
+        <button class="btn" type="button" disabled={!props.server?.inviteCode} onClick={() => void copy()}>
+          {copied() ? "Copied" : "Copy"}
+        </button>
+        <button class="btn" type="button" disabled={busy() || !props.server} onClick={() => void mint()}>
+          {busy() ? "Working…" : props.server?.inviteCode ? "New code" : "Create code"}
+        </button>
+      </div>
+      <small class="field-hint">An approved member enters this on the # button to join. A new code replaces the old one.</small>
+      <Show when={error()}>
+        <p class="form-error">{error()}</p>
+      </Show>
+    </div>
+  );
+}
+
 /** The server's name and banner (the picture across the top of its channels). */
 function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete: boolean; onClose: () => void }) {
   // undefined = banner untouched, null = remove it, string = the new picture
@@ -1519,6 +1659,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
             <small>Every approved member (past the M2A-access door) joins this server on their own.</small>
           </span>
         </label>
+        <InviteCodeField server={props.server} />
         <div class="field">
           <span>Banner</span>
           <div class="banner-preview">

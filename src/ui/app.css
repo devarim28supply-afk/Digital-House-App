@@ -1069,6 +1069,31 @@
   font-size: 12.5px;
 }
 
+.invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.invite-code {
+  flex: 1;
+  min-width: 8em;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 18px;
+  letter-spacing: 0.14em;
+}
+
+.invite-input {
+  font-family: var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .chat-error {
   padding: 0 20px;
 }

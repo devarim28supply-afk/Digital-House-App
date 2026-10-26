@@ -10,6 +10,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -77,6 +78,8 @@ export type Server = {
   banner?: string;
   /** everyone who gets in through M2A-access joins it on their own */
   open?: boolean;
+  /** 8-character code an approved member can enter to join this server */
+  inviteCode?: string;
   /** "dm": a direct message between two people (data/dms.ts), not a server */
   kind?: "dm";
 };
@@ -423,7 +426,63 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
   for (const ch of start) batch.set(doc(collection(ref, "channels")), ch);
   await batch.commit();
   audit("server.create", { serverId: ref.id, target: name });
+  await setInviteCode(ref.id).catch(() => {});
   return ref.id;
+}
+
+// Invite codes. An approved member who has the code joins that server.
+// invites/{code} is the lookup (you can read a code you already know, not the
+// list). The server document holds the same code, and the join proof is
+// servers/{id}/joins/{uid}. Rules check the proof before you add yourself.
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export function normalizeInviteCode(raw: string) {
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function makeInviteCode() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map((b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
+}
+
+/** A new code for this server. The previous code stops working. */
+export async function setInviteCode(sid: string) {
+  const serverRef = doc(db, "servers", sid);
+  const current = await getDoc(serverRef);
+  if (!current.exists()) throw new Error("That server is gone.");
+  if (current.data().kind === "dm") throw new Error("A direct message has no invite code.");
+  const old = typeof current.data().inviteCode === "string" ? current.data().inviteCode : "";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code = makeInviteCode();
+    const taken = await getDoc(doc(db, "invites", code));
+    if (!taken.exists()) break;
+    code = "";
+  }
+  if (!code) throw new Error("Could not make a code. Try again.");
+  await updateDoc(serverRef, { inviteCode: code });
+  await setDoc(doc(db, "invites", code), { serverId: sid });
+  if (old && old !== code) await deleteDoc(doc(db, "invites", old)).catch(() => {});
+  audit("server.invite", { serverId: sid });
+  return code;
+}
+
+/** The server id behind a code, or an error when nothing uses it. */
+export async function lookupInvite(raw: string) {
+  const code = normalizeInviteCode(raw);
+  if (code.length !== 8) throw new Error("Enter the 8-character code.");
+  const snap = await getDoc(doc(db, "invites", code));
+  const serverId = snap.data()?.serverId;
+  if (!snap.exists() || typeof serverId !== "string" || !serverId) throw new Error("No server uses that code.");
+  return { serverId, code };
+}
+
+/** Add yourself to the server this code belongs to. */
+export async function redeemInvite(uid: string, serverId: string, code: string) {
+  await setDoc(doc(db, "servers", serverId, "joins", uid), { code });
+  await updateDoc(doc(db, "servers", serverId), { memberUids: arrayUnion(uid) });
+  audit("member.add", { serverId, detail: "invite code" });
 }
 
 /** The home server, made once by the operator on first sign-in. Reopens Digital House if the lock closed it. */
