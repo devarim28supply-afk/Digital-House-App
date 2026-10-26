@@ -1,7 +1,6 @@
 import { availabilityStatus, type Availability } from "./status";
 import { customization, type Customization } from "./customization";
 import {
-  type QuerySnapshot,
   type Timestamp,
   FieldPath,
   addDoc,
@@ -11,7 +10,6 @@ import {
   deleteDoc,
   deleteField,
   doc,
-  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -43,12 +41,6 @@ function logged<T>(work: Promise<T>, action: AuditAction, info: { serverId?: str
  *   presence/{uid}       lastSeen                         heartbeat, self-written
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
  *                        banner? (a picture URL across the top of the channels)
- *   serverDirectory/{sid} name                            every approved member
- *                        reads names; the owner publishes
- *   inviteCodes/{code}   serverId                         get by code, no list
- *   servers/{sid}/invites/{code}   the owner's list of codes
- *   servers/{sid}/requests/{uid}   a search join, pending until approved
- *   servers/{sid}/redemptions/{uid}  proof a code was used, then they join
  *     channels/{cid}     name, kind "text"|"voice"|"room", position
  *                        room: image, and roomKey (a Gestr room) or url
  *                        text: parentId = the room tile it is the chat of
@@ -83,7 +75,7 @@ export type Server = {
   ownerUid: string;
   memberUids: string[];
   banner?: string;
-  /** Open: every approved member (past the M2A-access door) joins on their own. */
+  /** everyone who gets in through M2A-access joins it on their own */
   open?: boolean;
   /** "dm": a direct message between two people (data/dms.ts), not a server */
   kind?: "dm";
@@ -363,67 +355,21 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
 
 // ---- servers ----------------------------------------------------------------
 
-function asServer(id: string, data: Omit<Server, "id">): Server {
-  return { id, ...data, memberUids: data.memberUids ?? [] };
-}
-
-/**
- * Servers you belong to, plus any you still own. Owning one used to be enough
- * to see an open server. If the owner was dropped from the member list, put
- * them back. restored remembers a failed try so it does not repeat all day.
- */
 export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsubscribe {
-  const restored = new Set<string>();
-  let asMember: Server[] = [];
-  let asOwner: Server[] = [];
-  const emit = () => {
-    const byId = new Map<string, Server>();
-    for (const s of [...asMember, ...asOwner]) byId.set(s.id, s);
-    const servers = [...byId.values()];
+  const q = query(collection(db, "servers"), where("memberUids", "array-contains", uid));
+  return onSnapshot(q, (snap) => {
+    const servers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Server, "id">) }));
     servers.sort((a, b) => a.name.localeCompare(b.name));
     cb(servers);
-    for (const s of servers) {
-      if (s.ownerUid !== uid || s.memberUids.includes(uid) || restored.has(s.id)) continue;
-      restored.add(s.id);
-      void updateDoc(doc(db, "servers", s.id), { memberUids: arrayUnion(uid) }).catch(() => restored.delete(s.id));
-    }
-  };
-  const mapSnap = (snap: QuerySnapshot) => snap.docs.map((d) => asServer(d.id, d.data() as Omit<Server, "id">));
-  const unsubMember = onSnapshot(
-    query(collection(db, "servers"), where("memberUids", "array-contains", uid)),
-    (snap) => {
-      asMember = mapSnap(snap);
-      emit();
-    },
-    () => {
-      asMember = [];
-      emit();
-    },
-  );
-  const unsubOwner = onSnapshot(
-    query(collection(db, "servers"), where("ownerUid", "==", uid)),
-    (snap) => {
-      asOwner = mapSnap(snap);
-      emit();
-    },
-    () => {
-      asOwner = [];
-      emit();
-    },
-  );
-  return () => {
-    unsubMember();
-    unsubOwner();
-  };
+  });
 }
 
-/** A new server with a text and a voice channel to start. Digital House is created open. */
+/** A new server with a text and a voice channel to start. */
 export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
-  const clean = name.trim().slice(0, 60);
   // The server first: the channel rules look the server up, and a write in
   // the same batch is not visible to that lookup yet.
-  await setDoc(ref, { name: clean, ownerUid: uid, memberUids: [uid], open, createdAt: serverTimestamp() });
+  await setDoc(ref, { name, ownerUid: uid, memberUids: [uid], open, createdAt: serverTimestamp() });
   const batch = writeBatch(db);
   const start = channels ?? [
     { name: "general", kind: "text", position: 0 },
@@ -431,39 +377,14 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
   ];
   for (const ch of start) batch.set(doc(collection(ref, "channels")), ch);
   await batch.commit();
-  await publishServerName(ref.id, clean).catch(() => {});
-  audit("server.create", { serverId: ref.id, target: clean });
+  audit("server.create", { serverId: ref.id, target: name });
   return ref.id;
 }
 
-/**
- * The operator's own Digital House, made once on their first sign-in.
- * It is open: everyone who gets in through M2A-access joins it.
- */
+/** The home server, made once by the operator on first sign-in. */
 export async function ensureHomeServer(uid: string) {
-  const [mine, owned] = await Promise.all([
-    getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid))),
-    getDocs(query(collection(db, "servers"), where("ownerUid", "==", uid))).catch(() => null),
-  ]);
-  const docs = new Map(mine.docs.map((d) => [d.id, d]));
-  for (const d of owned?.docs ?? []) docs.set(d.id, d);
-  let hasReal = false;
-  for (const s of docs.values()) {
-    const data = s.data();
-    if (data.kind === "dm") continue;
-    hasReal = true;
-    const members = (data.memberUids as string[] | undefined) ?? [];
-    const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: boolean } = {};
-    if (data.ownerUid === uid && !members.includes(uid)) patch.memberUids = arrayUnion(uid);
-    // The membership lock wrote open:false. Digital House is open again.
-    if (data.ownerUid === uid && typeof data.name === "string" && data.name.startsWith("Digital House") && data.open !== true) {
-      patch.open = true;
-    }
-    if (patch.memberUids || patch.open === true) await updateDoc(s.ref, patch).catch(() => {});
-  }
-  // A direct message is not a server you belong to. A real one, including
-  // Digital House you still own, means the home server already exists.
-  if (hasReal) return;
+  const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
+  if (!mine.empty) return;
   // The Living Room tile and its chat are added by the app once it watches
   // this server's channels (ensureHomeTiles), so they are made exactly once.
   await createServer(
@@ -473,7 +394,7 @@ export async function ensureHomeServer(uid: string) {
       { name: "general", kind: "text", position: 1 },
       { name: "Lounge", kind: "voice", position: 2 },
     ],
-    true,
+    true, // open: everyone who gets in through M2A-access is in it
   );
 }
 
@@ -485,7 +406,6 @@ export async function ensureHomeServer(uid: string) {
 export async function joinOpenServers(uid: string) {
   const open = await getDocs(query(collection(db, "servers"), where("open", "==", true)));
   for (const s of open.docs) {
-    if (s.data().kind === "dm") continue;
     const members = (s.data().memberUids as string[] | undefined) ?? [];
     if (!members.includes(uid)) await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
   }
@@ -542,27 +462,24 @@ export async function createRoomTile(
   return tile.id;
 }
 
-export async function renameServer(sid: string, name: string) {
-  const clean = name.trim().slice(0, 60);
-  await updateDoc(doc(db, "servers", sid), { name: clean });
-  await publishServerName(sid, clean).catch(() => {});
-  audit("server.rename", { serverId: sid, target: clean });
-}
+export const renameServer = (sid: string, name: string) =>
+  logged(updateDoc(doc(db, "servers", sid), { name }), "server.rename", { serverId: sid, target: name });
 
-/** Name and banner together (Server settings). banner null removes it. Does not close the server. */
-export async function saveServerSettings(sid: string, name: string, banner: string | null | undefined) {
-  const clean = name.trim().slice(0, 60);
-  await updateDoc(doc(db, "servers", sid), {
-    name: clean,
-    ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
-  });
-  await publishServerName(sid, clean).catch(() => {});
-  audit("server.settings", {
-    serverId: sid,
-    target: clean,
-    detail: banner === undefined ? "" : banner === null ? "banner removed" : "banner changed",
-  });
-}
+/** Name and banner together (Server settings). banner null removes it. */
+export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) =>
+  logged(
+    updateDoc(doc(db, "servers", sid), {
+      name,
+      open,
+      ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
+    }),
+    "server.settings",
+    {
+      serverId: sid,
+      target: name,
+      detail: `${open ? "open to everyone" : "closed"}${banner === undefined ? "" : banner === null ? ", banner removed" : ", banner changed"}`,
+    },
+  );
 
 export const setServerOpen = (sid: string, open: boolean) =>
   logged(updateDoc(doc(db, "servers", sid), { open }), "server.open", { serverId: sid, detail: open ? "open to everyone" : "closed" });
@@ -573,14 +490,6 @@ export const setServerOpen = (sid: string, open: boolean) =>
  * server.
  */
 export async function deleteServer(sid: string) {
-  await deleteDoc(doc(db, "serverDirectory", sid)).catch(() => {});
-  const invites = await getDocs(collection(db, "servers", sid, "invites")).catch(() => null);
-  if (invites) {
-    for (const inv of invites.docs) {
-      await deleteDoc(doc(db, "inviteCodes", inv.id)).catch(() => {});
-      await deleteDoc(inv.ref).catch(() => {});
-    }
-  }
   const channels = await getDocs(collection(db, "servers", sid, "channels"));
   for (const c of channels.docs) {
     const messages = await getDocs(collection(c.ref, "messages"));
@@ -594,122 +503,6 @@ export const addServerMembers = (sid: string, uids: string[]) =>
   logged(updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...uids) }), "member.add", { serverId: sid, target: uids.join(",") });
 export const removeServerMember = (sid: string, uid: string) =>
   logged(updateDoc(doc(db, "servers", sid), { memberUids: arrayRemove(uid) }), "member.remove", { serverId: sid, target: uid });
-
-// ---- finding a server -------------------------------------------------------
-
-/** A server's name, readable by every approved member so search can list it. */
-export type ServerListing = { id: string; name: string };
-
-/** The owner (or an admin) puts the name where search can see it. */
-export function publishServerName(sid: string, name: string) {
-  const clean = name.trim().slice(0, 60);
-  if (!clean) return Promise.resolve();
-  return setDoc(doc(db, "serverDirectory", sid), { name: clean });
-}
-
-export function watchServerDirectory(cb: (rows: ServerListing[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, "serverDirectory"), (snap) => {
-    const rows = snap.docs
-      .map((d) => ({ id: d.id, name: String(d.data().name ?? "").trim() }))
-      .filter((row) => row.name);
-    rows.sort((a, b) => a.name.localeCompare(b.name));
-    cb(rows);
-  });
-}
-
-export type JoinStatus = "pending" | "approved" | "denied";
-export type JoinRequest = { uid: string; status: JoinStatus; at: number };
-
-/** Ask to join a server you found by name. An admin still has to approve it. */
-export async function requestToJoin(sid: string, uid: string) {
-  const ref = doc(db, "servers", sid, "requests", uid);
-  const existing = await getDoc(ref);
-  if (existing.data()?.status === "pending") return;
-  if (existing.exists()) await deleteDoc(ref);
-  await setDoc(ref, { uid, status: "pending", at: serverTimestamp() });
-  audit("member.request", { serverId: sid, target: uid });
-}
-
-export function watchJoinRequests(sid: string, cb: (rows: JoinRequest[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, "servers", sid, "requests"), (snap) => {
-    cb(
-      snap.docs.map((d) => {
-        const data = d.data();
-        const status = data.status === "approved" || data.status === "denied" ? data.status : "pending";
-        return { uid: d.id, status, at: toDate(data.at)?.getTime() ?? 0 };
-      }),
-    );
-  });
-}
-
-export function watchMyRequest(sid: string, uid: string, cb: (status: JoinStatus | null) => void): Unsubscribe {
-  return onSnapshot(
-    doc(db, "servers", sid, "requests", uid),
-    (snap) => {
-      const status = snap.data()?.status;
-      cb(status === "pending" || status === "approved" || status === "denied" ? status : null);
-    },
-    () => cb(null),
-  );
-}
-
-/** Approve a search request: they become a member. */
-export async function approveJoinRequest(sid: string, uid: string) {
-  await updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(uid) });
-  await updateDoc(doc(db, "servers", sid, "requests", uid), { status: "approved" });
-  audit("member.approve", { serverId: sid, target: uid });
-}
-
-export async function denyJoinRequest(sid: string, uid: string) {
-  await updateDoc(doc(db, "servers", sid, "requests", uid), { status: "denied" });
-  audit("member.deny", { serverId: sid, target: uid });
-}
-
-const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-function newInviteCode() {
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
-}
-
-/** A code that adds the person who has it. The owner can make more than one. */
-export async function createServerInvite(sid: string, uid: string) {
-  const code = newInviteCode();
-  const batch = writeBatch(db);
-  batch.set(doc(db, "inviteCodes", code), { serverId: sid });
-  batch.set(doc(db, "servers", sid, "invites", code), { createdBy: uid, at: serverTimestamp() });
-  await batch.commit();
-  audit("invite.create", { serverId: sid, target: code });
-  return code;
-}
-
-export function watchServerInvites(sid: string, cb: (codes: string[]) => void): Unsubscribe {
-  return onSnapshot(collection(db, "servers", sid, "invites"), (snap) => {
-    cb(snap.docs.map((d) => d.id).sort());
-  });
-}
-
-export async function revokeServerInvite(sid: string, code: string) {
-  await deleteDoc(doc(db, "inviteCodes", code));
-  await deleteDoc(doc(db, "servers", sid, "invites", code)).catch(() => {});
-  audit("invite.revoke", { serverId: sid, target: code });
-}
-
-/**
- * Use an invite code. The code is the invitation: it adds you now.
- * Returns the server id.
- */
-export async function joinWithInviteCode(uid: string, raw: string) {
-  const code = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (code.length < 6) throw new Error("Enter the whole code.");
-  const snap = await getDoc(doc(db, "inviteCodes", code));
-  const sid = snap.exists() ? String(snap.data().serverId ?? "") : "";
-  if (!sid) throw new Error("That code is not valid.");
-  await setDoc(doc(db, "servers", sid, "redemptions", uid), { code, at: serverTimestamp() }).catch(() => {});
-  await updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(uid) });
-  return sid;
-}
 
 // ---- channels ---------------------------------------------------------------
 
