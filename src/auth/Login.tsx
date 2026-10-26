@@ -1,3 +1,4 @@
+import { saveLayoutTheme } from "../data/layoutTheme";
 import { Match, Show, Switch, createSignal, onMount } from "solid-js";
 
 import { access } from "../firebase";
@@ -78,6 +79,7 @@ export function Login() {
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
       });
+      saveLayoutTheme("classic");
       setMood("ready");
     } catch (err) {
       fail(err);

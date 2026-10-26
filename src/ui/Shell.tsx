@@ -135,6 +135,52 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const [navOpen, setNavOpen] = createSignal(false);
   const [sideChatOpen, setSideChatOpen] = createSignal(false);
   const [mobilePanel, setMobilePanel] = createSignal<"chat" | "people">("chat");
+  let callSwipe: {x:number;y:number;at:number} | undefined;
+  let panelSwipe: {x:number;y:number;at:number;panel:"chat"|"channels"} | undefined;
+  let panelSwipeClickBlockedUntil=0;
+  function startPanelSwipe(event:TouchEvent) {
+    const target=event.target instanceof Element ? event.target : undefined;
+    const panel=target?.closest(".side-chat") ? "chat" : target?.closest(".side,.rail") ? "channels" : undefined;
+    if(!window.matchMedia("(max-width:600px)").matches || !panel || event.touches.length !== 1 || target?.closest("input,textarea,video,audio,[role=slider],.mobile-panel-switch,.message-actions-menu,.inset-resize") || panel === "chat" && Boolean(target?.closest("a,button"))) {panelSwipe=undefined;return;}
+    const touch=event.touches[0];panelSwipe={x:touch.clientX,y:touch.clientY,at:Date.now(),panel};
+  }
+  function movePanelSwipe(event:TouchEvent) {
+    if(!panelSwipe || event.touches.length !== 1) {panelSwipe=undefined;return;}
+    const touch=event.touches[0],dx=touch.clientX-panelSwipe.x,dy=touch.clientY-panelSwipe.y;
+    if(Math.abs(dy)>20 && Math.abs(dy)>Math.abs(dx)) {panelSwipe=undefined;return;}
+    const back=panelSwipe.panel === "chat" ? dx>14 : dx< -14;
+    if(back && Math.abs(dx)>Math.abs(dy)*1.4 && event.cancelable) event.preventDefault();
+  }
+  function endPanelSwipe(event:TouchEvent) {
+    const start=panelSwipe;panelSwipe=undefined;
+    if(!start || !event.changedTouches.length || Date.now()-start.at>1000) return;
+    const touch=event.changedTouches[0],dx=touch.clientX-start.x,dy=touch.clientY-start.y;
+    if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+    const returning = start.panel === "chat" ? dx>0 : dx<0;
+    if(returning) {panelSwipeClickBlockedUntil=Date.now()+300;if(event.cancelable) event.preventDefault();}
+    if(start.panel === "chat" && dx>0) {setSideChatOpen(false);setEdgeHover(false);setChatPing(false);
+      if(document.activeElement instanceof HTMLElement && document.activeElement.closest(".side-chat")) document.activeElement.blur();}
+    else if(start.panel === "channels" && dx<0) {setNavOpen(false);setLeftHover(false);}
+  }
+  function startCallSwipe(event:TouchEvent) {
+    const target=event.target instanceof Element ? event.target : undefined;
+    if(!window.matchMedia("(max-width:600px)").matches || event.touches.length !== 1 || !target?.closest(".voice,.room-pane") || target.closest("button,input,textarea,a,[role=slider],.dock-menu,.inset-resize,video[controls]")) {callSwipe=undefined;return;}
+    const touch=event.touches[0];callSwipe={x:touch.clientX,y:touch.clientY,at:Date.now()};
+  }
+  function moveCallSwipe(event:TouchEvent) {
+    if(!callSwipe || event.touches.length !== 1) {callSwipe=undefined;return;}
+    const touch=event.touches[0],dx=touch.clientX-callSwipe.x,dy=touch.clientY-callSwipe.y;
+    if(Math.abs(dy)>20 && Math.abs(dy)>Math.abs(dx)) {callSwipe=undefined;return;}
+    if(Math.abs(dx)>14 && Math.abs(dx)>Math.abs(dy)*1.4 && event.cancelable) event.preventDefault();
+  }
+  function endCallSwipe(event:TouchEvent) {
+    const start=callSwipe;callSwipe=undefined;
+    if(!start || !event.changedTouches.length || Date.now()-start.at>1000) return;
+    const touch=event.changedTouches[0],dx=touch.clientX-start.x,dy=touch.clientY-start.y;
+    if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+    if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
+    else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
+  }
   const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
@@ -506,6 +552,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   return (
     <div
       class="shell"
+      on:click={(event:MouseEvent) => {if(Date.now()<panelSwipeClickBlockedUntil){event.preventDefault();event.stopPropagation();}}}
+      onTouchStart={startPanelSwipe} on:touchmove={movePanelSwipe} onTouchEnd={endPanelSwipe} onTouchCancel={() => {panelSwipe=undefined;}}
       onMouseMove={e => {
         if (TOUCH) return;
         const target = e.target instanceof Element ? e.target : undefined;
@@ -758,7 +806,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       <div class="scrim" onClick={() => setNavOpen(false)} />
 
       {/* ---- the channel ---- */}
-      <main class="main">
+      <main class="main" onTouchStart={startCallSwipe} on:touchmove={moveCallSwipe} onTouchEnd={endCallSwipe} onTouchCancel={() => {callSwipe=undefined;}}>
         <header class="main-head">
 
           <button class="icon-btn menu-btn" type="button" aria-label="Channels" onClick={() => setNavOpen(true)}>

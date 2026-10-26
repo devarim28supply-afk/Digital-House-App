@@ -34,7 +34,13 @@ export function RoomPane(props: {
   /** Disconnect pressed: the app ends this call (and with it the room) */
   onLeave: () => void;
 }) {
-  const [pane, setPane] = createSignal<Pane>(recallPane(props.channel.id));
+  const phoneQuery = window.matchMedia("(max-width:600px)");
+  const [phone, setPhone] = createSignal(phoneQuery.matches);
+  const phoneChanged = () => setPhone(phoneQuery.matches);
+  phoneQuery.addEventListener("change",phoneChanged);
+  onCleanup(() => phoneQuery.removeEventListener("change",phoneChanged));
+  const [pane, setPane] = createSignal<Pane>(phone() ? "video" : recallPane(props.channel.id));
+  createEffect(() => {if(phone() && pane() !== "video") setPane("video");});
   // The room page loads the first time it is shown, then stays loaded.
   const [roomLoaded, setRoomLoaded] = createSignal(pane() === "room");
 
@@ -72,6 +78,7 @@ export function RoomPane(props: {
   });
 
   function show(next: Pane) {
+    if (phone() && next === "room") return;
     setPane(next);
     if (next === "room") setRoomLoaded(true);
     try {

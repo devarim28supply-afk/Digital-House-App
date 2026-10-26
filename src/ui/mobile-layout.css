@@ -102,3 +102,61 @@
 
 /* Keep Android's selection/copy toolbar off the app's touch action sheet. */
 .message-actions-backdrop,.message-actions-menu,.message-actions-menu *{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+
+/* Only the main panel participates in the phone's single-row grid.
+   Desktop edge sensors must not create empty implicit rows on phones. */
+@media(max-width:600px){
+  html,body{overscroll-behavior:none}
+  #root{position:fixed;top:var(--mobile-viewport-top,0px);left:0;right:0;width:100%;overflow:hidden}
+  .shell{grid-template-rows:minmax(0,1fr);overflow:hidden}
+  .shell>.main{grid-column:1;grid-row:1;min-height:0;overflow:hidden}
+  .shell>.left-edge,.shell>.right-edge{display:none}
+  .room-pane>.pane-switch{display:none}
+}
+
+/* Four compact, equally sized call controls with comfortable touch targets. */
+@media(max-width:600px){
+  .voice .dock:not(.hidden){display:flex;flex-wrap:nowrap;align-items:center;gap:6px;width:100%;flex:none;padding:4px 0 max(4px,env(safe-area-inset-bottom))}
+  .voice .dock>.dock-btn,.voice .dock>.share-wrap:not(.hidden){flex:1 1 0;min-width:0;margin:0}
+  .voice .dock>.share-wrap.hidden{display:none}
+  :root[data-layout-theme] .voice .dock .dock-btn{display:block;box-sizing:border-box;width:100%;min-width:0;height:44px;min-height:44px;margin:0;padding:0 5px;border-radius:12px;font-size:11px;line-height:42px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;touch-action:manipulation}
+  .voice .dock .dock-menu{width:200px;max-width:calc(100vw - 24px);min-width:0}
+}
+@media(max-width:360px){:root[data-layout-theme] .voice .dock .dock-btn{font-size:10px;padding-inline:3px}.voice .dock:not(.hidden){gap:4px}}
+
+/* No native blue tap/selection flash when changing mobile panels. */
+@media(max-width:600px){
+  .mobile-panel-switch,.mobile-panel-track,.mobile-panel-track>button,.mobile-panel-track>button *{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .mobile-panel-track>button:focus:not(:focus-visible){outline:none}
+  .mobile-panel-track>button::selection,.mobile-panel-track>button span::selection{background:transparent;color:inherit}
+}
+
+@media(max-width:600px){
+  html,body,#root,.shell{overscroll-behavior-x:none}
+  .main .voice,.main .room-pane{touch-action:pan-y;overscroll-behavior-x:none}
+}
+
+@media(max-width:600px){.shell :is(.side-chat,.side,.rail){touch-action:pan-y;overscroll-behavior-x:none}}
+
+@media(max-width:600px){
+  .side-chat-head :is(.side-chat-close,.pin-btn){display:none!important}
+  .shell>.side-chat{transform:translateX(100%);visibility:hidden;pointer-events:none;transition:transform 200ms cubic-bezier(.2,.8,.2,1),visibility 200ms;box-shadow:none;backface-visibility:visible}
+  .shell.side-chat-open>.side-chat{transform:translateX(0);visibility:visible;pointer-events:auto}
+  .side-chat .chat-scroll{overflow-anchor:auto;scroll-behavior:auto;-webkit-overflow-scrolling:touch}
+  .side-chat .msg{contain:none}
+  .chat button.msg-media{display:block;width:fit-content;max-width:100%;aspect-ratio:auto;overflow:hidden;background:transparent;border-radius:10px}
+  .chat button.msg-media>img{display:block;width:auto;height:auto;max-width:min(260px,100%);max-height:360px;object-fit:contain}
+  .chat video.msg-media{display:block;width:auto;height:auto;max-width:min(280px,100%);max-height:360px;aspect-ratio:auto;object-fit:contain;background:#111;border-radius:10px}
+}
+@media(max-width:600px) and (prefers-reduced-motion:reduce){.shell>.side-chat{transition:none}}
+@media(max-width:600px){
+  .chat .msg-files{gap:2px;margin-block:2px}
+  .chat .msg:not(.mentions-me):hover{background:transparent}
+  .chat .msg-media{margin:0;padding:0;line-height:0}
+}
+
+/* Mobile interface labels shouldn't trigger browser selection/search menus. */
+@media(max-width:600px){
+  .shell,.shell *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  .shell input,.shell textarea,.shell [contenteditable="true"],.shell [contenteditable="true"] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+}
