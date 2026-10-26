@@ -1,3 +1,4 @@
+import { availabilityStatus, type Availability } from "./status";
 import { customization, type Customization } from "./customization";
 import {
   type Timestamp,
@@ -53,6 +54,7 @@ export type Profile = {
   color: string;
   /** Public display name across status, chat, profiles and calls; legacy field name. */
   callName?: string;
+  availability?: Availability;
   customization?: Customization;
   /** the three pictures on your profile card: uploaded URLs (a GIF keeps moving) */
   photo?: string;
@@ -256,6 +258,11 @@ export async function saveCustomization(uid: string, value: Customization, photo
     ...(banner !== undefined ? { banner: banner || deleteField() } : {}),
     ...(cleanName !== undefined ? { callName: cleanName || deleteField() } : {}),
   }, { merge: true });
+}
+
+/** Manual member status; this updates only the signed-in user's public profile. */
+export async function saveAvailability(uid: string, status: Availability) {
+  await setDoc(doc(db, "profiles", uid), { availability: availabilityStatus(status) }, { merge: true });
 }
 
 export function watchProfiles(cb: (profiles: Map<string, Profile>) => void): Unsubscribe {

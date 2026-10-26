@@ -1,0 +1,49 @@
+/* Eight animated nameplates share one source GIF; background positioning
+   selects each original strip without resampling or duplicating the animation. */
+.nameplate-art {
+  position:relative;
+  isolation:isolate;
+  background:var(--plate-shade,#140b2a)!important;
+  color:#eef5f7!important;
+}
+.nameplate-art::before {
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  border-radius:inherit;
+  pointer-events:none;
+  background-image:linear-gradient(90deg,var(--plate-shade) 0%,var(--plate-shade) 58%,transparent 82%),url("/nameplates/collection.gif");
+  background-repeat:no-repeat;
+  background-size:100% 100%,254.137% 750%;
+  background-position:center,var(--plate-x) var(--plate-y);
+}
+.nameplate-cat-beans { --plate-shade:#190729; --plate-x:13.037%; --plate-y:23.077%; }
+.nameplate-cityscape { --plate-shade:#1c0938; --plate-x:86.196%; --plate-y:23.077%; }
+.nameplate-spring-paradise { --plate-shade:#103140; --plate-x:13.037%; --plate-y:41.346%; }
+.nameplate-koi-pond { --plate-shade:#10283e; --plate-x:86.196%; --plate-y:41.346%; }
+.nameplate-twilight { --plate-shade:#0b1745; --plate-x:13.037%; --plate-y:59.615%; }
+.nameplate-cherry-blossoms { --plate-shade:#30104e; --plate-x:86.196%; --plate-y:59.615%; }
+.nameplate-vengeance { --plate-shade:#270b43; --plate-x:13.037%; --plate-y:77.692%; }
+.nameplate-angel { --plate-shade:#38204e; --plate-x:86.196%; --plate-y:77.692%; }
+/* Theme palette rules must not turn text dark over this personal artwork. */
+:root .nameplate-art,
+:root .nameplate-art :is(h3,b,small,.member-name,.member-where,.me-names,.profile-user,.icon-btn,.nameplate-option-label){color:#eef5f7!important}
+:root .nameplate-art .self-nameplate-settings:hover{background:transparent}
+.nameplate-picker { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:3px; }
+.nameplate-option {
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  min-width:0;min-height:72px;padding:14px 16px;
+  border:1px solid #ffffff18;border-radius:10px;
+  font:600 13px/1.4 var(--sans);text-align:left;cursor:pointer;
+}
+.nameplate-option[aria-pressed=true]{outline:2px solid var(--focus,#b2d589);outline-offset:2px}
+.nameplate-option:focus-visible{outline:2px solid var(--focus,#b2d589);outline-offset:3px}
+.nameplate-option-label{position:relative;max-width:80%;overflow-wrap:anywhere}
+.nameplate-option-check{flex:none;position:relative;color:#fff}
+.nameplate-clear{display:block;margin-top:16px}
+.nameplate-clear[aria-pressed=true]{border-color:var(--focus,#b2d589)}
+/* Stop drawing animated art when motion is reduced or the page is hidden. */
+@media(prefers-reduced-motion:reduce){.nameplate-art::before{background-image:linear-gradient(110deg,var(--plate-shade),#52677566)}}
+:root[data-motion-paused=true] .nameplate-art::before{background-image:linear-gradient(110deg,var(--plate-shade),#52677566)}
+@media(max-width:420px){.nameplate-picker{grid-template-columns:1fr}}

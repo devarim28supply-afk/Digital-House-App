@@ -3176,6 +3176,7 @@ img.live-tile-still {
 /* Edge detection is handled by mouse coordinates; hover zones never block clicks. */
 .left-edge,.right-edge{pointer-events:none}
 
+
 /* ---- the side bar TV (SideTv): the first TV on in the tile's Darkwood Room ---- */
 .side-tv {
   position: relative;
@@ -3341,3 +3342,49 @@ img.live-tile-still {
 }
 .live-cc .interim { color: #d1d5db; }
 .live-cc.big-cc span, .live-cc.big-cc:not(:has(span)) { padding: 4px 14px; font-size: clamp(18px, 2.4vw, 34px); }
+
+/* Compact user nameplate: spans the rail + channel column with an 8px gutter. */
+.me.self-nameplate {
+  position:relative;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  width:calc(100% + 56px);
+  height:60px;
+  min-height:60px;
+  margin:8px 8px 8px -64px;
+  padding:10px 12px;
+  border:1px solid var(--line-2);
+  border-radius:10px;
+  box-shadow:none;
+}
+.self-nameplate > .avatar{width:36px;height:36px;font-size:13px}
+.self-nameplate .me-names{min-width:0;gap:3px;justify-content:center;align-self:stretch;border-radius:6px}
+.self-nameplate .me-names b{display:flex;align-items:center;gap:5px;font-size:14px;font-weight:650;line-height:18px;letter-spacing:-.02em}
+.self-nameplate .me-names small{font-family:var(--sans);font-size:11px;line-height:14px;color:var(--muted)}
+.self-nameplate .me-names .developer-badge-wrap{margin-inline-start:0}
+.self-nameplate .avatar .dot{width:10px;height:10px;right:-1px;bottom:-1px;border-width:2px}
+.self-nameplate .self-nameplate-settings{width:34px;height:34px;min-width:34px;min-height:34px;flex:none;padding:0;border-radius:8px;background:#ffffff08;color:var(--text)}
+.self-nameplate .self-nameplate-settings:hover{background:#ffffff16}
+.rail{padding-bottom:84px}
+:root[data-layout-theme="smoky"] .self-nameplate.self-nameplate{border-color:#c1d2db30;background-image:var(--glass);border-radius:12px;box-shadow:none}
+
+/* Settings stays clear at rest; only the icon button darkens on hover. */
+.me.self-nameplate .self-nameplate-settings{background:transparent;transition:background-color 200ms ease}
+.me.self-nameplate .self-nameplate-settings:hover{background:rgba(0,0,0,.28)}
+.me.self-nameplate .self-nameplate-settings:focus-visible{background:rgba(0,0,0,.28)}
+@media(prefers-reduced-motion:reduce){.me.self-nameplate .self-nameplate-settings{transition:none}}
+
+
+/* The bottom-left settings control has no filled background in any state. */
+:root .me.self-nameplate .self-nameplate-settings,
+:root .me.self-nameplate .self-nameplate-settings:hover,
+:root .me.self-nameplate .self-nameplate-settings:focus-visible,
+:root[data-layout-theme="smoky"] .me.self-nameplate .self-nameplate-settings,
+:root[data-layout-theme="smoky"] .me.self-nameplate .self-nameplate-settings:hover,
+:root[data-layout-theme="smoky"] .me.self-nameplate .self-nameplate-settings:focus-visible{background:transparent;box-shadow:none}
+
+/* A short single-line prompt; typed messages can still grow and wrap. */
+.composer textarea{min-width:0;min-height:38px;padding:9px 11px;font-size:13px;line-height:18px}
+.composer textarea:placeholder-shown{height:38px;overflow-y:hidden;white-space:nowrap}

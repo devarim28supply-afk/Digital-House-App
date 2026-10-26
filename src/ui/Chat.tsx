@@ -722,7 +722,7 @@ export function Chat(props: {
           ref={input}
           rows={1}
           value={draft()}
-          placeholder={`Message #${props.channel.name}`}
+          placeholder="Send Message"
           aria-label={`Message #${props.channel.name}`}
           onInput={(e) => {
             setDraft(e.currentTarget.value);

@@ -1,3 +1,4 @@
+import { bindCallControls, deafened, toggleMicrophone } from "../data/callControls";
 import { DeveloperBadge } from "./DeveloperBadge";
 import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
@@ -256,6 +257,15 @@ export function VoiceRoom(props: {
   document.body.appendChild(audioHost);
 
   createEffect(() => props.onRoom?.(room()));
+  createEffect(() => {
+    const current = room();
+    if (current && !props.viewOnly) onCleanup(bindCallControls(current));
+  });
+  createEffect(() => {
+    const muted = deafened();
+    audioHost.querySelectorAll<HTMLMediaElement>("audio,video").forEach(element => { element.muted = muted; });
+  });
+
 
   // In a call: the Online list says so ("Videochat · <channel>").
   createEffect(() => {
@@ -346,7 +356,9 @@ export function VoiceRoom(props: {
       });
       next
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-          if (track.kind === Track.Kind.Audio) audioHost.appendChild(track.attach());
+          if (track.kind === Track.Kind.Audio) {
+            const element = track.attach(); element.muted = deafened(); audioHost.appendChild(element);
+          }
           bump();
         })
         .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
@@ -714,7 +726,7 @@ export function VoiceRoom(props: {
     if (!me) return;
     setError("");
     try {
-      if (kind === "mic") await me.setMicrophoneEnabled(!me.isMicrophoneEnabled);
+      if (kind === "mic") await toggleMicrophone();
       if (kind === "screen") await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That device could not be turned on.");
