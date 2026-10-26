@@ -1,3 +1,4 @@
+import { createVerify } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
@@ -18,7 +19,33 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 const PROJECT_ID = "gestr-lab";
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const CERTS = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 const OWNER_EMAIL = "kaalobmoran@gmail.com";
+let certCache: { at: number; keys: Record<string, string> } | null = null;
+
+async function ownerSignedIn(idToken: string): Promise<boolean> {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return false;
+  let header: { alg?: string; kid?: string };
+  let payload: { aud?: string; iss?: string; exp?: number; email?: string };
+  try {
+    header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return false;
+  }
+  if (header.alg !== "RS256" || !header.kid) return false;
+  if (payload.aud !== PROJECT_ID || payload.iss !== `https://securetoken.google.com/${PROJECT_ID}`) return false;
+  if (typeof payload.exp !== "number" || payload.exp * 1000 < Date.now()) return false;
+  if (String(payload.email ?? "").toLowerCase() !== OWNER_EMAIL) return false;
+  if (!certCache || Date.now() - certCache.at > 60 * 60 * 1000) {
+    const res = await fetch(CERTS);
+    if (res.ok) certCache = { at: Date.now(), keys: (await res.json()) as Record<string, string> };
+  }
+  const pem = certCache?.keys[header.kid];
+  if (!pem) return false;
+  return createVerify("RSA-SHA256").update(`${parts[0]}.${parts[1]}`).verify(pem, Buffer.from(parts[2], "base64url"));
+}
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const VERCEL_TEAM = "team_PUGYiYbFC2XneUsiLOCykO73";
 
@@ -56,7 +83,12 @@ async function isStaff(idToken: string) {
   if (!idToken || !ID_RE.test(uid)) return false;
   const res = await fetch(`${FIRESTORE}/members/${uid}`, { headers: { Authorization: `Bearer ${idToken}` } });
   const owner = String(claims.email ?? "").toLowerCase() === OWNER_EMAIL;
-  if (!res.ok) return owner && res.status === 404;
+  // A missing member record is the owner. Firestore being out of reads is not a lost role.
+  if (!res.ok) {
+    if (res.status === 404 && owner) return true;
+    if ((res.status === 429 || res.status === 503) && owner) return ownerSignedIn(idToken);
+    return false;
+  }
   if (owner) return true;
   const data = (await res.json()) as {
     fields?: {
