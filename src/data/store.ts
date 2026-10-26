@@ -532,6 +532,29 @@ export async function joinOpenServers(uid: string) {
   }
 }
 
+const restoredHomes = new Set<string>();
+/**
+ * Digital House: every approved member goes back on the server. arrayUnion
+ * only adds, so nobody already there is removed. Open stays on.
+ */
+export async function restoreHomeMembers(sid: string) {
+  if (restoredHomes.has(sid)) return;
+  restoredHomes.add(sid);
+  try {
+    const snap = await getDocs(query(collection(db, "members"), where("status", "==", "approved")));
+    const uids = snap.docs.map((d) => d.id);
+    for (let i = 0; i < uids.length; i += 100) {
+      const chunk = uids.slice(i, i + 100);
+      if (chunk.length) await updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...chunk) });
+    }
+    await updateDoc(doc(db, "servers", sid), { open: true });
+    audit("member.add", { serverId: sid, detail: `restored ${uids.length} approved members` });
+  } catch (err) {
+    restoredHomes.delete(sid);
+    throw err;
+  }
+}
+
 /**
  * The home server's built-in tiles, each with its chat, made once: the
  * Living Room (#livingroom-chat) and the M2A ACCESS Operation Room
