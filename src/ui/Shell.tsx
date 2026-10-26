@@ -1,6 +1,9 @@
+import { Notifications, NotificationList, type Notice } from "./Notifications";
+import { SelfControls } from "./SelfControls";
+import { availabilityStatus, availabilityLabel } from "../data/status";
 import { DeveloperBadge } from "./DeveloperBadge";
 import { Customize } from "./Customize";
-import { customization, PATRICK_GIF } from "../data/customization";
+import { customization, nameplateClass, PATRICK_GIF } from "../data/customization";
 import { For, type JSX, Match, Show, Switch, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 
 import {
@@ -9,7 +12,6 @@ import {
   ONLINE_WINDOW_MS,
   type Presence,
   type Profile,
-  type ProfilePicture,
   type Server,
   addServerMembers,
   createChannel,
@@ -29,10 +31,8 @@ import {
   shrinkImage,
   startPresence,
   watchChannels,
-  saveCallName,
   displayName,
   setTileImage,
-  saveProfilePicture,
   watchEmojis,
   watchPresence,
   watchProfiles,
@@ -92,12 +92,17 @@ export function faceStyle(profile: Profile | undefined, fallback = "#404040"): J
   const color = profile?.color ?? fallback;
   const decoration = customization(profile?.customization).decoration;
   return {
-    "background-color": color,
-    "background-image": profile?.photo ? `url("${profile.photo}")` : "none",
+    "background-color": decoration === "patrick" ? "transparent" : color,
+    "background-image": decoration !== "patrick" && profile?.photo ? `url("${profile.photo}")` : "none",
     "background-size": "cover", "background-position": "center",
+    "border-color": decoration === "patrick" ? "transparent" : undefined,
+    "--avatar-inner-display": decoration === "patrick" ? "block" : "none",
+    "--avatar-inner-image": profile?.photo ? `url("${profile.photo}")` : "none",
+    "--avatar-inner-color": color,
     "--avatar-decoration": decoration === "patrick" ? `url("${PATRICK_GIF}")` : "none",
+    "--profile-avatar-border-width": decoration === "neon" ? "2px" : undefined,
     "--avatar-decoration-radius": decoration === "patrick" ? "0" : "50%",
-    "--avatar-ring": decoration === "orbit" ? "2px dotted #dddffb" : decoration === "neon" ? "3px solid #9d74ff" : "0px solid transparent",
+    "--avatar-ring": decoration === "orbit" ? "2px dotted #dddffb" : decoration === "neon" ? "2px solid #9d74ff" : "0px solid transparent",
     "--avatar-glow": decoration === "neon" ? "0 0 13px #9d74ff" : "none",
   } as JSX.CSSProperties;
 }
@@ -132,8 +137,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
+  const [notificationItems, setNotificationItems] = createSignal<Notice[]>([]);
+  const [notificationError, setNotificationError] = createSignal("");
+  const [feedbackTab, setFeedbackTab] = createSignal<"send" | "mine" | "inbox">("send", { equals: false });
   const [feedbackWhere, setFeedbackWhere] = createSignal("");
   function openFeedback(where = "") {
+    setFeedbackTab("send");
     setFeedbackWhere(where);
     setFeedbackOpen(true);
   }
@@ -346,6 +355,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     if (sideChatOpen()) setUnread(false);
   });
   function pingRight() {
+    if (availabilityStatus(profiles().get(props.uid)?.availability) === "dnd") { setUnread(true); return; }
     if (TOUCH) {
       if (!sideChatOpen()) setUnread(true);
       return;
@@ -382,7 +392,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   // in your videochat or room, to give it the room (Kaalob). The cursor at
   // the left edge brings it in; it stays 5 s after the mouse leaves; the pin
   // keeps it always showing. Outside a call it stays as it is.
-  const savedLeftMode = recall(LEFT_MODE_KEY);
+  const savedLeftMode = recall("dh_sidebar_mode") ?? recall(RIGHT_MODE_KEY) ?? recall(LEFT_MODE_KEY);
   const [leftMode, setLeftMode] = createSignal<SidebarMode>(savedLeftMode === "pinned" || savedLeftMode === "hover" ? savedLeftMode : "slide");
   const leftPinned = () => leftMode() === "pinned";
   function chooseLeftMode(mode: SidebarMode) {
@@ -390,7 +400,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     setLeftMode(mode); setLeftHover(false);
     remember(LEFT_MODE_KEY, mode);
   }
-  const pinLeft = (on: boolean) => chooseLeftMode(on ? "pinned" : "slide");
+  const pinLeft = (on: boolean) => chooseSidebarMode(on ? "pinned" : "slide");
   const [leftHover, setLeftHover] = createSignal(false);
   let leftTimer = 0;
   function enterLeft() {
@@ -406,7 +416,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH);
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.
-  const savedRightMode = recall(RIGHT_MODE_KEY);
+  const savedRightMode = savedLeftMode;
   const [rightMode, setRightMode] = createSignal<SidebarMode>(savedRightMode === "pinned" || savedRightMode === "hover" ? savedRightMode : "slide");
   const rightPinned = () => rightMode() === "pinned";
   function chooseRightMode(mode: SidebarMode) {
@@ -414,11 +424,17 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     setRightMode(mode); setEdgeHover(false); setChatPing(false); setSideChatOpen(false);
     remember(RIGHT_MODE_KEY, mode);
   }
-  const pinRight = (on: boolean) => chooseRightMode(on ? "pinned" : "slide");
+  function chooseSidebarMode(mode: SidebarMode) {
+    chooseLeftMode(mode);
+    chooseRightMode(mode);
+    remember("dh_sidebar_mode", mode);
+  }
+  const pinRight = (on: boolean) => chooseSidebarMode(on ? "pinned" : "slide");
 
-  const isOnline = (uid: string) => now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
+  const isOnline = (uid: string) => availabilityStatus(profiles().get(uid)?.availability) !== "invisible" && now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
   const whereOf = (uid: string) => {
+    if (availabilityStatus(profiles().get(uid)?.availability) === "invisible") return "";
     const p = presence().get(uid);
     return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
   };
@@ -493,12 +509,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         const target = e.target instanceof Element ? e.target : undefined;
         // Coordinate-based activation preserves the wide hover zones without
         // placing an invisible click target above Activity or other controls.
-        if (leftSlides() && (e.clientX <= 144 || target?.closest(".rail, .side"))) enterLeft();
+        // Both edges open only in the middle 28–80% height band.
+        // Once open, the entire panel remains hoverable.
+        const inOpeningBand = e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80;
+        if (leftSlides() && (e.clientX <= 144 && inOpeningBand || leftHover() && target?.closest(".rail, .side"))) enterLeft();
         else if (leftHover()) leaveLeft();
-        // Only the middle side band triggers opening (roughly the marked
-        // 28–80% height). Once open, the whole sidebar remains hoverable.
-        const inRightOpeningBand = e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80;
-        if (!rightPinned() && (e.clientX >= window.innerWidth - 144 && inRightOpeningBand || edgeHover() && target?.closest(".side-chat, .members"))) enterRight();
+        if (!rightPinned() && (e.clientX >= window.innerWidth - 144 && inOpeningBand || edgeHover() && target?.closest(".side-chat, .members"))) enterRight();
         else if (edgeHover()) leaveRight();
       }}
       onMouseLeave={() => { leaveLeft(); leaveRight(); }}
@@ -507,9 +523,9 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       {/* ---- servers ---- */}
       {/* in a call: the strip at the left edge brings the left side in */}
       <Show when={leftSlides()}>
-        <div class="left-edge" aria-hidden="true" onMouseEnter={enterLeft} onMouseLeave={leaveLeft} />
+        <div class="left-edge" aria-hidden="true" onMouseEnter={e => { if (leftHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterLeft(); }} onMouseLeave={leaveLeft} />
       </Show>
-      <nav class="rail" aria-label="Servers" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
+      <nav class="rail" aria-label="Servers" onMouseEnter={e => { if (leftHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterLeft(); }} onMouseLeave={leaveLeft}>
         <button
           type="button"
           class="rail-server rail-dm"
@@ -544,7 +560,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       </nav>
 
       {/* ---- channels ---- */}
-      <aside class="side" onMouseEnter={enterLeft} onMouseLeave={leaveLeft}>
+      <aside class="side" onMouseEnter={e => { if (leftHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterLeft(); }} onMouseLeave={leaveLeft}>
         {/* the banner on its own, the name in the row under it */}
         <Show when={!dmMode() && server()?.banner}>
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
@@ -732,17 +748,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </div>
           )}
         </Show>
-        <footer class={`me nameplate-${customization(profiles().get(props.uid)?.customization).nameplate}`}>
-          <span class="avatar" style={faceStyle(profiles().get(props.uid), "#4ADE80")}>
-            {faceText(profiles().get(props.uid), nameOf(props.uid))}
-          </span>
-          <button class="me-names profile-name-trigger" type="button" aria-label="Open my profile" onClick={e => openCard(props.uid, e)}>
-            <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b>
-            <small>@{props.username || "member"}</small>
-          </button>
-          <button class="icon-btn" type="button" title="Account" aria-label="Account" onClick={() => setModal("me")}>
-            ⚙
-          </button>
+        <footer class={`me self-nameplate ${nameplateClass(customization(profiles().get(props.uid)?.customization).nameplate)}`}>
+          <SelfControls uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onProfile={event => openCard(props.uid, event)} onAccount={() => setModal("me")} />
         </footer>
       </aside>
 
@@ -779,9 +786,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
               </>
             )}
           </Show>
-          <button class="btn feedback-btn" type="button" title="Send feedback to the developers" onClick={() => openFeedback()}>
-            Feedback
-          </button>
+          <Notifications uid={props.uid} admin={props.admin} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
           {/* who committed, pushed and deployed what (owner, admins, developers) */}
           <Show when={props.admin || props.developer}>
             <ActivityButton uid={props.uid} />
@@ -1038,6 +1043,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       />
       <FeedbackDialog
         open={feedbackOpen()}
+        initialTab={feedbackTab()}
+        notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => setFeedbackTab(tab)} />}
         onClose={() => setFeedbackOpen(false)}
         uid={props.uid}
         name={nameOf(props.uid)}
@@ -1054,47 +1061,14 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         <p class="modal-text">
           Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).
         </p>
-        <PictureField
-          uid={props.uid}
-          field="photo"
-          label="Profile picture"
-          hint="The round picture on your card, in chat and on your tile. A GIF keeps moving."
-          value={profiles().get(props.uid)?.photo}
-          preview={
-            <span class="avatar photo-preview" style={faceStyle(profiles().get(props.uid))}>
-              {faceText(profiles().get(props.uid), nameOf(props.uid))}
-            </span>
-          }
-        />
-        <PictureField
-          uid={props.uid}
-          field="banner"
-          label="Card banner"
-          hint="The strip across the top of your card. A GIF keeps moving."
-          value={profiles().get(props.uid)?.banner}
-          preview={<span class="picture-preview" style={pictureStyle(profiles().get(props.uid), "banner")} />}
-        />
-        <PictureField
-          uid={props.uid}
-          field="background"
-          label="Card background"
-          hint="Fills the card behind your name. A GIF keeps moving."
-          value={profiles().get(props.uid)?.background}
-          preview={<span class="picture-preview" style={pictureStyle(profiles().get(props.uid), "background")} />}
-        />
-        <CallNameField uid={props.uid} name={props.name} current={profiles().get(props.uid)?.callName ?? ""} />
-        <For each={["left", "right"] as const}>{side => {
-          const current = () => side === "left" ? leftMode() : rightMode();
-          const choose = (mode: SidebarMode) => side === "left" ? chooseLeftMode(mode) : chooseRightMode(mode);
-          return <fieldset class="field sidebar-mode"><legend>{side === "left" ? "Left sidebar" : "Right sidebar"}</legend>
-            <div class="kind-pick">
-              <label><input type="radio" name={`${side}-mode`} checked={current() === "slide"} onChange={() => choose("slide")} />Slides in and out</label>
-              <label><input type="radio" name={`${side}-mode`} checked={current() === "hover"} onChange={() => choose("hover")} />Show only on hover</label>
-              <label><input type="radio" name={`${side}-mode`} checked={current() === "pinned"} onChange={() => choose("pinned")} />Always show</label>
-            </div>
-            <small class="call-name-note">Hover opens at the screen edge and closes when the pointer leaves. Touch devices keep their tap controls.</small>
-          </fieldset>;
-        }}</For>
+        <fieldset class="field sidebar-mode"><legend>Sidebar behavior · left &amp; right</legend>
+          <div class="kind-pick">
+            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "slide"} onChange={() => chooseSidebarMode("slide")} />Slides in and out</label>
+            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "hover"} onChange={() => chooseSidebarMode("hover")} />Show only on hover</label>
+            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "pinned"} onChange={() => chooseSidebarMode("pinned")} />Always show</label>
+          </div>
+          <small class="call-name-note">Applies to both sides. Hover-only closes when the pointer leaves; slides in and out stays open briefly. Touch devices keep their tap controls.</small>
+        </fieldset>
         <div class="modal-actions">
           <button class="btn danger" type="button" onClick={props.onLogout}>
             Log out
@@ -1102,123 +1076,6 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         </div>
       </Modal>
     </div>
-  );
-}
-
-/**
- * One picture on your profile card: your round face, the strip across the
- * top, or the card itself. A GIF goes up whole and keeps moving.
- */
-function PictureField(props: {
-  uid: string;
-  field: ProfilePicture;
-  label: string;
-  hint: string;
-  value?: string;
-  /** what that spot of the card looks like now */
-  preview: JSX.Element;
-}) {
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal("");
-  let picker: HTMLInputElement | undefined;
-  async function choose(file: File | undefined) {
-    if (!file) return;
-    setBusy(true);
-    setError("");
-    try {
-      await saveProfilePicture(props.uid, props.field, await uploadPicture(file, { kind: "profile", name: props.field }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not use that picture");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function remove() {
-    setBusy(true);
-    setError("");
-    try {
-      await saveProfilePicture(props.uid, props.field, null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove that picture");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div class="field photo-field">
-      <span>{props.label}</span>
-      <div class="photo-row">
-        {props.preview}
-        <input
-          ref={picker}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(e) => {
-            void choose(e.currentTarget.files?.[0]);
-            e.currentTarget.value = "";
-          }}
-        />
-        <button class="btn" type="button" disabled={busy()} onClick={() => picker?.click()}>
-          {busy() ? "Saving…" : props.value ? "Change picture" : "Upload picture"}
-        </button>
-        <Show when={props.value}>
-          <button class="btn" type="button" disabled={busy()} onClick={() => void remove()}>
-            Remove
-          </button>
-        </Show>
-      </div>
-      <small class="field-hint">{props.hint}</small>
-      <Show when={error()}>
-        <p class="form-error">{error()}</p>
-      </Show>
-    </div>
-  );
-}
-
-/**
- * Public display name, shared by all live profile surfaces.
- * Empty restores the account name.
- */
-function CallNameField(props: { uid: string; name: string; current: string }) {
-  const [value, setValue] = createSignal(props.current);
-  const [state, setState] = createSignal<"" | "saving" | "saved" | "error">("");
-  createEffect(() => setValue(props.current));
-  async function save(e: SubmitEvent) {
-    e.preventDefault();
-    setState("saving");
-    try {
-      await saveCallName(props.uid, value());
-      setState("saved");
-    } catch {
-      setState("error");
-    }
-  }
-  return (
-    <form class="field call-name" onSubmit={save}>
-      <span>Display name</span>
-      <div class="call-name-row">
-        <input
-          value={value()}
-          maxLength={40}
-          placeholder={props.name}
-          onInput={(e) => {
-            setValue(e.currentTarget.value);
-            setState("");
-          }}
-        />
-        <button class="btn" type="submit" disabled={state() === "saving" || value().trim() === props.current}>
-          Save
-        </button>
-      </div>
-      <small class="call-name-note">
-        {state() === "saved"
-          ? "Saved. Your name updates across status, chat, profiles and calls."
-          : state() === "error"
-            ? "Could not save. Check your connection."
-            : "Leave it empty to use your account name."}
-      </small>
-    </form>
   );
 }
 
@@ -1315,10 +1172,10 @@ export function ProfileCard(props: {
         <button class="profile-close icon-btn" type="button" aria-label="Close profile" onClick={props.onClose}>✕</button>
         <span class="avatar profile-avatar" style={faceStyle(props.profile)}>
           {faceText(props.profile, props.name)}
-          <i class="dot" classList={{ off: !props.online }} />
+          <i class={`dot status-${props.online ? availabilityStatus(props.profile?.availability) : "invisible"}`} classList={{ off: !props.online }} />
         </span>
         <div class="profile-body">
-          <div class={`profile-identity nameplate-${customization(props.profile?.customization).nameplate}`}><h3>
+          <div class="profile-identity"><h3>
             {props.name}<DeveloperBadge username={props.profile?.username} />
             <Show when={props.owner}>
               <span class="profile-badge">Owner</span>
@@ -1359,14 +1216,14 @@ function MemberGroup(props: {
         {(uid) => (
           <button
             type="button"
-            class={`member nameplate-${customization(props.profiles.get(uid)?.customization).nameplate}`}
+            class={`member ${nameplateClass(customization(props.profiles.get(uid)?.customization).nameplate)}`}
             classList={{ offline: !props.online }}
             onClick={(e) => props.onPick?.(uid, e)}
           >
             <span class="avatar small" style={faceStyle(props.profiles.get(uid))}>
               {faceText(props.profiles.get(uid), props.nameOf(uid))}
               <Show when={props.online}>
-                <i class="dot" />
+                <i class={`dot status-${availabilityStatus(props.profiles.get(uid)?.availability)}`} title={availabilityLabel(props.profiles.get(uid)?.availability)} />
               </Show>
             </span>
             <span class="member-text">
@@ -1724,7 +1581,7 @@ function NewDmDialog(props: {
                 <span class="avatar small" style={faceStyle(p)}>
                   {faceText(p, displayName(p))}
                   <Show when={props.isOnline(p.uid)}>
-                    <i class="dot" />
+                    <i class={`dot status-${availabilityStatus(props.profiles.get(p.uid)?.availability)}`} title={availabilityLabel(props.profiles.get(p.uid)?.availability)} />
                   </Show>
                 </span>
                 <span class="member-text">

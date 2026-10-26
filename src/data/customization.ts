@@ -1,6 +1,20 @@
 export const PATRICK_GIF = `${import.meta.env.BASE_URL}decorations/patrick-star.gif`;
 export const DECORATIONS = ["none", "patrick", "orbit", "neon"] as const;
-export const NAMEPLATES = ["none", "aurora", "ember"] as const;
+export const NAMEPLATE_OPTIONS = [
+  { id: "cat-beans", label: "Cat Beans" },
+  { id: "cityscape", label: "Cityscape" },
+  { id: "spring-paradise", label: "Spring Paradise" },
+  { id: "koi-pond", label: "Koi Pond" },
+  { id: "twilight", label: "Twilight" },
+  { id: "cherry-blossoms", label: "Cherry Blossoms" },
+  { id: "vengeance", label: "Vengeance" },
+  { id: "angel", label: "Angel" },
+] as const;
+export type Nameplate = "none" | typeof NAMEPLATE_OPTIONS[number]["id"];
+export const NAMEPLATES: readonly Nameplate[] = ["none", ...NAMEPLATE_OPTIONS.map(option => option.id)];
+export function nameplateClass(value: Nameplate): string {
+  return value === "none" ? "nameplate-none" : `nameplate-art nameplate-${value}`;
+}
 export const EFFECTS = ["none", "starlight", "neon"] as const;
 export type Customization = {
   decoration: typeof DECORATIONS[number];

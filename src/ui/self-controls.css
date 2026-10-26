@@ -1,0 +1,28 @@
+.self-nameplate .self-profile-status{position:relative;display:grid;place-items:center;flex:none;width:36px;height:36px;padding:0;border:0;background:transparent;border-radius:50%;cursor:pointer}
+.self-nameplate .self-profile-status .avatar{width:36px;height:36px}
+.self-nameplate .me-names{justify-content:center}
+.self-nameplate .me-names b{min-width:0;overflow:visible}
+.self-display-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.self-nameplate .self-controls{display:flex;align-items:center;gap:1px;flex:none}
+.self-nameplate .self-controls .icon-btn{display:grid;place-items:center;width:29px;height:32px;min-width:29px;min-height:32px;padding:0;background:transparent;border:0;border-radius:7px;box-shadow:none}
+.self-nameplate .self-controls .self-audio-btn:hover{background:rgba(32,52,63,.13)}
+:root .me.self-nameplate .self-audio-btn.is-off{color:#a52e2a}
+:root .me.self-nameplate.nameplate-art .self-audio-btn.is-off{color:#ff8580!important}
+.self-nameplate .self-controls .icon-btn:disabled{opacity:.45;cursor:not-allowed}
+.status-dot{display:inline-block;flex:none;width:8px;height:8px;border-radius:50%;background:#59ff47}
+.status-idle{background:#ffdf00!important}
+.status-dnd{background:#ff4848!important}
+.status-invisible{background:#87959d!important}
+.self-status-menu{position:absolute;left:0;bottom:calc(100% + 8px);z-index:50;width:240px;max-width:calc(100vw - 24px);padding:8px;border:1px solid var(--line-2);border-radius:12px;background:var(--panel);color:var(--text);box-shadow:0 8px 24px #0003}
+.self-status-menu .self-status-title{margin:5px 8px 9px;font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase}
+.self-status-menu button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 8px;border:0;border-radius:8px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.self-status-menu button:hover,.self-status-menu button[aria-checked=true]{background:var(--glass-hover,var(--panel-3))}
+.self-status-menu button>span:nth-child(2){display:flex;flex:1;min-width:0;flex-direction:column;gap:2px}
+.self-status-menu button strong{font-size:12px}
+.self-status-menu button small{font-size:10px;color:var(--muted)}
+.self-status-menu .self-status-error{margin:8px;font-size:11px;color:var(--red)}
+.self-audio-error{position:absolute;bottom:calc(100% + 8px);left:0;z-index:49;width:100%;padding:10px 12px;background:var(--panel);border:1px solid var(--red);border-radius:9px;color:var(--text);font-size:11px}
+/* Personal artwork stays on the bar, not behind the menu's text. */
+:root .self-nameplate.nameplate-art .self-status-menu{color:var(--text)!important}
+:root .self-nameplate.nameplate-art .self-status-menu small{color:var(--muted)!important}
+.self-profile-status:focus-visible,.self-status-menu button:focus-visible{outline:2px solid var(--focus,#b2d589);outline-offset:2px}

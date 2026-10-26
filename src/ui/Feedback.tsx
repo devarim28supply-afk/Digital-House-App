@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { type JSX, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
 import {
   type Feedback,
@@ -30,6 +30,8 @@ const when = (d: Date | null) => (d ? d.toLocaleString([], { dateStyle: "medium"
  */
 export function FeedbackDialog(props: {
   open: boolean;
+  initialTab?: "send" | "mine" | "inbox";
+  notifications?: JSX.Element;
   onClose: () => void;
   uid: string;
   name: string;
@@ -38,7 +40,8 @@ export function FeedbackDialog(props: {
   /** where they are, added to what they send (a channel, a tile, the room) */
   where: string;
 }) {
-  const [tab, setTab] = createSignal<"send" | "mine" | "inbox">("send");
+  const [tab, setTab] = createSignal<"send" | "mine" | "inbox" | "notifications">("send");
+  createEffect(() => { if (props.open) setTab(props.initialTab ?? "send"); });
   return (
     <Modal title="Feedback" open={props.open} onClose={props.onClose}>
       <div class="fb">
@@ -49,12 +52,14 @@ export function FeedbackDialog(props: {
           <button type="button" role="tab" aria-pressed={tab() === "mine"} onClick={() => setTab("mine")}>
             My feedback
           </button>
+          <button type="button" role="tab" aria-pressed={tab() === "notifications"} onClick={() => setTab("notifications")}>Notifications</button>
           <Show when={props.admin}>
             <button type="button" role="tab" aria-pressed={tab() === "inbox"} onClick={() => setTab("inbox")}>
               Inbox
             </button>
           </Show>
         </div>
+        <Show when={tab() === "notifications"}>{props.notifications}</Show>
         <Show when={tab() === "send"}>
           <SendForm {...props} onSent={() => setTab("mine")} />
         </Show>
@@ -275,6 +280,8 @@ function Inbox(props: { by: string }) {
 function InboxItem(props: { f: Feedback; by: string }) {
   const [reply, setReply] = createSignal(props.f.reply ?? "");
   const [saving, setSaving] = createSignal(false);
+  const [result, setResult] = createSignal("");
+  const [replyError, setReplyError] = createSignal("");
   const [open, setOpen] = createSignal(false);
   return (
     <article class="fb-item" classList={{ done: props.f.status === "done" }}>
@@ -282,16 +289,7 @@ function InboxItem(props: { f: Feedback; by: string }) {
         <span class={`fb-badge ${props.f.type}`}>{props.f.type}</span>
         <b>{props.f.username || props.f.name || "someone"}</b>
         <time>{when(props.f.createdAt)}</time>
-        <select
-          class="fb-status-pick"
-          value={props.f.status}
-          onChange={(e) => void setFeedbackStatus(props.f.id, e.currentTarget.value as FeedbackStatus)}
-          aria-label="Status"
-        >
-          <option value="new">New</option>
-          <option value="working">Working on it</option>
-          <option value="done">Done</option>
-        </select>
+        <FeedbackStatusPicker id={props.f.id} status={props.f.status} />
       </header>
       <p class="fb-body">{props.f.text}</p>
       <Files files={props.f.files} />
@@ -315,10 +313,15 @@ function InboxItem(props: { f: Feedback; by: string }) {
         onSubmit={async (e) => {
           e.preventDefault();
           const text = reply().trim();
-          if (!text) return;
+          if (!text || saving()) return;
+          const updating = Boolean(props.f.reply);
+          setResult(""); setReplyError("");
           setSaving(true);
           try {
             await replyToFeedback(props.f.id, text.slice(0, 2000), props.by);
+            setResult(updating ? "Reply updated" : "Reply sent");
+          } catch (error) {
+            setReplyError(error instanceof Error ? error.message : "Could not send your reply. Try again.");
           } finally {
             setSaving(false);
           }
@@ -327,13 +330,50 @@ function InboxItem(props: { f: Feedback; by: string }) {
         <input
           placeholder="Reply (they see it in My feedback)"
           value={reply()}
-          onInput={(e) => setReply(e.currentTarget.value)}
+          disabled={saving()}
+          onInput={(e) => {setReply(e.currentTarget.value);setResult("");setReplyError("");}}
           maxLength={2000}
         />
-        <button class="btn" type="submit" disabled={saving()}>
-          {props.f.reply ? "Update" : "Reply"}
+        <button class="btn fb-reply-submit" classList={{ "is-saved": Boolean(result()) }} type="submit" disabled={saving() || !reply().trim()} aria-busy={saving()}>
+          {saving() ? "Sending…" : result() ? "✓ Saved" : props.f.reply ? "Update" : "Reply"}
         </button>
       </form>
+      <Show when={result()}><p class="fb-reply-result" role="status" aria-live="polite">✓ {result()} successfully.</p></Show>
+      <Show when={replyError()}><p class="form-error" role="alert">{replyError()}</p></Show>
     </article>
   );
+}
+
+function FeedbackStatusPicker(props: { id: string; status: FeedbackStatus }) {
+  const [open, setOpen] = createSignal(false);
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal("");
+  let host: HTMLDivElement | undefined;
+  let trigger: HTMLButtonElement | undefined;
+  createEffect(() => {
+    if (!open()) return;
+    const outside = (event: PointerEvent) => {if (!host?.contains(event.target as Node)) setOpen(false);};
+    document.addEventListener("pointerdown",outside);
+    queueMicrotask(() => host?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')?.focus());
+    onCleanup(() => document.removeEventListener("pointerdown",outside));
+  });
+  async function choose(status: FeedbackStatus) {
+    if(saving()) return;
+    setSaving(true);setError("");
+    try {await setFeedbackStatus(props.id,status);setOpen(false);trigger?.focus();}
+    catch {setError("Could not update status. Try again.");}
+    finally {setSaving(false);}
+  }
+  return <div class="fb-status-dropdown" ref={host} onKeyDown={event => {
+    if(event.key === "Escape") {setOpen(false);trigger?.focus();event.preventDefault();}
+    if(open() && ["ArrowDown","ArrowUp","Home","End"].includes(event.key)) {
+      const options = Array.from(host!.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+      const at=options.indexOf(document.activeElement as HTMLButtonElement);
+      const next=event.key === "Home" ? 0 : event.key === "End" ? options.length-1 : (at+(event.key === "ArrowDown" ? 1 : -1)+options.length)%options.length;
+      options[next]?.focus();event.preventDefault();
+    }
+  }}>
+    <button ref={trigger} class="fb-status-trigger" type="button" aria-label={`Status: ${STATUS_LABEL[props.status]}`} aria-haspopup="menu" aria-expanded={open()} disabled={saving()} onClick={() => setOpen(!open())}>{saving() ? "Saving…" : STATUS_LABEL[props.status]}<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+    <Show when={open()}><div class="fb-status-menu" role="menu" aria-label="Feedback status"><For each={(["new","working","done"] as FeedbackStatus[])}>{status => <button type="button" role="menuitemradio" aria-checked={props.status === status} disabled={saving()} onClick={() => void choose(status)}><span>{STATUS_LABEL[status]}</span><span aria-hidden="true">{props.status === status ? "✓" : ""}</span></button>}</For><Show when={error()}><p role="alert">{error()}</p></Show></div></Show>
+  </div>;
 }

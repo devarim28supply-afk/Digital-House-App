@@ -1,3 +1,4 @@
+import { setFeedbackReceipt } from "./notifications";
 import {
   type Timestamp,
   type Unsubscribe,
@@ -94,7 +95,7 @@ export async function uploadFeedbackFile(file: File, onProgress: (percent: numbe
   return { url: blob.url, name: file.name, type: file.type || blob.contentType || "", size: file.size };
 }
 
-export function sendFeedback(input: {
+export async function sendFeedback(input: {
   uid: string;
   name: string;
   username: string;
@@ -103,16 +104,18 @@ export function sendFeedback(input: {
   files: ChatFile[];
   context: FeedbackContext;
 }) {
-  return addDoc(collection(db, "feedback"), { ...input, status: "new", createdAt: serverTimestamp() });
+  const result = await addDoc(collection(db, "feedback"), { ...input, status: "new", createdAt: serverTimestamp() });
+  setFeedbackReceipt({id:result.id,uid:input.uid,type:input.type,at:Date.now()});
+  return result;
 }
 
 /** Your own feedback, newest first. */
-export function watchMyFeedback(uid: string, cb: (list: Feedback[]) => void): Unsubscribe {
+export function watchMyFeedback(uid: string, cb: (list: Feedback[]) => void, onError?: (err: Error) => void): Unsubscribe {
   return onSnapshot(query(collection(db, "feedback"), where("uid", "==", uid)), (snap) => {
     const list = snap.docs.map((d) => toFeedback(d.id, d.data()));
     list.sort((a, b) => (b.createdAt?.getTime() ?? Infinity) - (a.createdAt?.getTime() ?? Infinity));
     cb(list);
-  });
+  }, err => onError?.(err));
 }
 
 /** Everyone's feedback, newest first (owner and admins only). */

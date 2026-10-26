@@ -1,3 +1,5 @@
+import "../data/layoutTheme";
+import "../ui/layout-themes.css";
 // The Activity page (activity.html): who did what across Darkwood Node.
 //
 // - Commits, pushes, deploys and pull requests from /api/activity (GitHub +
