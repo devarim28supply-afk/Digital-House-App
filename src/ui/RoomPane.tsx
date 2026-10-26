@@ -97,11 +97,15 @@ export function RoomPane(props: {
     if (url() && hasDarkwoodRoom(props.channel)) setRoomLoaded(true);
   });
   // A tile linking to someone else's site: some sites refuse to be shown
-  // inside another page (White Torture does). The server reads the site's
-  // rules; a refusing site gets an "Open it in its own tab" button instead.
-  // Our own 3D rooms (built-in tiles) always fit.
+  // inside another page. The server reads the site's rules; a refusing site
+  // gets an "Open it in its own tab" button instead. Our own pages (the
+  // Darkwood Room, and White Torture served from here) always fit.
   const [embeddable] = createResource(
-    () => (props.channel.roomKey ? undefined : url() || undefined),
+    () => {
+      const link = props.channel.roomKey ? undefined : url() || undefined;
+      if (!link || link.startsWith("/")) return undefined;
+      return link;
+    },
     async (link) => {
       try {
         const res = await fetch(`/api/frame-check?url=${encodeURIComponent(link)}`);
@@ -159,7 +163,7 @@ export function RoomPane(props: {
             onLoad={tellRoom}
             src={url()!}
             title={`${props.channel.name} room`}
-            allow="camera; microphone; fullscreen; display-capture; autoplay; xr-spatial-tracking"
+            allow="camera; microphone; fullscreen; display-capture; autoplay; pointer-lock; xr-spatial-tracking"
           />
         </Show>
         {/* the tile's videochat as small screens over the bottom of the page
