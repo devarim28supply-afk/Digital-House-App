@@ -356,12 +356,57 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
 // ---- servers ----------------------------------------------------------------
 
 export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsubscribe {
-  const q = query(collection(db, "servers"), where("memberUids", "array-contains", uid));
-  return onSnapshot(q, (snap) => {
-    const servers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Server, "id">) }));
+  const repairing = new Set<string>();
+  let asMember: Server[] = [];
+  let asOwner: Server[] = [];
+  const emit = () => {
+    const byId = new Map<string, Server>();
+    for (const s of [...asMember, ...asOwner]) byId.set(s.id, s);
+    const servers = [...byId.values()];
     servers.sort((a, b) => a.name.localeCompare(b.name));
     cb(servers);
-  });
+    for (const s of servers) {
+      if (s.ownerUid !== uid || s.kind === "dm" || repairing.has(s.id)) continue;
+      const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true } = {};
+      if (!s.memberUids.includes(uid)) patch.memberUids = arrayUnion(uid);
+      // The lock wrote open:false. Digital House is open to everyone approved.
+      if (s.name.startsWith("Digital House") && s.open !== true) patch.open = true;
+      if (!patch.memberUids && patch.open !== true) continue;
+      repairing.add(s.id);
+      void updateDoc(doc(db, "servers", s.id), patch).catch(() => repairing.delete(s.id));
+    }
+  };
+  const map = (snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) =>
+    snap.docs.map((d) => {
+      const data = d.data() as Omit<Server, "id">;
+      return { id: d.id, ...data, memberUids: data.memberUids ?? [] };
+    });
+  const unsubMember = onSnapshot(
+    query(collection(db, "servers"), where("memberUids", "array-contains", uid)),
+    (snap) => {
+      asMember = map(snap);
+      emit();
+    },
+    () => {
+      asMember = [];
+      emit();
+    },
+  );
+  const unsubOwner = onSnapshot(
+    query(collection(db, "servers"), where("ownerUid", "==", uid)),
+    (snap) => {
+      asOwner = map(snap);
+      emit();
+    },
+    () => {
+      asOwner = [];
+      emit();
+    },
+  );
+  return () => {
+    unsubMember();
+    unsubOwner();
+  };
 }
 
 /** A new server with a text and a voice channel to start. */
@@ -381,10 +426,27 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
   return ref.id;
 }
 
-/** The home server, made once by the operator on first sign-in. */
+/** The home server, made once by the operator on first sign-in. Reopens Digital House if the lock closed it. */
 export async function ensureHomeServer(uid: string) {
-  const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
-  if (!mine.empty) return;
+  const [mine, owned] = await Promise.all([
+    getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid))).catch(() => null),
+    getDocs(query(collection(db, "servers"), where("ownerUid", "==", uid))).catch(() => null),
+  ]);
+  const docs = new Map(mine?.docs.map((d) => [d.id, d]) ?? []);
+  for (const d of owned?.docs ?? []) docs.set(d.id, d);
+  let hasReal = false;
+  for (const s of docs.values()) {
+    const data = s.data();
+    if (data.kind === "dm") continue;
+    hasReal = true;
+    if (data.ownerUid !== uid) continue;
+    const members = (data.memberUids as string[] | undefined) ?? [];
+    const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true } = {};
+    if (!members.includes(uid)) patch.memberUids = arrayUnion(uid);
+    if (typeof data.name === "string" && data.name.startsWith("Digital House") && data.open !== true) patch.open = true;
+    if (patch.memberUids || patch.open) await updateDoc(s.ref, patch).catch(() => {});
+  }
+  if (hasReal) return;
   // The Living Room tile and its chat are added by the app once it watches
   // this server's channels (ensureHomeTiles), so they are made exactly once.
   await createServer(
