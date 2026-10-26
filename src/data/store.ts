@@ -83,10 +83,7 @@ export type Server = {
   ownerUid: string;
   memberUids: string[];
   banner?: string;
-  /**
-   * Old flag: an open server used to take in every approved member on its own.
-   * It stays false. Joining is an invite code, or a request an admin approves.
-   */
+  /** Open: every approved member (past the M2A-access door) joins on their own. */
   open?: boolean;
   /** "dm": a direct message between two people (data/dms.ts), not a server */
   kind?: "dm";
@@ -420,13 +417,13 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
   };
 }
 
-/** A new server with a text and a voice channel to start. It starts empty of other people. */
-export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[]) {
+/** A new server with a text and a voice channel to start. Digital House is created open. */
+export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
   const clean = name.trim().slice(0, 60);
   // The server first: the channel rules look the server up, and a write in
   // the same batch is not visible to that lookup yet.
-  await setDoc(ref, { name: clean, ownerUid: uid, memberUids: [uid], open: false, createdAt: serverTimestamp() });
+  await setDoc(ref, { name: clean, ownerUid: uid, memberUids: [uid], open, createdAt: serverTimestamp() });
   const batch = writeBatch(db);
   const start = channels ?? [
     { name: "general", kind: "text", position: 0 },
@@ -441,7 +438,7 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
 
 /**
  * The operator's own Digital House, made once on their first sign-in.
- * New members do not get this server. They join with a code, or by asking.
+ * It is open: everyone who gets in through M2A-access joins it.
  */
 export async function ensureHomeServer(uid: string) {
   const [mine, owned] = await Promise.all([
@@ -456,19 +453,42 @@ export async function ensureHomeServer(uid: string) {
     if (data.kind === "dm") continue;
     hasReal = true;
     const members = (data.memberUids as string[] | undefined) ?? [];
-    if (data.ownerUid === uid && !members.includes(uid)) {
-      await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
+    const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: boolean } = {};
+    if (data.ownerUid === uid && !members.includes(uid)) patch.memberUids = arrayUnion(uid);
+    // The membership lock wrote open:false. Digital House is open again.
+    if (data.ownerUid === uid && typeof data.name === "string" && data.name.startsWith("Digital House") && data.open !== true) {
+      patch.open = true;
     }
+    if (patch.memberUids || patch.open === true) await updateDoc(s.ref, patch).catch(() => {});
   }
   // A direct message is not a server you belong to. A real one, including
   // Digital House you still own, means the home server already exists.
   if (hasReal) return;
   // The Living Room tile and its chat are added by the app once it watches
   // this server's channels (ensureHomeTiles), so they are made exactly once.
-  await createServer(uid, "Digital House", [
-    { name: "general", kind: "text", position: 1 },
-    { name: "Lounge", kind: "voice", position: 2 },
-  ]);
+  await createServer(
+    uid,
+    "Digital House",
+    [
+      { name: "general", kind: "text", position: 1 },
+      { name: "Lounge", kind: "voice", position: 2 },
+    ],
+    true,
+  );
+}
+
+/**
+ * Everyone who gets in (an approved member, past the M2A-access door) is in
+ * every open server: add yourself to any you are not in yet. The rules let
+ * you add exactly yourself to an open server and nothing else.
+ */
+export async function joinOpenServers(uid: string) {
+  const open = await getDocs(query(collection(db, "servers"), where("open", "==", true)));
+  for (const s of open.docs) {
+    if (s.data().kind === "dm") continue;
+    const members = (s.data().memberUids as string[] | undefined) ?? [];
+    if (!members.includes(uid)) await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
+  }
 }
 
 /**
@@ -529,12 +549,11 @@ export async function renameServer(sid: string, name: string) {
   audit("server.rename", { serverId: sid, target: clean });
 }
 
-/** Name and banner together (Server settings). banner null removes it. */
+/** Name and banner together (Server settings). banner null removes it. Does not close the server. */
 export async function saveServerSettings(sid: string, name: string, banner: string | null | undefined) {
   const clean = name.trim().slice(0, 60);
   await updateDoc(doc(db, "servers", sid), {
     name: clean,
-    open: false,
     ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
   });
   await publishServerName(sid, clean).catch(() => {});
