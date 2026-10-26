@@ -1,4 +1,6 @@
-import { type JSX, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { markNotificationsRead, unreadNotifications } from "../data/notifications";
+import type { Notice } from "./Notifications";
+import { type JSX, For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 
 import {
   type Feedback,
@@ -32,6 +34,8 @@ export function FeedbackDialog(props: {
   open: boolean;
   initialTab?: "send" | "mine" | "inbox";
   notifications?: JSX.Element;
+  notificationItems?: Notice[];
+  unreadMessages?: number;
   onClose: () => void;
   uid: string;
   name: string;
@@ -42,6 +46,13 @@ export function FeedbackDialog(props: {
 }) {
   const [tab, setTab] = createSignal<"send" | "mine" | "inbox" | "notifications">("send");
   createEffect(() => { if (props.open) setTab(props.initialTab ?? "send"); });
+  const unread = (category: "mine" | "inbox" | "notifications") => unreadNotifications(props.uid,props.notificationItems ?? [],category) + (category === "notifications" ? props.unreadMessages ?? 0 : 0);
+  createEffect(() => {
+    const active=tab();const visible=props.open;const list=props.notificationItems;
+    if(visible && active !== "send") untrack(()=>markNotificationsRead(props.uid,active));
+  });
+  const badge = (category: "mine" | "inbox" | "notifications") => <Show when={unread(category)>0}><span class="feedback-unread" aria-label={`${unread(category)} unread notifications`}><i aria-hidden="true"/>{unread(category)>99 ? "99+" : unread(category)}</span></Show>;
+
   return (
     <Modal title="Feedback" open={props.open} onClose={props.onClose}>
       <div class="fb">
@@ -50,12 +61,12 @@ export function FeedbackDialog(props: {
             Send
           </button>
           <button type="button" role="tab" aria-pressed={tab() === "mine"} onClick={() => setTab("mine")}>
-            My feedback
+            My feedback {badge("mine")}
           </button>
-          <button type="button" role="tab" aria-pressed={tab() === "notifications"} onClick={() => setTab("notifications")}>Notifications</button>
+          <button type="button" role="tab" aria-pressed={tab() === "notifications"} onClick={() => setTab("notifications")}>Notifications {badge("notifications")}</button>
           <Show when={props.admin}>
             <button type="button" role="tab" aria-pressed={tab() === "inbox"} onClick={() => setTab("inbox")}>
-              Inbox
+              Inbox {badge("inbox")}
             </button>
           </Show>
         </div>
