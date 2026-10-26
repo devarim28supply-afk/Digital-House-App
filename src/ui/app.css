@@ -1773,17 +1773,6 @@ video.msg-media {
   position: relative;
 }
 
-.cam-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dock-btn.menu-caret {
-  min-width: 42px;
-  padding: 0 12px;
-}
-
 /* a file dragged in from a folder: the whole chat says where it will go */
 .chat {
   position: relative;
