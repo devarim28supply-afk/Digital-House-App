@@ -1447,10 +1447,23 @@
   gap: 8px;
 }
 
-.people-list {
+.people-list,
+.find-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.find-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.invite-code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
 }
 
 .person-tag {
@@ -2544,6 +2557,131 @@ img.live-tile-still {
 .tiles.narrow {
   place-content: start center;
   overflow-y: auto;
+}
+
+/* Phone call. Cells share edges. The camera stays the whole 16:9 picture
+   inside its cell (black around it). Your camera in a 1-on-1 floats on top. */
+:root[data-layout-theme] .voice.phone,
+.voice.phone {
+  padding: 0;
+  gap: 0;
+}
+
+.voice.phone .dock {
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+}
+
+.tiles.phone {
+  position: relative;
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  gap: 0;
+  place-content: stretch;
+  overflow: hidden;
+  overscroll-behavior-x: none;
+  background: #000;
+}
+
+.tiles.phone.phone-scroll {
+  overflow-y: auto;
+}
+
+/* Looking at a share: the people column must not scroll the share off the stage. */
+.tiles.phone.share-away {
+  overflow-y: hidden;
+}
+
+/* The track is the stage. Translating it reveals the share page on its right. */
+.tiles.phone .phone-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  touch-action: pan-y;
+  transition: transform 280ms ease;
+}
+
+.tiles.phone.phone-scroll .phone-track {
+  height: auto;
+}
+
+.tiles.phone .phone-track.dragging {
+  transition: none;
+}
+
+.tiles.phone .phone-track > .tile {
+  position: absolute;
+  border-width: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.tiles.phone .phone-track > .tile.speaking {
+  box-shadow: inset 0 0 0 3px var(--green);
+}
+
+.tiles.phone.phone-scroll .phone-track > .tile {
+  position: relative;
+}
+
+/* Shares (and the sharer, once entered) stay on the page to the right,
+   even while the people column is a scrolling grid. */
+.tiles.phone.phone-scroll .phone-track > .tile.screen,
+.tiles.phone.phone-scroll .phone-track > .tile.share-slot,
+.tiles.phone.phone-scroll .phone-track > .tile.pip {
+  position: absolute;
+}
+
+.tiles.phone .phone-track > .tile.pip {
+  z-index: 2;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+  cursor: grab;
+}
+
+.tiles.phone .phone-track > .tile.pip:not(.dragging) {
+  transition:
+    left 160ms ease,
+    top 160ms ease,
+    width 160ms ease,
+    height 160ms ease;
+}
+
+.tiles.phone .phone-track > .tile.pip.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.tiles.phone .phone-track > .tile.pip.speaking {
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 3px var(--green);
+}
+
+.tiles.phone .phone-track > .tile.pip .avatar.big {
+  width: 48px;
+  height: 48px;
+  font-size: 16px;
+}
+
+.tiles.phone .phone-track > .tile.pip .tile-name {
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tiles.phone .phone-track,
+  .tiles.phone .phone-track > .tile.pip:not(.dragging) {
+    transition: none;
+  }
 }
 
 @media (max-width: 760px) {

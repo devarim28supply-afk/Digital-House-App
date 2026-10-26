@@ -17,16 +17,29 @@ import {
   addServerMembers,
   createChannel,
   createRoomTile,
+  type JoinRequest,
+  type JoinStatus,
+  type ServerListing,
+  approveJoinRequest,
   createServer,
+  createServerInvite,
   deleteRoomTile,
+  denyJoinRequest,
   ensureHomeServer,
   ensureHomeTiles,
-  joinOpenServers,
+  joinWithInviteCode,
+  publishServerName,
+  removeServerMember,
+  requestToJoin,
+  revokeServerInvite,
+  saveServerSettings,
   setServerOpen,
+  watchJoinRequests,
+  watchMyRequest,
+  watchServerDirectory,
+  watchServerInvites,
   imageSrc,
   isBuiltInTile,
-  removeServerMember,
-  saveServerSettings,
   deleteServer,
   saveProfile,
   shrinkImage,
@@ -181,7 +194,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
   }
-  const [modal, setModal] = createSignal<"" | "new-server" | "rename" | "people" | "new-channel" | "me">("");
+  const [modal, setModal] = createSignal<"" | "new-server" | "find-server" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
@@ -221,8 +234,6 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     void saveProfile(props.uid, props.name, props.username);
     // the operator gets the home server made on first sign-in
     if (props.admin) void ensureHomeServer(props.uid).catch(() => {});
-    // everyone who got in through M2A-access is in every open server
-    void joinOpenServers(props.uid).catch(() => {});
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     createEffect(() => me.setWhere(whereNow()));
@@ -245,6 +256,18 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   // The ✉ button at the top of the server rail shows your DMs in the left
   // column; servers keep their own buttons below it.
   const realServers = createMemo(() => servers().filter((x) => !isDm(x)));
+  // Publish names for search, and close any server that still auto-joins people.
+  const publishedNames = new Set<string>();
+  createEffect(() => {
+    for (const s of realServers()) {
+      if (s.ownerUid !== props.uid && !props.admin) continue;
+      if (s.open) void setServerOpen(s.id, false).catch(() => {});
+      const mark = `${s.id}:${s.name}`;
+      if (publishedNames.has(mark)) continue;
+      publishedNames.add(mark);
+      void publishServerName(s.id, s.name).catch(() => publishedNames.delete(mark));
+    }
+  });
   const dms = createMemo(() => servers().filter(isDm));
   const [dmHome, setDmHome] = createSignal(false);
   const [newDm, setNewDm] = createSignal(false);
@@ -312,6 +335,16 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const server = createMemo(() => servers().find((s) => s.id === serverId()));
   // in a DM nobody runs anything: no settings, tiles or people to add
   const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
+  const [pendingJoins, setPendingJoins] = createSignal(0);
+  createEffect(() => {
+    const current = server();
+    if (!current || !runsServer()) {
+      setPendingJoins(0);
+      return;
+    }
+    const stop = watchJoinRequests(current.id, (rows) => setPendingJoins(rows.filter((r) => r.status === "pending").length));
+    onCleanup(stop);
+  });
   // the left column shows your DMs (the ✉ button, or a DM is open)
   const dmMode = () => dmHome() || isDm(server());
   const dmName = (d: { memberUids: string[]; ownerUid: string }) => nameOf(dmPartner(d as never, props.uid));
@@ -335,9 +368,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       if (!tileChecked && isHome && s?.ownerUid === props.uid) {
         tileChecked = true;
         void ensureHomeTiles(sid, list).catch(() => {});
-        // made before servers could be open: the home server is open to all
-        // who get in (an explicit "closed" in Server settings is respected)
-        if (s.open === undefined) void setServerOpen(sid, true).catch(() => {});
+        // Digital House used to take in every new member. It does not anymore.
+        if (s.open) void setServerOpen(sid, false).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
@@ -604,6 +636,9 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </button>
           )}
         </For>
+        <button type="button" class="rail-add" title="Find a server" aria-label="Find a server" onClick={() => setModal("find-server")}>
+          ⌕
+        </button>
         <button type="button" class="rail-add" title="New server" aria-label="New server" onClick={() => setModal("new-server")}>
           +
         </button>
@@ -675,7 +710,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
             </Show>
           </Show>
           <Show when={!dmMode()}>
-          <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
+          <Show when={server()} fallback={<p class="side-empty">No servers yet. Join with a code, or search for one and ask to join.</p>}>
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
             <For each={liveStreams()}>
               {(key) => {
@@ -966,6 +1001,11 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                 <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
                   + People
                 </button>
+                <Show when={pendingJoins() > 0}>
+                  <button class="side-tool people-btn" type="button" onClick={() => setModal("rename")}>
+                    {pendingJoins()} waiting to join
+                  </button>
+                </Show>
               </Show>
               <MemberGroup
                 label={`Online — ${onlineHere().length}`}
@@ -1014,6 +1054,11 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
                   <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
                     + People
                   </button>
+                  <Show when={pendingJoins() > 0}>
+                    <button class="side-tool people-btn" type="button" onClick={() => setModal("rename")}>
+                      {pendingJoins()} waiting to join
+                    </button>
+                  </Show>
                 </Show>
                 <MemberGroup
                   label={`Online — ${online().length}`}
@@ -1068,9 +1113,21 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           setServerId(id);
         }}
       />
+      <FindServerDialog
+        open={modal() === "find-server"}
+        uid={props.uid}
+        joined={realServers().map((s) => s.id)}
+        onClose={() => setModal("")}
+        onOpen={(id) => {
+          setServerId(id);
+          setModal("");
+        }}
+      />
       <ServerSettingsDialog
         open={modal() === "rename"}
         server={server()}
+        uid={props.uid}
+        profiles={profiles()}
         // the owner may delete a server, never the home server (Living Room tile)
         canDelete={Boolean(server() && server()!.ownerUid === props.uid && !roomTiles().some((c) => c.roomKey === "gestr-living"))}
         onClose={() => setModal("")}
@@ -1437,16 +1494,168 @@ function NewChannelDialog(props: {
 }
 
 /** The server's name and banner (the picture across the top of its channels). */
-function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete: boolean; onClose: () => void }) {
+function FindServerDialog(props: {
+  open: boolean;
+  uid: string;
+  joined: string[];
+  onClose: () => void;
+  onOpen: (serverId: string) => void;
+}) {
+  const [q, setQ] = createSignal("");
+  const [code, setCode] = createSignal("");
+  const [rows, setRows] = createSignal<ServerListing[]>([]);
+  const [error, setError] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  createEffect(() => {
+    if (!props.open) return;
+    setError("");
+    const stop = watchServerDirectory(setRows);
+    onCleanup(stop);
+  });
+  const shown = () => {
+    const query = q().trim().toLowerCase();
+    return rows().filter((row) => !query || row.name.toLowerCase().includes(query));
+  };
+  async function useCode(e: Event) {
+    e.preventDefault();
+    if (busy()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const id = await joinWithInviteCode(props.uid, code());
+      setCode("");
+      props.onOpen(id);
+    } catch (err) {
+      setError(err instanceof Error && !/permission/i.test(err.message) ? err.message : "That code is not valid.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal title="Find a server" open={props.open} onClose={props.onClose}>
+      <form class="modal-form" onSubmit={(e) => void useCode(e)}>
+        <label class="field">
+          <span>Invite code</span>
+          <input
+            value={code()}
+            maxLength={16}
+            placeholder="Code from the server admin"
+            onInput={(e) => setCode(e.currentTarget.value)}
+          />
+        </label>
+        <div class="modal-actions">
+          <button class="btn primary" type="submit" disabled={busy() || code().trim().length < 6}>
+            {busy() ? "Joining…" : "Join with code"}
+          </button>
+        </div>
+      </form>
+      <form class="modal-form" onSubmit={(e) => e.preventDefault()}>
+        <label class="field">
+          <span>Search server names</span>
+          <input value={q()} placeholder="Search" onInput={(e) => setQ(e.currentTarget.value)} />
+        </label>
+        <div class="find-list">
+          <Show when={shown().length} fallback={<p class="side-empty">No servers match that.</p>}>
+            <For each={shown()}>
+              {(row) => (
+                <FindServerRow
+                  uid={props.uid}
+                  row={row}
+                  joined={props.joined.includes(row.id)}
+                  onOpen={() => props.onOpen(row.id)}
+                />
+              )}
+            </For>
+          </Show>
+        </div>
+      </form>
+      <Show when={error()}>
+        <p class="form-error">{error()}</p>
+      </Show>
+    </Modal>
+  );
+}
+
+function FindServerRow(props: { uid: string; row: ServerListing; joined: boolean; onOpen: () => void }) {
+  const [status, setStatus] = createSignal<JoinStatus | null>(null);
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal("");
+  createEffect(() => {
+    if (props.joined) return;
+    const stop = watchMyRequest(props.row.id, props.uid, setStatus);
+    onCleanup(stop);
+  });
+  async function ask() {
+    setBusy(true);
+    setError("");
+    try {
+      await requestToJoin(props.row.id, props.uid);
+    } catch {
+      setError("Could not ask to join.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div class="person">
+      <span class="member-name">{props.row.name}</span>
+      <Show
+        when={!props.joined}
+        fallback={
+          <button class="btn" type="button" onClick={props.onOpen}>
+            Open
+          </button>
+        }
+      >
+        <Show
+          when={status() !== "pending"}
+          fallback={<span class="person-tag">Waiting for approval</span>}
+        >
+          <button class="btn" type="button" disabled={busy()} onClick={() => void ask()}>
+            {status() === "denied" ? "Ask again" : "Ask to join"}
+          </button>
+        </Show>
+      </Show>
+      <Show when={error()}>
+        <span class="form-error">{error()}</span>
+      </Show>
+    </div>
+  );
+}
+
+function ServerSettingsDialog(props: {
+  open: boolean;
+  server?: Server;
+  uid: string;
+  profiles: Map<string, Profile>;
+  canDelete: boolean;
+  onClose: () => void;
+}) {
   // undefined = banner untouched, null = remove it, string = the new picture
   const [banner, setBanner] = createSignal<string | null | undefined>();
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
   const [uploading, setUploading] = createSignal(false);
+  const [invites, setInvites] = createSignal<string[]>([]);
+  const [requests, setRequests] = createSignal<JoinRequest[]>([]);
+  const [copied, setCopied] = createSignal("");
   // Delete takes two clicks: the first arms it, the second deletes.
   const [deleteArmed, setDeleteArmed] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
   const shown = () => (banner() === undefined ? props.server?.banner : banner() ?? undefined);
+  const pending = () => requests().filter((row) => row.status === "pending");
+  const who = (uid: string) => displayName(props.profiles.get(uid), uid.slice(0, 8));
+
+  createEffect(() => {
+    const current = props.server;
+    if (!props.open || !current) return;
+    const stopInvites = watchServerInvites(current.id, setInvites);
+    const stopRequests = watchJoinRequests(current.id, setRequests);
+    onCleanup(() => {
+      stopInvites();
+      stopRequests();
+    });
+  });
 
   const close = () => {
     setBanner(undefined);
@@ -1488,6 +1697,56 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
     }
   }
 
+  async function makeCode() {
+    if (!props.server) return;
+    setError("");
+    try {
+      await createServerInvite(props.server.id, props.uid);
+    } catch {
+      setError("Could not make a code.");
+    }
+  }
+
+  async function copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(code);
+    } catch {
+      setError("Could not copy that code.");
+    }
+  }
+
+  async function revokeCode(code: string) {
+    if (!props.server) return;
+    setError("");
+    try {
+      await revokeServerInvite(props.server.id, code);
+      if (copied() === code) setCopied("");
+    } catch {
+      setError("Could not revoke that code.");
+    }
+  }
+
+  async function approve(uid: string) {
+    if (!props.server) return;
+    setError("");
+    try {
+      await approveJoinRequest(props.server.id, uid);
+    } catch {
+      setError("Could not approve them.");
+    }
+  }
+
+  async function deny(uid: string) {
+    if (!props.server) return;
+    setError("");
+    try {
+      await denyJoinRequest(props.server.id, uid);
+    } catch {
+      setError("Could not deny them.");
+    }
+  }
+
   return (
     <Modal title="Server settings" open={props.open} onClose={close}>
       <form
@@ -1499,7 +1758,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           if (!name || !props.server) return;
           setSaving(true);
           try {
-            await saveServerSettings(props.server.id, name, banner(), form.get("open") === "on");
+            await saveServerSettings(props.server.id, name, banner());
             close();
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not save that.");
@@ -1512,13 +1771,52 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           <span>Server name</span>
           <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
         </label>
-        <label class="check-row">
-          <input type="checkbox" name="open" checked={Boolean(props.server?.open)} />
-          <span>
-            <b>Open to everyone who gets in</b>
-            <small>Every approved member (past the M2A-access door) joins this server on their own.</small>
-          </span>
-        </label>
+        <div class="field">
+          <span>Invite codes</span>
+          <small class="field-hint">A code adds the person who has it.</small>
+          <div class="find-list">
+            <Show when={invites().length} fallback={<p class="side-empty">No codes yet.</p>}>
+              <For each={invites()}>
+                {(code) => (
+                  <div class="person">
+                    <span class="invite-code">{code}</span>
+                    <button class="btn" type="button" onClick={() => void copyCode(code)}>
+                      {copied() === code ? "Copied" : "Copy"}
+                    </button>
+                    <button class="btn danger" type="button" onClick={() => void revokeCode(code)}>
+                      Revoke
+                    </button>
+                  </div>
+                )}
+              </For>
+            </Show>
+          </div>
+          <div class="banner-actions">
+            <button class="btn" type="button" onClick={() => void makeCode()}>
+              New code
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <span>Waiting to join</span>
+          <div class="find-list">
+            <Show when={pending().length} fallback={<p class="side-empty">Nobody is waiting.</p>}>
+              <For each={pending()}>
+                {(row) => (
+                  <div class="person">
+                    <span class="member-name">{who(row.uid)}</span>
+                    <button class="btn primary" type="button" onClick={() => void approve(row.uid)}>
+                      Approve
+                    </button>
+                    <button class="btn" type="button" onClick={() => void deny(row.uid)}>
+                      Deny
+                    </button>
+                  </div>
+                )}
+              </For>
+            </Show>
+          </div>
+        </div>
         <div class="field">
           <span>Banner</span>
           <div class="banner-preview">
