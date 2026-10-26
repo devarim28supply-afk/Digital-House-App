@@ -1,6 +1,7 @@
 import { availabilityStatus, type Availability } from "./status";
 import { customization, type Customization } from "./customization";
 import {
+  type QuerySnapshot,
   type Timestamp,
   FieldPath,
   addDoc,
@@ -365,13 +366,58 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
 
 // ---- servers ----------------------------------------------------------------
 
+function asServer(id: string, data: Omit<Server, "id">): Server {
+  return { id, ...data, memberUids: data.memberUids ?? [] };
+}
+
+/**
+ * Servers you belong to, plus any you still own. Owning one used to be enough
+ * to see an open server. If the owner was dropped from the member list, put
+ * them back. restored remembers a failed try so it does not repeat all day.
+ */
 export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsubscribe {
-  const q = query(collection(db, "servers"), where("memberUids", "array-contains", uid));
-  return onSnapshot(q, (snap) => {
-    const servers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Server, "id">) }));
+  const restored = new Set<string>();
+  let asMember: Server[] = [];
+  let asOwner: Server[] = [];
+  const emit = () => {
+    const byId = new Map<string, Server>();
+    for (const s of [...asMember, ...asOwner]) byId.set(s.id, s);
+    const servers = [...byId.values()];
     servers.sort((a, b) => a.name.localeCompare(b.name));
     cb(servers);
-  });
+    for (const s of servers) {
+      if (s.ownerUid !== uid || s.memberUids.includes(uid) || restored.has(s.id)) continue;
+      restored.add(s.id);
+      void updateDoc(doc(db, "servers", s.id), { memberUids: arrayUnion(uid) }).catch(() => restored.delete(s.id));
+    }
+  };
+  const mapSnap = (snap: QuerySnapshot) => snap.docs.map((d) => asServer(d.id, d.data() as Omit<Server, "id">));
+  const unsubMember = onSnapshot(
+    query(collection(db, "servers"), where("memberUids", "array-contains", uid)),
+    (snap) => {
+      asMember = mapSnap(snap);
+      emit();
+    },
+    () => {
+      asMember = [];
+      emit();
+    },
+  );
+  const unsubOwner = onSnapshot(
+    query(collection(db, "servers"), where("ownerUid", "==", uid)),
+    (snap) => {
+      asOwner = mapSnap(snap);
+      emit();
+    },
+    () => {
+      asOwner = [];
+      emit();
+    },
+  );
+  return () => {
+    unsubMember();
+    unsubOwner();
+  };
 }
 
 /** A new server with a text and a voice channel to start. It starts empty of other people. */
@@ -398,8 +444,25 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
  * New members do not get this server. They join with a code, or by asking.
  */
 export async function ensureHomeServer(uid: string) {
-  const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
-  if (!mine.empty) return;
+  const [mine, owned] = await Promise.all([
+    getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid))),
+    getDocs(query(collection(db, "servers"), where("ownerUid", "==", uid))).catch(() => null),
+  ]);
+  const docs = new Map(mine.docs.map((d) => [d.id, d]));
+  for (const d of owned?.docs ?? []) docs.set(d.id, d);
+  let hasReal = false;
+  for (const s of docs.values()) {
+    const data = s.data();
+    if (data.kind === "dm") continue;
+    hasReal = true;
+    const members = (data.memberUids as string[] | undefined) ?? [];
+    if (data.ownerUid === uid && !members.includes(uid)) {
+      await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
+    }
+  }
+  // A direct message is not a server you belong to. A real one, including
+  // Digital House you still own, means the home server already exists.
+  if (hasReal) return;
   // The Living Room tile and its chat are added by the app once it watches
   // this server's channels (ensureHomeTiles), so they are made exactly once.
   await createServer(uid, "Digital House", [
