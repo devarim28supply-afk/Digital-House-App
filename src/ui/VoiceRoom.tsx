@@ -12,6 +12,7 @@ import {
   Track,
   type TrackPublication,
   type TrackPublishOptions,
+  type VideoCaptureOptions,
   VideoPresets,
 } from "livekit-client";
 
@@ -150,6 +151,39 @@ async function watchRoomCam(
  * A voice/video channel. Join (or autoJoin, when the app opens it as your
  * call) connects; the mic and camera start off until you switch them on.
  */
+
+const WEBCAM_KEY = "dh_webcam";
+
+type CamChoice = { id: string; label: string };
+
+/** Windows lists one camera again as "Default - …" and "Communications - …". */
+function bareCameraLabel(label: string) {
+  return label.replace(/^(Default|Communications) - /i, "").trim();
+}
+
+/** The real webcams. The Default and Communications entries are the same cameras again. */
+function listedCameras(devices: MediaDeviceInfo[]): CamChoice[] {
+  return devices
+    .filter((d) => d.kind === "videoinput" && d.deviceId !== "" && d.deviceId !== "default" && d.deviceId !== "communications")
+    .map((d, i) => ({ id: d.deviceId, label: bareCameraLabel(d.label) || `Webcam ${i + 1}` }));
+}
+
+function savedWebcam() {
+  try {
+    return localStorage.getItem(WEBCAM_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberWebcam(id: string) {
+  try {
+    localStorage.setItem(WEBCAM_KEY, id);
+  } catch {
+    /* private mode */
+  }
+}
+
 export function VoiceRoom(props: {
   serverId: string;
   channel: Channel;
@@ -674,6 +708,18 @@ export function VoiceRoom(props: {
   const camShown = () => camWant() ?? camOn();
   let camRun = 0; // one per call: an old loop sees the change and stops
   let camLooping = false;
+  // The webcam you picked. Empty until you pick one: the browser's default.
+  let camDevice = savedWebcam();
+  const [camMenu, setCamMenu] = createSignal(false);
+  const [camList, setCamList] = createSignal<CamChoice[]>([]);
+  const [camListBusy, setCamListBusy] = createSignal(false);
+  const activeCamId = () => local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack.getSettings().deviceId ?? "";
+  const usingCam = (cam: CamChoice) => {
+    if (!camOn()) return false;
+    if (activeCamId() === cam.id) return true;
+    const label = bareCameraLabel(local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack.label ?? "");
+    return label !== "" && label === bareCameraLabel(cam.label);
+  };
 
   createEffect(() => {
     room();
@@ -685,8 +731,10 @@ export function VoiceRoom(props: {
   /** One camera start or stop, and a way out if the browser never answers. */
   async function moveCamera(active: LocalParticipant, on: boolean) {
     let timer = 0;
+    const chosen = on ? camDevice : "";
+    const capture: VideoCaptureOptions | undefined = chosen ? { deviceId: { exact: chosen } } : undefined;
     const attempt = active
-      .setCameraEnabled(on, undefined, CAMERA_PUBLISH)
+      .setCameraEnabled(on, capture, CAMERA_PUBLISH)
       .then(
         () => ({ ok: true as const }),
         (err: unknown) => ({
@@ -740,6 +788,85 @@ export function VoiceRoom(props: {
         bump();
       }
     }
+  }
+
+  // A click anywhere else closes the webcam list.
+  createEffect(() => {
+    if (!camMenu()) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".cam-wrap")) setCamMenu(false);
+    };
+    const refresh = () => void loadCameras();
+    window.addEventListener("pointerdown", close);
+    navigator.mediaDevices?.addEventListener("devicechange", refresh);
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", close);
+      navigator.mediaDevices?.removeEventListener("devicechange", refresh);
+    });
+  });
+
+  /** The webcams on this computer. Names stay hidden until the browser allows a camera. */
+  async function loadCameras() {
+    setCamListBusy(true);
+    try {
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      const named = devices.some((d) => d.kind === "videoinput" && d.deviceId && d.label);
+      if (!named && !camOn()) {
+        const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        probe.getTracks().forEach((track) => track.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+      }
+      let list = listedCameras(devices);
+      const live = local()?.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
+      const liveId = live?.getSettings().deviceId ?? "";
+      const liveLabel = bareCameraLabel(live?.label ?? "");
+      if (liveId && liveLabel) list = list.map((cam) => (cam.id === liveId ? { ...cam, label: liveLabel } : cam));
+      setCamList(list);
+      if (list.length === 0) setError("No webcam found.");
+    } catch (err) {
+      setCamMenu(false);
+      if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the webcam.");
+      else setError(err instanceof Error ? err.message : "The webcams could not be listed.");
+    } finally {
+      setCamListBusy(false);
+    }
+  }
+
+  function openCamMenu() {
+    if (camMenu()) {
+      setCamMenu(false);
+      return;
+    }
+    setError("");
+    setCamMenu(true);
+    void loadCameras();
+  }
+
+  /** Use this webcam. Picking the one that is already on turns the camera off. */
+  async function chooseWebcam(id: string) {
+    setCamMenu(false);
+    camDevice = id;
+    rememberWebcam(id);
+    const me = room()?.localParticipant;
+    const here = room();
+    if (!me || !here) return;
+    setError("");
+    const picked = camList().find((cam) => cam.id === id);
+    if (camOn() && picked && usingCam(picked)) {
+      await toggleCam();
+      return;
+    }
+    if (camOn()) {
+      try {
+        const switched = await here.switchActiveDevice("videoinput", id, true);
+        if (!switched) setError("That webcam could not be turned on.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "That webcam could not be turned on.");
+      }
+      bump();
+      return;
+    }
+    await toggleCam();
   }
 
   async function toggle(kind: "mic" | "cam" | "screen") {
@@ -1351,9 +1478,55 @@ export function VoiceRoom(props: {
           <Show
             when={props.camera}
             fallback={
-              <button type="button" class="dock-btn" aria-pressed={camShown()} onClick={() => void toggle("cam")}>
-                {camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
-              </button>
+              <div
+                class="cam-wrap"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && camMenu()) {
+                    setCamMenu(false);
+                    e.preventDefault();
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  class="dock-btn"
+                  aria-pressed={camShown()}
+                  aria-haspopup="menu"
+                  aria-expanded={camMenu()}
+                  onClick={() => openCamMenu()}
+                >
+                  {camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera"} ▴
+                </button>
+                <Show when={camMenu()}>
+                  <div class="dock-menu" role="menu" aria-label="Webcams">
+                    <Show when={camListBusy() && camList().length === 0}>
+                      <button type="button" disabled>
+                        <span>Finding webcams…</span>
+                      </button>
+                    </Show>
+                    <For each={camList()}>
+                      {(cam) => (
+                        <button type="button" role="menuitem" onClick={() => void chooseWebcam(cam.id)}>
+                          <span>{cam.label}</span>
+                          <span aria-hidden="true">{usingCam(cam) ? "✓" : ""}</span>
+                        </button>
+                      )}
+                    </For>
+                    <Show when={camOn() && !camListBusy()}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setCamMenu(false);
+                          void toggleCam();
+                        }}
+                      >
+                        <span>Camera off</span>
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
+              </div>
             }
           >
             {(cam) => (

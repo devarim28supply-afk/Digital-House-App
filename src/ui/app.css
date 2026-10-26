@@ -1767,8 +1767,9 @@ video.msg-media {
   font-size: 11px;
 }
 
-/* Share screen and Attention sit on the dock; their lists open above them. */
-.share-wrap {
+/* Share screen, Camera, and Attention sit on the dock; their lists open above them. */
+.share-wrap,
+.cam-wrap {
   position: relative;
 }
 
