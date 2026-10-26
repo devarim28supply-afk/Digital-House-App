@@ -193,8 +193,13 @@ function rememberWebcam(slot: WebcamSlot, id: string) {
   }
 }
 
+function slotTitle(slot: WebcamSlot) {
+  return slot === 1 ? "Camera" : "Stream";
+}
+
 function screenLabel(tile: { second?: boolean; webcam?: 1 | 2 }) {
-  if (tile.webcam) return `screen ${tile.webcam}`;
+  if (tile.webcam === 1) return "camera";
+  if (tile.webcam === 2) return "stream";
   if (tile.second) return "2nd screen";
   return "screen";
 }
@@ -810,7 +815,7 @@ export function VoiceRoom(props: {
     const me = room()?.localParticipant;
     const id = slotDevice(slot);
     if (!me || !id) {
-      setError(`Choose a webcam for screen ${slot}.`);
+      setError(`Choose a webcam for ${slotTitle(slot)}.`);
       return;
     }
     const token = ++slotGen[slot];
@@ -870,7 +875,7 @@ export function VoiceRoom(props: {
     const picked = camList().find((cam) => cam.id === id);
     const otherDevice = other === 1 ? device1 : device2;
     if (slotOn()[other] && (otherDevice === id || (picked && usingSlot(other, picked)))) {
-      setError("That webcam is on the other screen.");
+      setError("That webcam is already on.");
       return;
     }
     if (slot === 1) device1 = id;
@@ -1452,10 +1457,10 @@ export function VoiceRoom(props: {
           aria-expanded={menuSlot() === slot()}
           onClick={() => openSlotMenu(slot())}
         >
-          {busySlot() === slot() ? "Starting…" : `Screen ${slot()}`} ▴
+          {busySlot() === slot() ? "Starting…" : slotTitle(slot())} ▴
         </button>
         <Show when={menuSlot() === slot()}>
-          <div class="dock-menu" role="menu" aria-label={`Screen ${slot()} webcam`}>
+          <div class="dock-menu" role="menu" aria-label={slotTitle(slot())}>
             <Show when={camListBusy() && camList().length === 0}>
               <button type="button" disabled>
                 <span>Finding webcams…</span>
@@ -1478,7 +1483,7 @@ export function VoiceRoom(props: {
                   void stopSlot(slot());
                 }}
               >
-                <span>Screen off</span>
+                <span>{slotTitle(slot())} off</span>
               </button>
             </Show>
           </div>
