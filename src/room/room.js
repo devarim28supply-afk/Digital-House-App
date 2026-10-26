@@ -276,7 +276,9 @@ function tellCall(msg) {
 
 // ---- big view: F opens the screen you face full size, F or Esc closes
 const big = document.getElementById("bigscreen");
+const bigStage = document.getElementById("bigstage");
 const bigVideo = big.querySelector("video");
+const bigZoom = document.getElementById("bigzoom");
 const bigCams = document.getElementById("bigcams");
 let bigScreen = null;
 let bigPlayer = null; // TV in the big view: its own player, captions on
@@ -296,11 +298,24 @@ function nearestInView(screens) {
 function facedScreen() {
   return nearestInView(SCREENS.filter((s) => s.el.classList.contains("on") || s.el.classList.contains("tv")));
 }
+// A shared screen (not a TV) opened big: Zoom grows it 50% and the pointer
+// looks around it. It starts fitted, and closes with the big view.
+function setBigZoom(on) {
+  const share = Boolean(bigScreen?.owner);
+  const next = Boolean(on && share);
+  big.classList.toggle("zoomed", next);
+  bigZoom.hidden = !share;
+  bigZoom.textContent = next ? "Zoom off" : "Zoom";
+  bigZoom.setAttribute("aria-pressed", next ? "true" : "false");
+  bigZoom.title = next ? "Zoom off" : "Zoom in 50%. The view follows the mouse.";
+  if (!next) bigVideo.style.transformOrigin = "50% 50%";
+}
 function openBig(screen) {
   if (!screen) return;
   bigScreen = screen;
   if (screen.owner) bigVideo.srcObject = screen.video.srcObject;
   else if (screen.tv) bigPlayer = playChannel(bigVideo, screen.tv.url, { muted: !tvSound });
+  setBigZoom(false);
   big.hidden = false;
   document.body.classList.add("big");
   if (document.pointerLockElement) document.exitPointerLock();
@@ -313,12 +328,25 @@ function closeBig() {
   bigPlayer?.destroy();
   bigPlayer = null;
   bigScreen = null;
+  setBigZoom(false);
   bigVideo.srcObject = null;
   clearInterval(bigTimer);
   for (const tile of bigTiles.values()) tile.video.srcObject = null;
   bigTiles.clear();
   bigCams.replaceChildren();
 }
+bigZoom.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setBigZoom(!big.classList.contains("zoomed"));
+});
+bigStage.addEventListener("pointermove", (e) => {
+  if (!big.classList.contains("zoomed")) return;
+  const box = bigStage.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const x = Math.min(100, Math.max(0, ((e.clientX - box.left) / box.width) * 100));
+  const y = Math.min(100, Math.max(0, ((e.clientY - box.top) / box.height) * 100));
+  bigVideo.style.transformOrigin = `${x}% ${y}%`;
+});
 
 // Everyone in the room under the big screen (you first): their whole
 // webcam picture, or black with their username while it is off.

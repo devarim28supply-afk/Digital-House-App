@@ -917,6 +917,12 @@ export function VoiceRoom(props: {
     onCleanup(() => window.removeEventListener("keydown", esc));
   });
   const toggleFocus = (key: string) => setFocus(focus() === key ? undefined : key);
+  // A shared screen, opened big: Zoom grows it 50% and the mouse looks around it.
+  const [zoomOn, setZoomOn] = createSignal(false);
+  createEffect(() => {
+    const key = focus();
+    if (!tiles().some((t) => t.key === key && t.screen)) setZoomOn(false);
+  });
   const spot = createMemo(() => {
     const big = focus();
     if (!big) return undefined;
@@ -1039,6 +1045,9 @@ export function VoiceRoom(props: {
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
+                canZoom={Boolean(spot()) && tile.screen && focus() === tile.key}
+                zoomed={zoomOn() && focus() === tile.key}
+                onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
                 stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant)}
                 swapped={swapped().has(tile.participant.identity)}
@@ -1417,6 +1426,10 @@ function Tile(props: {
   /** the small picture's width in % of the tile (INSET_MIN to INSET_MAX) */
   insetSize?: number;
   onInsetSize?: (size: number) => void;
+  /** this tile is a shared screen opened big: offer the 50% mouse zoom */
+  canZoom?: boolean;
+  zoomed?: boolean;
+  onToggleZoom?: () => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let inset: HTMLVideoElement | undefined;
@@ -1449,6 +1462,20 @@ function Tile(props: {
   });
 
   const mirrored = () => props.tile.participant.isLocal && !props.tile.screen && !swapped();
+
+  // Zoomed share: 50% larger, and the point under the pointer stays in view.
+  const [zoomOrigin, setZoomOrigin] = createSignal("50% 50%");
+  createEffect(() => {
+    if (props.zoomed) setZoomOrigin("50% 50%");
+  });
+  function trackZoom(e: PointerEvent) {
+    if (!props.zoomed) return;
+    const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const x = Math.min(100, Math.max(0, ((e.clientX - box.left) / box.width) * 100));
+    const y = Math.min(100, Math.max(0, ((e.clientY - box.top) / box.height) * 100));
+    setZoomOrigin(`${x}% ${y}%`);
+  }
 
   // Drag the small picture: it follows the pointer, and on letting go it
   // snaps to the corner of the tile the pointer is in.
@@ -1510,12 +1537,36 @@ function Tile(props: {
   return (
     <article
       class="tile"
-      classList={{ speaking: props.speaking, screen: props.tile.screen, attention: Boolean(props.flashing) }}
+      classList={{ speaking: props.speaking, screen: props.tile.screen, attention: Boolean(props.flashing), zoomed: props.zoomed }}
       style={props.style}
       onDblClick={props.onDblClick}
       onPointerUp={doubleTap(props.onDblClick)}
+      onPointerMove={trackZoom}
     >
-      <video ref={video} autoplay playsinline muted classList={{ hidden: !big(), mirror: mirrored() }} />
+      <video
+        ref={video}
+        autoplay
+        playsinline
+        muted
+        classList={{ hidden: !big(), mirror: mirrored() }}
+        style={props.zoomed ? { transform: "scale(1.5)", "transform-origin": zoomOrigin() } : undefined}
+      />
+      <Show when={props.canZoom}>
+        <button
+          type="button"
+          class="share-zoom"
+          aria-pressed={Boolean(props.zoomed)}
+          title={props.zoomed ? "Zoom off" : "Zoom in 50%. The view follows the mouse."}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onToggleZoom?.();
+          }}
+          onDblClick={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          {props.zoomed ? "Zoom off" : "Zoom"}
+        </button>
+      </Show>
       <Show when={!big()}>
         <div class="tile-empty">
           <span class="avatar big" style={faceStyle(props.profile)}>
