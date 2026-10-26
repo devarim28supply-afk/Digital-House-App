@@ -165,13 +165,18 @@ export const hasDarkwoodRoom = (channel: Channel) => DARKWOOD_ROOM_TILES.has(cha
 /**
  * Link tiles whose Room side is on: their link opens there. Other link tiles
  * (Don't Lie) stay videochat only, Room greyed out.
- * White Torture still refuses to be framed, so its Room side offers to open
- * the game in its own tab.
  */
 const ROOM_LINK_SITES = new Set([
   "viperoneone.com", // VIPER 11 theater
   "rimyshrimp-white-torture-br.vercel.app", // White Torture
 ]);
+
+/**
+ * Sites that refuse to be shown inside another page. Their Room side is our
+ * own copy of that page (/api/...), so the game still plays here with the
+ * call's webcams underneath.
+ */
+const PLAY_IN_PAGE = new Set(["rimyshrimp-white-torture-br.vercel.app"]);
 
 function linkSite(url?: string) {
   try {
@@ -183,7 +188,10 @@ function linkSite(url?: string) {
 
 /** The page a tile's Room side shows, or "" when it has none. */
 export function roomUrlOf(channel: Channel, serverId: string) {
-  if (!channel.roomKey && ROOM_LINK_SITES.has(linkSite(channel.url))) return channel.url!;
+  if (!channel.roomKey && ROOM_LINK_SITES.has(linkSite(channel.url))) {
+    if (PLAY_IN_PAGE.has(linkSite(channel.url))) return "/api/white-torture";
+    return channel.url!;
+  }
   if (!hasDarkwoodRoom(channel)) return "";
   const q = new URLSearchParams({ s: serverId, c: channel.id });
   return `${import.meta.env.BASE_URL}room.html?${q}`;
