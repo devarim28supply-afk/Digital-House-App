@@ -98,10 +98,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const claims = claimsOf(idToken);
   const uid = claims.sub ?? "";
   const server = (await serverRes.json()) as {
-    fields?: { memberUids?: { arrayValue?: { values?: { stringValue?: string }[] } } };
+    fields?: {
+      ownerUid?: { stringValue?: string };
+      open?: { booleanValue?: boolean };
+      memberUids?: { arrayValue?: { values?: { stringValue?: string }[] } };
+    };
   };
   const members = server.fields?.memberUids?.arrayValue?.values?.map((v) => v.stringValue) ?? [];
-  if (!uid || !members.includes(uid)) return send(res, 403, { error: "You are not in this server" });
+  const ownerUid = server.fields?.ownerUid?.stringValue ?? "";
+  const open = server.fields?.open?.booleanValue === true;
+  if (!uid || (uid !== ownerUid && !members.includes(uid) && !open)) return send(res, 403, { error: "You are not in this server" });
 
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
   if (!channelRes.ok) return send(res, 404, { error: "That channel is gone" });

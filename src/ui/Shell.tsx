@@ -219,10 +219,11 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
 
   onMount(() => {
     void saveProfile(props.uid, props.name, props.username);
-    // the operator gets the home server made on first sign-in
-    if (props.admin) void ensureHomeServer(props.uid).catch(() => {});
-    // everyone who got in through M2A-access is in every open server
-    void joinOpenServers(props.uid).catch(() => {});
+    // Open Digital House first, then join every open server.
+    void (async () => {
+      if (props.admin) await ensureHomeServer(props.uid).catch(() => {});
+      await joinOpenServers(props.uid).catch(() => {});
+    })();
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     createEffect(() => me.setWhere(whereNow()));
@@ -335,9 +336,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       if (!tileChecked && isHome && s?.ownerUid === props.uid) {
         tileChecked = true;
         void ensureHomeTiles(sid, list).catch(() => {});
-        // made before servers could be open: the home server is open to all
-        // who get in (an explicit "closed" in Server settings is respected)
-        if (s.open === undefined) void setServerOpen(sid, true).catch(() => {});
+        // The lock wrote open:false. Digital House is open again.
+        if (s.open !== true) void setServerOpen(sid, true).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
