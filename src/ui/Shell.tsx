@@ -22,6 +22,7 @@ import {
   ensureHomeServer,
   ensureHomeTiles,
   joinOpenServers,
+  restoreHomeMembers,
   lookupInvite,
   redeemInvite,
   setInviteCode,
@@ -348,8 +349,8 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       if (!tileChecked && isHome && s?.ownerUid === props.uid) {
         tileChecked = true;
         void ensureHomeTiles(sid, list).catch(() => {});
-        // The lock wrote open:false. Digital House is open again.
-        if (s.open !== true) void setServerOpen(sid, true).catch(() => {});
+        // Approved members who were already in Digital House go back on the list.
+        if (props.admin || s.ownerUid === props.uid) void restoreHomeMembers(sid).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
