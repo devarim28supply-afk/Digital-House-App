@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, createVerify } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
@@ -18,8 +18,42 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 const PROJECT_ID = "gestr-lab";
 const FIRESTORE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const CERTS = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 const PASS_SECONDS = 6 * 60 * 60;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+let certCache: { at: number; keys: Record<string, string> } | null = null;
+
+async function googleCerts(): Promise<Record<string, string> | null> {
+  if (certCache && Date.now() - certCache.at < 60 * 60 * 1000) return certCache.keys;
+  const res = await fetch(CERTS);
+  if (!res.ok) return certCache?.keys ?? null;
+  const keys = (await res.json()) as Record<string, string>;
+  certCache = { at: Date.now(), keys };
+  return keys;
+}
+
+/** A signed-in Firebase user, checked with Google's public key. No Firestore read. */
+async function signedIn(idToken: string): Promise<{ sub: string; name?: string; email?: string } | null> {
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return null;
+  let header: { alg?: string; kid?: string };
+  let payload: { sub?: string; aud?: string; iss?: string; exp?: number; name?: string; email?: string };
+  try {
+    header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (header.alg !== "RS256" || !header.kid || !payload.sub) return null;
+  if (payload.aud !== PROJECT_ID || payload.iss !== `https://securetoken.google.com/${PROJECT_ID}`) return null;
+  if (typeof payload.exp !== "number" || payload.exp * 1000 < Date.now()) return null;
+  const pem = (await googleCerts())?.[header.kid];
+  if (!pem) return null;
+  const ok = createVerify("RSA-SHA256").update(`${parts[0]}.${parts[1]}`).verify(pem, Buffer.from(parts[2], "base64url"));
+  if (!ok) return null;
+  return { sub: payload.sub, name: payload.name, email: payload.email };
+}
 
 function base64url(input: Buffer | string) {
   return Buffer.from(input).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -102,6 +136,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       fsError = "";
     }
     console.log(JSON.stringify({ step: "server", fs: serverRes.status, fsError }));
+    // Firestore is out of reads. A signed-in member still gets into the call.
+    if (serverRes.status === 429 || serverRes.status === 503) {
+      const who = await signedIn(idToken);
+      if (!who) return send(res, 401, { error: "Your login has expired. Log in again." });
+      return issue(res, LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, who, body, serverId, channelId);
+    }
     return send(res, 403, { error: "You are not in this server" });
   }
 
@@ -127,9 +167,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
   if (!channelRes.ok) {
     console.log(JSON.stringify({ step: "channel", fs: channelRes.status }));
+    if (channelRes.status === 429 || channelRes.status === 503) {
+      return issue(res, LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { sub: uid, name: claims.name, email: claims.email }, body, serverId, channelId);
+    }
     return send(res, 404, { error: "That channel is gone" });
   }
 
+  return issue(res, LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { sub: uid, name: claims.name, email: claims.email }, body, serverId, channelId);
+}
+
+function issue(
+  res: ServerResponse,
+  livekitUrl: string,
+  apiKey: string,
+  apiSecret: string,
+  who: { sub: string; name?: string; email?: string },
+  body: Record<string, unknown>,
+  serverId: string,
+  channelId: string,
+) {
   // The tile's 3D room (room.html) is its own LiveKit room, apart from the
   // videochat, so walking around in it never shows up as a call tile.
   const room = `dh-${serverId}-${channelId}${body.room === true ? "--room" : ""}`;
@@ -139,13 +195,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // A LIVE tile's preview: invisible and watch-only too, one name per screen
   // so two screens never knock each other out.
   const peekTag = typeof body.peek === "string" && /^[a-z0-9]{1,12}$/.test(body.peek) ? body.peek : "";
-  const name = claims.name || (claims.email ?? "").split("@")[0] || "Member";
+  const name = who.name || (who.email ?? "").split("@")[0] || "Member";
   send(res, 200, {
-    url: LIVEKIT_URL,
+    url: livekitUrl,
     token: signPass(
-      LIVEKIT_API_KEY,
-      LIVEKIT_API_SECRET,
-      peekTag ? `${uid}:peek-${peekTag}` : wall ? `${uid}:wall` : uid,
+      apiKey,
+      apiSecret,
+      peekTag ? `${who.sub}:peek-${peekTag}` : wall ? `${who.sub}:wall` : who.sub,
       name,
       room,
       wall || Boolean(peekTag),
