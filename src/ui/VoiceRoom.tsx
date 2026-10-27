@@ -72,66 +72,52 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
   videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
 };
 // LiveKit's default camera is an exact 1280×720. On a phone that is a 16:9
-// crop from the top of the sensor, so a desktop only receives that slice.
-// The whole camera is the sensor's own portrait picture (usually 3:4).
-// Ideals, not exact pixels, so the browser is not forced to crop.
+// crop. The phone's own video camera is 9:16, the same shape as the tall
+// tile. Ideals, not exact pixels, and the picture is not stretched.
+const PHONE_ASPECT = 9 / 16;
 function phoneCameraCapture(): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
   return {
     resizeMode: { ideal: "none" },
-    aspectRatio: { ideal: 3 / 4 },
+    aspectRatio: { ideal: PHONE_ASPECT },
     resolution: {
-      width: { ideal: 1080, max: 1920 } as unknown as number,
-      height: { ideal: 1440, max: 1920 } as unknown as number,
+      width: { ideal: 1080 } as unknown as number,
+      height: { ideal: 1920 } as unknown as number,
       frameRate: { ideal: 30, max: 30 } as unknown as number,
     },
   } as VideoCaptureOptions;
 }
-/**
- * The whole phone camera, upright. 3:4 is the usual full sensor. If the
- * camera cannot do that, use the tallest picture it offers. A 16:9 frame
- * is the top crop and is not the picture that fills the tall tile.
- */
-function phoneAspect(media: MediaStreamTrack): number {
-  try {
-    const caps = media.getCapabilities?.();
-    const min = caps?.aspectRatio?.min ?? 0;
-    const max = caps?.aspectRatio?.max ?? 0;
-    if (min > 0 && max >= min && min <= 3 / 4 && max >= 3 / 4) return 3 / 4;
-    if (min > 0 && min < 1) return Math.max(min, 0.5);
-  } catch {
-    /* 3:4 */
-  }
-  return 3 / 4;
+function isNineSixteen(width: number, height: number): boolean {
+  if (width <= 0 || height <= 0) return false;
+  return Math.abs(width / height - PHONE_ASPECT) < 0.06;
 }
+/** Ask again when the phone opened 16:9 or 3:4. The tile stays 9:16. */
 async function widenPhoneCamera(active: LocalParticipant) {
   const capture = phoneCameraCapture();
   if (!capture) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track;
   const media = local?.mediaStreamTrack;
-  const sw = media?.getSettings().width ?? 0;
-  const sh = media?.getSettings().height ?? 0;
-  if (!media || media.readyState !== "live" || (sh > 0 && sh >= sw)) return;
-  const aspect = phoneAspect(media);
-  const long = 1440;
-  const short = Math.max(2, Math.round(long * aspect));
+  if (!media || media.readyState !== "live") return;
+  const sw = media.getSettings().width ?? 0;
+  const sh = media.getSettings().height ?? 0;
+  if (isNineSixteen(sw, sh)) return;
   try {
     await media.applyConstraints({
-      width: { ideal: short },
-      height: { ideal: long },
-      aspectRatio: { ideal: aspect },
+      width: { ideal: 1080 },
+      height: { ideal: 1920 },
+      aspectRatio: { ideal: PHONE_ASPECT },
       frameRate: { ideal: 30, max: 30 },
     });
   } catch {
     /* a restart below asks again */
   }
   const now = media.getSettings();
-  if ((now.height ?? 0) > 0 && (now.height ?? 0) >= (now.width ?? 0)) return;
+  if (isNineSixteen(now.width ?? 0, now.height ?? 0)) return;
   const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
   if (!restart.restartTrack) return;
   try {
-    await restart.restartTrack({ ...capture, aspectRatio: { ideal: aspect } } as VideoCaptureOptions);
+    await restart.restartTrack(capture);
   } catch {
     /* the picture already publishing stays */
   }
@@ -892,7 +878,7 @@ export function VoiceRoom(props: {
         // A permission refusal is not that: asking again would prompt twice.
         const name = err instanceof Error ? err.name : "";
         if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
-        await active.setCameraEnabled(true, { aspectRatio: { ideal: 3 / 4 } } as VideoCaptureOptions, CAMERA_PUBLISH);
+        await active.setCameraEnabled(true, { aspectRatio: { ideal: PHONE_ASPECT } } as VideoCaptureOptions, CAMERA_PUBLISH);
       }
     })()
       .then(
