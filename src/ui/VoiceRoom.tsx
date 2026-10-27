@@ -78,8 +78,8 @@ const PHONE_ASPECT = 9 / 16;
 function phoneCameraCapture(): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
+  // 1080×1920 is 9:16. 1920×1080 is the 16:9 crop and is not used.
   return {
-    resizeMode: { ideal: "none" },
     aspectRatio: { ideal: PHONE_ASPECT },
     resolution: {
       width: { ideal: 1080 } as unknown as number,
@@ -485,10 +485,13 @@ export function VoiceRoom(props: {
       // H.264 for everything we send: Chrome hands it to the graphics card's own
       // video encoder (NVENC), so a game holding the GPU's 3D engine near 100%
       // no longer starves the webcam and the stream (Kaalob's slow webcam).
+      const phoneCap = phoneCameraCapture();
       const next = new Room({
         adaptiveStream: !props.viewOnly,
         dynacast: true,
         publishDefaults: { videoCodec: "h264" },
+        // Without this, LiveKit fills a missing size with exact 1280×720 (16:9).
+        ...(phoneCap ? { videoCaptureDefaults: phoneCap } : {}),
       });
       next
         .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
@@ -878,7 +881,15 @@ export function VoiceRoom(props: {
         // A permission refusal is not that: asking again would prompt twice.
         const name = err instanceof Error ? err.name : "";
         if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
-        await active.setCameraEnabled(true, { aspectRatio: { ideal: PHONE_ASPECT } } as VideoCaptureOptions, CAMERA_PUBLISH);
+        // Still 9:16. A bare retry would open LiveKit's exact 1280×720, which is 16:9.
+        await active.setCameraEnabled(true, {
+          aspectRatio: { ideal: PHONE_ASPECT },
+          resolution: {
+            width: { ideal: 720 } as unknown as number,
+            height: { ideal: 1280 } as unknown as number,
+            frameRate: { ideal: 30, max: 30 } as unknown as number,
+          },
+        } as VideoCaptureOptions, CAMERA_PUBLISH);
       }
     })()
       .then(
