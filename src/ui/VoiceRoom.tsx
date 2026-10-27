@@ -12,6 +12,7 @@ import {
   Track,
   type TrackPublication,
   type TrackPublishOptions,
+  type VideoCaptureOptions,
   VideoPresets,
 } from "livekit-client";
 
@@ -70,6 +71,66 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
   // while streaming) cannot carry much more next to a stream
   videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
 };
+// LiveKit's default camera is an exact 1280×720. On a phone that is a 16:9
+// crop from the top of the sensor, so a desktop only receives that slice.
+// A square ideal, and no aspect ratio, keeps the camera's own picture.
+// resizeMode "none" asks Chrome not to crop into the requested box.
+function phoneCameraCapture(): VideoCaptureOptions | undefined {
+  if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
+  if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
+  const box = { ideal: 1280, max: 1280 };
+  return {
+    resizeMode: { ideal: "none" },
+    resolution: {
+      width: box as unknown as number,
+      height: box as unknown as number,
+      frameRate: { ideal: 30, max: 30 } as unknown as number,
+    },
+  } as VideoCaptureOptions;
+}
+/** The long side over the short side. 16:9 is about 1.78, 4:3 is about 1.33. */
+function frameRatio(width: number, height: number): number {
+  const short = Math.min(width, height);
+  return short > 0 ? Math.max(width, height) / short : 0;
+}
+/**
+ * If the phone still opened a 16:9 crop and the camera can do a taller
+ * picture, ask for that. A failure leaves the picture already publishing.
+ */
+async function widenPhoneCamera(active: LocalParticipant) {
+  if (!phoneCameraCapture()) return;
+  const media = active.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
+  const sw = media?.getSettings().width ?? 0;
+  const sh = media?.getSettings().height ?? 0;
+  // Already portrait or square: that is the whole camera. A wide 16:9 frame is the top crop.
+  if (!media || media.readyState !== "live" || sh >= sw || frameRatio(sw, sh) < 1.6) return;
+  let minAspect = 0;
+  let longCap = 0;
+  try {
+    const caps = media.getCapabilities?.();
+    minAspect = caps?.aspectRatio?.min ?? 0;
+    longCap = Math.max(caps?.width?.max ?? 0, caps?.height?.max ?? 0);
+  } catch {
+    return;
+  }
+  // Tallest the camera offers, but not a sliver. 0.5 is 9:16.
+  const aspect = Math.max(minAspect, 0.5);
+  if (!minAspect || aspect >= 1.5) return;
+  const settings = media.getSettings();
+  const long = Math.min(1280, Math.max(settings.width ?? 0, settings.height ?? 0, longCap));
+  const short = Math.max(2, Math.round(long * (aspect < 1 ? aspect : 1 / aspect)));
+  const tall = aspect < 1;
+  try {
+    await media.applyConstraints({
+      width: { ideal: tall ? short : long },
+      height: { ideal: tall ? long : short },
+      aspectRatio: { ideal: aspect },
+      frameRate: { ideal: 30, max: 30 },
+    });
+  } catch {
+    /* the picture already publishing stays */
+  }
+}
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
   name: STREAM_CAM,
   source: Track.Source.Unknown,
@@ -813,8 +874,18 @@ export function VoiceRoom(props: {
   /** One camera start or stop, and a way out if the browser never answers. */
   async function moveCamera(active: LocalParticipant, on: boolean) {
     let timer = 0;
-    const attempt = active
-      .setCameraEnabled(on, undefined, CAMERA_PUBLISH)
+    const attempt = (async () => {
+      const capture = on ? phoneCameraCapture() : undefined;
+      try {
+        await active.setCameraEnabled(on, capture, CAMERA_PUBLISH);
+      } catch (err) {
+        // A phone that rejects the full-frame request still has to open.
+        // A permission refusal is not that: asking again would prompt twice.
+        const name = err instanceof Error ? err.name : "";
+        if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
+        await active.setCameraEnabled(true, undefined, CAMERA_PUBLISH);
+      }
+    })()
       .then(
         () => ({ ok: true as const }),
         (err: unknown) => ({
@@ -831,7 +902,18 @@ export function VoiceRoom(props: {
     });
     const result = await Promise.race([attempt, slow]);
     window.clearTimeout(timer);
+    if (result.ok && on) await widenPhoneCamera(active);
     return result;
+  }
+
+  // Turning the phone can put the crop back. Ask for the tall picture again.
+  if (COARSE_POINTER && typeof screen !== "undefined" && screen.orientation) {
+    const onTurn = () => {
+      const me = room()?.localParticipant;
+      if (me?.isCameraEnabled) void widenPhoneCamera(me);
+    };
+    screen.orientation.addEventListener("change", onTurn);
+    onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
   }
 
   async function toggleCam() {
@@ -1171,13 +1253,13 @@ export function VoiceRoom(props: {
   //   3 people   a 2x2 grid, the Room view in the last spot
   //   4 or more  everyone in the grid, the Room view small at the top right
   // Phone (pointer is coarse and the short side is under 540px): the room view
-  // stays hidden. 1-on-1 is the other person full-screen and your camera small,
-  // dragged to the top, left, right, or bottom. 3 people: two across the top,
-  // one across a taller bottom. 4 sideways: an even 2x2. 4 upright: one column.
-  // 5 or more stack and scroll. The picture inside each cell stays whole 16:9.
-  // A screen share is not one of those cells. It sits on the next page: swipe
-  // right to left to see the shares, tap one to open it beside the person
-  // sharing it, both as 16:9. Swipe left to right to come back.
+  // stays hidden. You alone fill the phone. With other people the call is only
+  // them. A desktop camera stays 16:9. A phone camera is one vertical tile
+  // of that same height, beside it. Your camera is not on that call. Swipe right for your whole
+  // camera. Swipe right again there for the channel list. Swipe left opens
+  // the channel chat. When someone is sharing, that same left swipe opens
+  // the screen shares instead. Tap a share to open it beside the person
+  // sharing it. Swipe back to the call.
   let tilesEl: HTMLDivElement | undefined;
   let boxObserver: ResizeObserver | undefined;
   function watchBox(el: HTMLDivElement) {
@@ -1234,6 +1316,12 @@ export function VoiceRoom(props: {
   };
   const [pipSpot, setPipSpot] = createSignal<PipSpot>(readPip());
   const [pipWide, setPipWide] = createSignal(window.innerWidth >= window.innerHeight);
+  // Which cameras are taller than wide. Phone tiles use this: desktop stays
+  // 16:9, a phone picture is the vertical tile beside it.
+  const [frameWide, setFrameWide] = createSignal<Record<string, boolean>>({});
+  function rememberFrame(key: string, wide: boolean) {
+    setFrameWide((prev) => (prev[key] === wide ? prev : { ...prev, [key]: wide }));
+  }
   const setPip = (spot: PipSpot) => {
     setPipSpot(spot);
     try {
@@ -1269,6 +1357,7 @@ export function VoiceRoom(props: {
       const landscape = (boxW || window.innerWidth) >= (boxH || window.innerHeight);
       const width = boxW || window.innerWidth;
       const height = boxH || window.innerHeight;
+      const wide = frameWide();
       const plan = phonePlan({
         keys,
         localKey: local?.key,
@@ -1277,6 +1366,7 @@ export function VoiceRoom(props: {
         height,
         pipSpot: pipSpot(),
         pipWide: pipWide(),
+        portraitKeys: Object.keys(wide).filter((key) => wide[key] === false),
       });
       const open = screens.find((t) => t.key === openShare());
       const entered = shareView() === "open" && open ? open : undefined;
@@ -1453,7 +1543,13 @@ export function VoiceRoom(props: {
   const openBig = (key: string) => {
     if (!layout().phone) toggleFocus(key);
   };
-  // A share left the call: drop back. None left: the people page only.
+  // Your camera is the page to the left while other people are on the call.
+  const selfPage = () => {
+    if (!layout().phone) return false;
+    const local = tiles().find((t) => !t.screen && t.participant.isLocal);
+    return Boolean(local && layout().places?.[local.key]?.left === "-100%");
+  };
+  // A share left the call: leave the share pages. Your camera page stays.
   createEffect(() => {
     const keys = tiles()
       .filter((t) => t.screen)
@@ -1462,7 +1558,7 @@ export function VoiceRoom(props: {
       setShareDragging(false);
       setShareDragX(0);
       setOpenShare(undefined);
-      setShareView("people");
+      if (shareView() === "shelf" || shareView() === "open") setShareView("people");
       return;
     }
     const open = openShare();
@@ -1471,22 +1567,37 @@ export function VoiceRoom(props: {
       if (shareView() === "open") setShareView("shelf");
     }
   });
-  const shareOn = () => layout().phone && tiles().some((t) => t.screen) && shareView() !== "people";
+  createEffect(() => {
+    if (shareView() === "self" && !selfPage()) setShareView("people");
+  });
+  const shareOn = () => layout().phone && shareView() !== "people";
   const shareShift = () => {
     const w = box().w;
-    const page = shareOn() ? 1 : 0;
-    return `translate3d(${Math.round(-page * w + shareDragX())}px, 0, 0)`;
+    const view = shareView();
+    const page = view === "self" ? 1 : view === "people" ? 0 : -1;
+    return `translate3d(${Math.round(page * w + shareDragX())}px, 0, 0)`;
   };
-  // Follow the finger. The shelf does not slide onward into an entered share,
-  // and an entered share only nudges: letting go is what returns to the shelf.
+  // Follow the finger. Right from the call reveals your camera. Left reveals
+  // shares. The shelf does not slide onward into an entered share, and an
+  // entered share only nudges: letting go is what returns to the shelf.
   function shareFollow(dx: number): number {
     const w = Math.max(1, box().w);
     const view = shareView();
+    const shares = tiles().some((t) => t.screen);
     if (view === "open") return Math.max(-72, Math.min(72, dx * 0.35));
-    if (view === "people") return dx > 0 ? Math.min(72, dx * 0.35) : Math.max(-w, dx);
+    if (view === "self") return dx < 0 ? Math.max(-w, dx) : Math.min(72, dx * 0.35);
+    if (view === "people") {
+      if (dx > 0) return selfPage() ? Math.min(w, dx) : Math.min(72, dx * 0.35);
+      return shares ? Math.max(-w, dx) : Math.max(-72, dx * 0.35);
+    }
     return dx < 0 ? Math.max(-72, dx * 0.35) : Math.min(w, dx);
   }
   let shareGesture: { x: number; y: number; id: number; locked: boolean } | undefined;
+  // The page around the call opens chat on a left swipe, and the channel list
+  // on a right swipe. This pager takes the first right swipe (your camera)
+  // and a left swipe when someone is sharing. A right swipe while you are
+  // already on your camera is left for the channel list.
+  let pagerOwnsTouch = false;
   function shareDown(e: PointerEvent) {
     if (!layout().phone) return;
     const el = e.target as HTMLElement | null;
@@ -1500,11 +1611,22 @@ export function VoiceRoom(props: {
     const dy = e.clientY - g.y;
     if (!g.locked) {
       if (Math.abs(dx) < 10) return;
-      if (Math.abs(dx) <= Math.abs(dy) || !tiles().some((t) => t.screen)) {
+      const view = shareView();
+      const shares = tiles().some((t) => t.screen);
+      const mine = selfPage();
+      const horizontal =
+        Math.abs(dx) > Math.abs(dy) &&
+        ((view === "people" && dx > 0 && mine) ||
+          (view === "people" && dx < 0 && shares) ||
+          (view === "self" && dx < 0) ||
+          (view === "self" && dx > 0) ||
+          ((view === "shelf" || view === "open") && dx > 0));
+      if (!horizontal) {
         shareGesture = undefined;
         return;
       }
       g.locked = true;
+      pagerOwnsTouch = true;
       setShareDragging(true);
       if (tilesEl) tilesEl.scrollTop = 0;
       try {
@@ -1522,7 +1644,19 @@ export function VoiceRoom(props: {
     shareGesture = undefined;
     if (!g.locked) return;
     const dx = e.clientX - g.x;
-    const next = shareSwipeTarget(shareView(), dx, box().w || 1);
+    const dy = e.clientY - g.y;
+    const w = box().w || 1;
+    // Already on your camera: the next right swipe opens the channel list.
+    if (shareView() === "self" && dx > 0 && Math.abs(dx) >= Math.min(48, w * 0.2) && Math.abs(dx) >= Math.abs(dy)) {
+      setShareDragging(false);
+      setShareDragX(0);
+      (e.currentTarget as HTMLElement).dispatchEvent(new CustomEvent("dh-open-channels", { bubbles: true }));
+      return;
+    }
+    const next = shareSwipeTarget(shareView(), dx, w, {
+      self: selfPage(),
+      shares: tiles().some((t) => t.screen),
+    });
     setShareDragging(false);
     requestAnimationFrame(() => {
       if (!shareAlive) return;
@@ -1592,7 +1726,10 @@ export function VoiceRoom(props: {
                 shareSlot={onSharePage(tile.key)}
                 pip={pip()}
                 onPipDrop={setPip}
-                onFrame={pip() ? setPipWide : undefined}
+                onFrame={(wide) => {
+                  rememberFrame(tile.key, wide);
+                  if (pip()) setPipWide(wide);
+                }}
                 tile={tile}
                 version={version()}
                 name={tile.screen ? `${nameOf(tile.participant)}'s ${screenLabel(tile)}` : nameOf(tile.participant)}
@@ -1664,7 +1801,7 @@ export function VoiceRoom(props: {
           aria-expanded={streamMenu()}
           onClick={() => openStreamMenu()}
         >
-          {streamCamBusy() ? "Starting…" : "Stream"} ▴
+          <DockFace kind="stream" word={streamCamBusy() ? "Starting" : "Stream"} full={streamCamBusy() ? "Starting…" : "Stream ▴"} />
         </button>
         <Show when={streamMenu()}>
           <div class="dock-menu" role="menu" aria-label="Stream">
@@ -1755,8 +1892,21 @@ export function VoiceRoom(props: {
               onPointerMove={shareMove}
               onPointerUp={shareUp}
               onPointerCancel={shareUp}
-              onTouchStart={(e) => {
-                if (layout().phone && tiles().some((t) => t.screen)) e.stopPropagation();
+              onTouchStart={() => {
+                pagerOwnsTouch = false;
+              }}
+              onTouchMove={(e) => {
+                if (pagerOwnsTouch) e.stopPropagation();
+              }}
+              onTouchEnd={(e) => {
+                if (!pagerOwnsTouch) return;
+                pagerOwnsTouch = false;
+                e.stopPropagation();
+              }}
+              onTouchCancel={(e) => {
+                if (!pagerOwnsTouch) return;
+                pagerOwnsTouch = false;
+                e.stopPropagation();
               }}
             >
               <CallTiles />
@@ -1768,14 +1918,18 @@ export function VoiceRoom(props: {
         </Show>
         <div class="dock" classList={{ hidden: Boolean(props.viewOnly) }}>
           <button type="button" class="dock-btn" aria-pressed={micOn()} onClick={() => void toggle("mic")}>
-            {micOn() ? "Mic on" : "Mic off"}
+            <DockFace kind={micOn() ? "mic" : "mic-off"} word={micOn() ? "Mic" : "Muted"} full={micOn() ? "Mic on" : "Mic off"} />
           </button>
           <Show
             when={props.camera}
             fallback={
               <>
                 <button type="button" class="dock-btn" aria-pressed={camShown()} onClick={() => void toggle("cam")}>
-                  {camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
+                  <DockFace
+                    kind={camShown() ? "cam" : "cam-off"}
+                    word={camWant() === true && !camOn() ? "Starting" : "Camera"}
+                    full={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
+                  />
                 </button>
                 <StreamMenu />
               </>
@@ -1783,7 +1937,7 @@ export function VoiceRoom(props: {
           >
             {(cam) => (
               <button type="button" class="dock-btn" aria-pressed={cam().on} onClick={() => cam().toggle()}>
-                {cam().on ? "Camera on" : "Camera off"}
+                <DockFace kind={cam().on ? "cam" : "cam-off"} word="Camera" full={cam().on ? "Camera on" : "Camera off"} />
               </button>
             )}
           </Show>
@@ -1806,7 +1960,11 @@ export function VoiceRoom(props: {
               aria-expanded={shareMenu()}
               onClick={() => setShareMenu(!shareMenu())}
             >
-              {sharedCount() === 0 ? "Share screen" : `Sharing ${sharedCount()}`} ▴
+              <DockFace
+                kind="share"
+                word={sharedCount() === 0 ? "Share" : "Sharing"}
+                full={sharedCount() === 0 ? "Share screen ▴" : `Sharing ${sharedCount()} ▴`}
+              />
             </button>
             <Show when={shareMenu()}>
               <div class="dock-menu" role="menu" aria-label="Share screen">
@@ -1851,7 +2009,7 @@ export function VoiceRoom(props: {
               aria-expanded={attentionMenu()}
               onClick={() => setAttentionMenu(!attentionMenu())}
             >
-              ✦ Attention ▴
+              <DockFace kind="look" word="Attention" full="✦ Attention ▴" />
             </button>
             <Show when={attentionMenu()}>
               <div class="dock-menu" role="menu" aria-label="Attention">
@@ -1874,7 +2032,7 @@ export function VoiceRoom(props: {
             </button>
           </Show>
           <button type="button" class="dock-btn leave" onClick={() => (props.onLeave ? props.onLeave() : leave())}>
-            Disconnect
+            <DockFace kind="leave" word="Leave" full="Disconnect" />
           </button>
         </div>
         <Modal title="Team up" open={teamOffer()} onClose={() => setTeamOffer(false)}>
@@ -1938,6 +2096,79 @@ function doubleTap(handler: () => void) {
 
 // Phone browsers cannot share a screen: hide Share screen and stream mode there.
 const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
+function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "leave"; word: string; full: string }) {
+  return (
+    <>
+      <span class="dock-glyph" aria-hidden="true">
+        {dockIcon(props.kind)}
+      </span>
+      <span class="dock-word">{props.word}</span>
+      <span class="dock-full">{props.full}</span>
+    </>
+  );
+}
+
+function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "leave") {
+  const pen = {
+    viewBox: "0 0 24 24",
+    fill: "none" as const,
+    stroke: "currentColor",
+    "stroke-width": 1.8,
+    "stroke-linecap": "round" as const,
+    "stroke-linejoin": "round" as const,
+  };
+  if (kind === "mic" || kind === "mic-off") {
+    return (
+      <svg {...pen}>
+        <rect x="9" y="2.5" width="6" height="11" rx="3" />
+        <path d="M6 11a6 6 0 0 0 12 0" />
+        <path d="M12 17v3.5M8 21h8" />
+        {kind === "mic-off" ? <path d="M4 4l16 16" /> : null}
+      </svg>
+    );
+  }
+  if (kind === "cam" || kind === "cam-off") {
+    return (
+      <svg {...pen}>
+        <rect x="2.5" y="6.5" width="12.5" height="11" rx="2" />
+        <path d="M15 10.5 21 7.5v9L15 13.5z" />
+        {kind === "cam-off" ? <path d="M4 4l16 16" /> : null}
+      </svg>
+    );
+  }
+  if (kind === "stream") {
+    return (
+      <svg {...pen}>
+        <circle cx="12" cy="12" r="2.2" />
+        <path d="M7.6 8.3a6 6 0 0 0 0 7.4M16.4 8.3a6 6 0 0 1 0 7.4" />
+        <path d="M4.8 5.5a10 10 0 0 0 0 13M19.2 5.5a10 10 0 0 1 0 13" />
+      </svg>
+    );
+  }
+  if (kind === "share") {
+    return (
+      <svg {...pen}>
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M8 20h8M12 16v4" />
+      </svg>
+    );
+  }
+  if (kind === "look") {
+    return (
+      <svg {...pen}>
+        <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...pen}>
+      <path d="M10 7V5H5v14h5" />
+      <path d="M10 12h9" />
+      <path d="m16 8.5 3.5 3.5L16 15.5" />
+    </svg>
+  );
+}
 
 // A team screen shows each member this long, then the next (Kaalob).
 const TEAM_TURN_MS = 10_000;

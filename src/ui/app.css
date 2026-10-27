@@ -48,10 +48,6 @@
     opacity: 1;
     pointer-events: auto;
   }
-  .shell .menu-btn {
-    display: inline-grid;
-    flex: none;
-  }
 }
 
 .scrim {
@@ -531,6 +527,29 @@
   }
 }
 
+/* A mouse still has the channel list. Touch uses the drawer, opened by a swipe. */
+@media (max-width: 760px) and (pointer: fine) {
+  .shell.shell {
+    grid-template-columns: 72px 248px minmax(0, 1fr);
+  }
+  .shell > :is(.rail, .side) {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    width: auto;
+    height: auto;
+    max-height: none;
+    transform: none;
+  }
+  .shell > .main {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .scrim {
+    display: none;
+  }
+}
+
 /* a tile's chat row sits tight under its picture */
 .tile-row .chan-row {
   margin-top: 4px;
@@ -895,10 +914,6 @@
   white-space: nowrap;
 }
 
-.menu-btn {
-  display: none;
-}
-
 .main-empty {
   display: grid;
   place-items: center;
@@ -1230,12 +1245,19 @@
   border-color: var(--green);
 }
 
-/* A webcam is always the whole 16:9 picture (Kaalob), never cropped to the
-   tile's shape: it fits inside, black around it. */
+/* A webcam is the whole picture (Kaalob), never cropped to the tile. A phone
+   camera is taller than 16:9 and still fits inside, black around it. Out of
+   the grid: a tall video's own height was spilling down and the tile, which
+   hides overflow, kept only the top. */
 .tile video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   object-fit: contain;
+  object-position: center;
   background: #000;
 }
 
@@ -1372,6 +1394,12 @@
   border-color: #5a1d1d;
   background: #2a0d0d;
   color: var(--red);
+}
+
+/* Phone shows an icon and a short word. Desktop keeps the full label. */
+.dock-glyph,
+.dock-word {
+  display: none;
 }
 
 /* ---- modals -------------------------------------------------------------- */
@@ -2596,8 +2624,8 @@ img.live-tile-still {
   overflow-y: auto;
 }
 
-/* Phone call. Cells share edges. The camera stays the whole 16:9 picture
-   inside its cell (black around it). Your camera in a 1-on-1 floats on top. */
+/* Phone call. Cells share edges. The camera stays the whole picture inside
+   its cell (black around it). Your own camera is the page to the left. */
 :root[data-layout-theme] .voice.phone,
 .voice.phone {
   padding: 0;
@@ -2605,7 +2633,9 @@ img.live-tile-still {
 }
 
 .voice.phone .dock {
-  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  background: #0c1418;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .tiles.phone {
@@ -2630,7 +2660,8 @@ img.live-tile-still {
   overflow-y: hidden;
 }
 
-/* The track is the stage. Translating it reveals the share page on its right. */
+/* The track is the stage. Translating it right reveals your camera. Translating
+   it left reveals the share page. */
 .tiles.phone .phone-track {
   position: relative;
   width: 100%;
@@ -2642,6 +2673,7 @@ img.live-tile-still {
 
 .tiles.phone.phone-scroll .phone-track {
   height: auto;
+  min-height: 100%;
 }
 
 .tiles.phone .phone-track.dragging {
@@ -2702,10 +2734,11 @@ img.live-tile-still {
     inset 0 0 0 3px var(--green);
 }
 
-.tiles.phone .phone-track > .tile.pip .avatar.big {
-  width: 48px;
-  height: 48px;
-  font-size: 16px;
+/* Camera off on a phone: a third of the 79px desktop face. */
+.tiles.phone .phone-track > .tile .tile-empty .avatar.big {
+  width: 26px;
+  height: 26px;
+  font-size: 9px;
 }
 
 .tiles.phone .phone-track > .tile.pip .tile-name {
@@ -2860,7 +2893,7 @@ img.live-tile-still {
 }
 
 /* ---- the left side slides away while you are in a videochat or room ------- */
-/* Desktop only (phones already slide it in from the ☰ button). The strip at
+/* Desktop only. A phone opens the same list with a swipe. The strip at
    the left edge brings it in; it stays 5 s after the mouse leaves (Shell). */
 @media (min-width: 761px) {
   .shell.left-slide {

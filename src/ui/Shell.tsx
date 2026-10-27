@@ -168,7 +168,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   }
   function startCallSwipe(event:TouchEvent) {
     const target=event.target instanceof Element ? event.target : undefined;
-    if(!window.matchMedia("(max-width:600px)").matches || event.touches.length !== 1 || !target?.closest(".voice,.room-pane") || target.closest("button,input,textarea,a,[role=slider],.dock-menu,.inset-resize,video[controls]")) {callSwipe=undefined;return;}
+    // The channel list has no button. A right swipe on the page opens it.
+    // On a call, the first right swipe is your camera and the call keeps that
+    // touch. The next right swipe, while you are on your camera, reaches here.
+    if(!window.matchMedia("(max-width:760px)").matches || event.touches.length !== 1 || !target?.closest(".main") || target.closest("button,input,textarea,a,[role=slider],.dock-menu,.inset-resize,video[controls]")) {callSwipe=undefined;return;}
     const touch=event.touches[0];callSwipe={x:touch.clientX,y:touch.clientY,at:Date.now()};
   }
   function moveCallSwipe(event:TouchEvent) {
@@ -822,12 +825,15 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       <div class="scrim" onClick={() => setNavOpen(false)} />
 
       {/* ---- the channel ---- */}
-      <main class="main" onTouchStart={startCallSwipe} on:touchmove={moveCallSwipe} onTouchEnd={endCallSwipe} onTouchCancel={() => {callSwipe=undefined;}}>
+      <main
+        class="main"
+        onTouchStart={startCallSwipe}
+        on:touchmove={moveCallSwipe}
+        onTouchEnd={endCallSwipe}
+        onTouchCancel={() => {callSwipe=undefined;}}
+        on:dh-open-channels={() => { setSideChatOpen(false); setNavOpen(true); }}
+      >
         <header class="main-head">
-
-          <button class="icon-btn menu-btn" type="button" aria-label="Channels" onClick={() => setNavOpen(true)}>
-            ☰
-          </button>
           <Show
             when={isDm(server()) && server()}
             fallback={

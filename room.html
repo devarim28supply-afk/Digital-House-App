@@ -351,13 +351,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* face tracking slides and zooms the picture inside the plate */
+  /* The crop box is the 640 x 360 picture face tracking slides. The video
+     stays untransformed so object-fit can center a tall phone camera in it.
+     A transform on the video kept only the top. */
+  .plate .crop {
+    position: absolute;
+    inset: 0;
+    transform-origin: 0 0;
+  }
   .plate video {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
     display: block;
-    transform-origin: 0 0;
   }
   .plate .off {
     position: absolute;

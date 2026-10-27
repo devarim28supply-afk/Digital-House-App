@@ -4,7 +4,7 @@
   :root[data-layout-theme] .main > .main-head,
   :root[data-layout-theme] .main:has(.room-pane) > .main-head {
     display:grid;
-    grid-template-columns:36px minmax(0,1fr) auto minmax(80px,120px);
+    grid-template-columns:minmax(0,1fr) auto minmax(80px,120px);
     grid-template-rows:32px 36px;
     align-items:center;
     gap:6px;
@@ -15,13 +15,12 @@
     flex:0 0 90px;
     padding:6px 10px 8px;
   }
-  .main-head .menu-btn{grid-column:1;grid-row:1;display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0}
-  .main-head .main-title{grid-column:2 / -1;grid-row:1;min-width:0;font-size:14px;line-height:20px}
-  .main-head:has(.dm-call-btn) .main-title{grid-column:2 / 4}
-  .main-head .dm-call-btn{grid-column:4;grid-row:1}
-  .main-head .notifications{grid-column:1 / 3;grid-row:2;margin:0;min-width:0}
-  .main-head .activity-btn{grid-column:3;grid-row:2}
-  .main-head .side-chat-btn{grid-column:4;grid-row:2;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .main-head .main-title{grid-column:1 / -1;grid-row:1;min-width:0;font-size:14px;line-height:20px}
+  .main-head:has(.dm-call-btn) .main-title{grid-column:1 / 3}
+  .main-head .dm-call-btn{grid-column:3;grid-row:1}
+  .main-head .notifications{grid-column:1;grid-row:2;margin:0;min-width:0}
+  .main-head .activity-btn{grid-column:2;grid-row:2}
+  .main-head .side-chat-btn{grid-column:3;grid-row:2;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   :root[data-layout-theme] .main-head :is(.feedback-btn,.activity-btn,.side-chat-btn,.dm-call-btn){
     box-sizing:border-box;
     height:36px;
@@ -114,15 +113,20 @@
   .room-pane>.pane-switch{display:none}
 }
 
-/* Four compact, equally sized call controls with comfortable touch targets. */
+/* Call controls: an icon and a short word, one equal column each. */
 @media(max-width:600px){
-  .voice .dock:not(.hidden){display:flex;flex-wrap:nowrap;align-items:center;gap:6px;width:100%;flex:none;padding:4px 0 max(4px,env(safe-area-inset-bottom))}
-  .voice .dock>.dock-btn,.voice .dock>.share-wrap:not(.hidden){flex:1 1 0;min-width:0;margin:0}
+  .voice .dock:not(.hidden){display:flex;flex-wrap:nowrap;align-items:stretch;gap:4px;width:100%;flex:none;padding:6px 6px max(6px,env(safe-area-inset-bottom));background:#0c1418;border-top:1px solid rgba(255,255,255,.14)}
+  .voice .dock>.dock-btn,.voice .dock>.cam-wrap,.voice .dock>.share-wrap:not(.hidden){flex:1 1 0;min-width:0;margin:0}
   .voice .dock>.share-wrap.hidden{display:none}
-  :root[data-layout-theme] .voice .dock .dock-btn{display:block;box-sizing:border-box;width:100%;min-width:0;height:44px;min-height:44px;margin:0;padding:0 5px;border-radius:12px;font-size:11px;line-height:42px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;touch-action:manipulation}
+  :root[data-layout-theme] .voice .dock .dock-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-sizing:border-box;width:100%;min-width:0;height:58px;min-height:58px;margin:0;padding:6px 2px 4px;border-radius:12px;font-size:10px;font-weight:650;line-height:1.1;white-space:normal;overflow:hidden;touch-action:manipulation}
+  .voice .dock .dock-glyph{display:grid;place-items:center;width:22px;height:22px;flex:none}
+  .voice .dock .dock-glyph svg{display:block;width:22px;height:22px}
+  .voice .dock .dock-word{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .voice .dock .dock-full{display:none}
+  .voice .dock .dock-btn[aria-pressed="true"]{color:var(--green);border-color:var(--green)}
+  .voice .dock .dock-btn.leave{color:#ff8d8a;border-color:#5a1d1d}
   .voice .dock .dock-menu{width:200px;max-width:calc(100vw - 24px);min-width:0}
 }
-@media(max-width:360px){:root[data-layout-theme] .voice .dock .dock-btn{font-size:10px;padding-inline:3px}.voice .dock:not(.hidden){gap:4px}}
 
 /* No native blue tap/selection flash when changing mobile panels. */
 @media(max-width:600px){

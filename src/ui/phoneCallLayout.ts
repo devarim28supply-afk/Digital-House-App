@@ -1,13 +1,17 @@
 // Phone videochat geometry. Desktop never calls this.
-// Other people's cameras are half the phone width, two side by side, 16:9.
-// Your own camera is a small picture on top of them. You alone fill the phone.
+// You alone fill the phone. With other people, the call is only them.
+// A desktop camera stays 16:9. A phone camera is one vertical tile of that
+// same height, beside it. Your own camera is a full page to the left.
+// Screen shares stay a full page to the right. Swipe left reaches them only
+// while someone is sharing. With nobody sharing, that swipe is the channel chat.
+// A second swipe right, while your camera is showing, opens the channel list.
 
 export type PipSpot = "top" | "left" | "right" | "bottom";
 
 export type PhoneStyle = Record<string, string>;
 
 export type PhonePlan = {
-  /** duo: the other person fills the stage and your camera is a small picture */
+  /** duo: other people fill the call. Your camera is the page to the left. */
   mode: "solo" | "duo" | "stack";
   scroll: boolean;
   pipKey?: string;
@@ -31,44 +35,22 @@ export function pipSpotAt(x: number, y: number, width: number, height: number): 
   return spots[0][0];
 }
 
-function pipBox(spot: PipSpot, wide: boolean, width: number, height: number): PhoneStyle {
-  const margin = 12;
-  let pw: number;
-  let ph: number;
-  if (wide) {
-    pw = Math.min(Math.max(width * 0.36, 120), 240);
-    ph = (pw * 9) / 16;
-  } else {
-    ph = Math.min(Math.max(height * 0.3, 140), 240);
-    pw = (ph * 9) / 16;
-  }
-  pw = Math.min(pw, Math.max(64, width - margin * 2));
-  ph = Math.min(ph, Math.max(64, height - margin * 2));
-  const cx = Math.max(margin, (width - pw) / 2);
-  const cy = Math.max(margin, (height - ph) / 2);
-  let left = margin;
-  let top = margin;
-  if (spot === "top") {
-    left = cx;
-    top = margin;
-  } else if (spot === "bottom") {
-    left = cx;
-    top = Math.max(0, height - ph);
-  } else if (spot === "left") {
-    left = margin;
-    top = cy;
-  } else {
-    left = Math.max(0, width - pw - margin);
-    top = cy;
-  }
-  const px = (n: number) => `${Math.round(n)}px`;
-  return { left: px(left), top: px(top), width: px(pw), height: px(ph), zIndex: "2" };
+/** Your camera, one full page to the left of the call. Swipe right lands here. */
+function selfPage(height: number): PhoneStyle {
+  return {
+    position: "absolute",
+    left: "-100%",
+    top: "0",
+    width: "100%",
+    height: `${Math.max(0, Math.round(height))}px`,
+    zIndex: "1",
+  };
 }
 
 /**
  * `keys` is visual order: other people first, you last.
  * `localKey` is your camera, when you are in the call.
- * A one-on-one (you plus one other tile) uses the floating self-view.
+ * With other people your camera is not on the call. It is the page to the left.
  */
 export function phonePlan(args: {
   keys: string[];
@@ -78,6 +60,8 @@ export function phonePlan(args: {
   height: number;
   pipSpot: PipSpot;
   pipWide: boolean;
+  /** Cameras whose picture is taller than wide. Everyone else stays 16:9. */
+  portraitKeys?: string[];
 }): PhonePlan {
   const keys = args.keys.filter(Boolean);
   const n = keys.length;
@@ -93,30 +77,54 @@ export function phonePlan(args: {
 
   const others = keys.filter((key) => key !== args.localKey);
   const gridKeys = others.length > 0 ? others : keys;
-  const usePip = Boolean(args.localKey && others.length > 0 && keys.includes(args.localKey));
-  const rowH = Math.max(72, Math.round((Math.max(1, args.width) / 2) * (9 / 16)));
-  const rows = Math.max(1, Math.ceil(gridKeys.length / 2));
-  gridKeys.forEach((key, i) => {
-    places[key] = { gridColumn: String((i % 2) + 1), gridRow: String(Math.floor(i / 2) + 1) };
-  });
-  if (usePip && args.localKey) places[args.localKey] = pipBox(args.pipSpot, args.pipWide, args.width, args.height);
-  return {
-    mode: usePip ? "duo" : "stack",
-    scroll: true,
-    pipKey: usePip ? args.localKey : undefined,
-    grid: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gridTemplateRows: `repeat(${rows}, ${rowH}px)`,
-      alignContent: "start",
-      width: "100%",
-    },
-    places,
+  const withOthers = Boolean(args.localKey && others.length > 0 && keys.includes(args.localKey));
+  const parkSelf = () => {
+    if (withOthers && args.localKey) places[args.localKey] = selfPage(args.height);
   };
+
+  // Desktop cameras stay 16:9. A phone camera is one vertical tile of the
+  // same height, in the same row. Two equal columns is the layout to avoid.
+  const portraits = new Set(args.portraitKeys ?? []);
+  const items = gridKeys.map((key) => ({ key, portrait: portraits.has(key) }));
+  const stageW = Math.max(1, args.width);
+  const stageH = Math.max(1, args.height);
+  const ratio = (portrait: boolean) => (portrait ? 9 / 16 : 16 / 9);
+  const rowHeight = (row: { portrait: boolean }[], maxH: number) => {
+    const unit = row.reduce((sum, item) => sum + ratio(item.portrait), 0) || 1;
+    return Math.max(0, Math.min(maxH, stageW / unit));
+  };
+  const unit = items.reduce((sum, item) => sum + ratio(item.portrait), 0) || 1;
+  const oneRowH = Math.min(stageH, stageW / unit);
+  const split = items.length > 2 && oneRowH < stageH * 0.34;
+  const rows = split ? [items.slice(0, Math.ceil(items.length / 2)), items.slice(Math.ceil(items.length / 2))] : [items];
+  const gap = split ? 8 : 0;
+  const heights = rows.map((row) => rowHeight(row, (stageH - gap * (rows.length - 1)) / rows.length));
+  const totalH = heights.reduce((sum, h) => sum + h, 0) + gap * (rows.length - 1);
+  let top = Math.max(0, (stageH - totalH) / 2);
+  rows.forEach((row, r) => {
+    const h = heights[r];
+    const rowW = h * row.reduce((sum, item) => sum + ratio(item.portrait), 0);
+    let x = Math.max(0, (stageW - rowW) / 2);
+    for (const item of row) {
+      const w = h * ratio(item.portrait);
+      places[item.key] = {
+        position: "absolute",
+        left: px(x),
+        top: px(top),
+        width: px(w),
+        height: px(h),
+        zIndex: "1",
+      };
+      x += w;
+    }
+    top += h + gap;
+  });
+  parkSelf();
+  return { mode: withOthers ? "duo" : "stack", scroll: false, grid: {}, places };
 }
 
-/** people | the share shelf | one share entered beside the person sharing it */
-export type ShareView = "people" | "shelf" | "open";
+/** your camera | the call | the share shelf | one share entered beside the person sharing it */
+export type ShareView = "self" | "people" | "shelf" | "open";
 
 const SHARE_GAP = 10;
 
@@ -217,13 +225,23 @@ export function phoneSharePlaces(args: {
 
 /**
  * Where a finished horizontal swipe lands.
- * Left from the people opens the shelf. Right from the shelf returns to the people.
+ * Right from the people opens your camera, when that page exists.
+ * Left from the people opens the shelf, when someone is sharing.
+ * Left from your camera returns to the people.
+ * Right from the shelf returns to the people.
  * Right from an entered share returns to the shelf. Left from the shelf does not enter.
  */
-export function shareSwipeTarget(view: ShareView, dx: number, width: number): ShareView {
+export function shareSwipeTarget(
+  view: ShareView,
+  dx: number,
+  width: number,
+  ends: { self?: boolean; shares?: boolean } = {},
+): ShareView {
   const w = Math.max(1, width);
   if (Math.abs(dx) < Math.min(48, w * 0.2)) return view;
-  if (dx < 0 && view === "people") return "shelf";
+  if (dx > 0 && view === "people" && ends.self) return "self";
+  if (dx < 0 && view === "people" && ends.shares) return "shelf";
+  if (dx < 0 && view === "self") return "people";
   if (dx > 0 && view === "shelf") return "people";
   if (dx > 0 && view === "open") return "shelf";
   return view;
