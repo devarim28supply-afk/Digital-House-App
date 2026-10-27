@@ -49,8 +49,6 @@ export function phonePlan(args: {
   pipWide: boolean;
   /** Cameras whose picture is taller than wide, and people who joined from a phone. */
   portraitKeys?: string[];
-  /** width / height of a camera's own picture. A phone tile uses this so the whole frame fills it. */
-  aspects?: Record<string, number>;
 }): PhonePlan {
   const keys = args.keys.filter(Boolean);
   const n = keys.length;
@@ -82,13 +80,8 @@ export function phonePlan(args: {
   const stageH = Math.max(1, args.height);
   const innerW = Math.max(1, stageW - pad * 2);
   const innerH = Math.max(1, stageH - pad * 2);
-  const ratio = (key: string, portrait: boolean) => {
-    if (!portrait) return 16 / 9;
-    const aspect = args.aspects?.[key];
-    if (aspect && aspect > 0.4 && aspect < 1) return aspect;
-    return 3 / 4;
-  };
-  const smallUnit = small.reduce((sum, item) => sum + ratio(item.key, item.portrait), 0);
+  const ratio = (portrait: boolean) => (portrait ? 9 / 16 : 16 / 9);
+  const smallUnit = small.reduce((sum, item) => sum + ratio(item.portrait), 0);
   const smallGaps = gap * Math.max(0, small.length - 1);
   const bigGaps = gap * Math.max(0, big.length - 1);
   const groupGap = big.length && small.length ? gap * 2 : 0;
@@ -114,7 +107,7 @@ export function phonePlan(args: {
     const rowW = smallH * smallUnit + smallGaps;
     let x = pad + Math.max(0, (innerW - rowW) / 2);
     for (const item of small) {
-      const w = smallH * ratio(item.key, item.portrait);
+      const w = smallH * ratio(item.portrait);
       places[item.key] = box(x, y, w, smallH);
       x += w + gap;
     }
@@ -130,8 +123,6 @@ export function phonePlan(args: {
 export function deskPlan(args: {
   keys: string[];
   portraitKeys?: string[];
-  /** width / height of a phone camera. The tile uses it so the whole picture fills the tile. */
-  aspects?: Record<string, number>;
   width: number;
   height: number;
   cols: number;
@@ -143,12 +134,7 @@ export function deskPlan(args: {
   const portraits = new Set(args.portraitKeys ?? []);
   const cols = Math.max(1, Math.min(args.cols || 1, keys.length));
   const gap = args.gap ?? 10;
-  const ratio = (key: string) => {
-    if (!portraits.has(key)) return 16 / 9;
-    const aspect = args.aspects?.[key];
-    if (aspect && aspect > 0.4 && aspect < 1) return aspect;
-    return 3 / 4;
-  };
+  const ratio = (key: string) => (portraits.has(key) ? 9 / 16 : 16 / 9);
   const rows: string[][] = [];
   for (let i = 0; i < keys.length; i += cols) rows.push(keys.slice(i, i + cols));
   const units = rows.map((row) => row.reduce((sum, key) => sum + ratio(key), 0));

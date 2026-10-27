@@ -1247,7 +1247,7 @@
 }
 
 /* A webcam is the whole picture (Kaalob), never cropped to the tile. The
-   phone tile is the camera's own shape, so the picture meets every edge.
+   tall tile stays 9:16. The whole phone camera sits inside it.
    Out of the grid: a tall video's own height was spilling down and the tile,
    which hides overflow, kept only the top. */
 .tile video {
