@@ -1,7 +1,7 @@
 // Phone videochat geometry. Desktop never calls this.
-// You alone fill the phone. With other people, the call is only them.
-// A desktop camera stays 16:9. A phone camera is one vertical tile of that
-// same height, beside it. Your own camera is a full page to the left.
+// You alone fill the phone. With other people, one row: each desktop camera
+// stays 16:9, and your phone camera is the one vertical tile of that same
+// height on the right. Two equal columns is the crossed-out sketch.
 // Screen shares stay a full page to the right. Swipe left reaches them only
 // while someone is sharing. With nobody sharing, that swipe is the channel chat.
 // A second swipe right, while your camera is showing, opens the channel list.
@@ -35,22 +35,10 @@ export function pipSpotAt(x: number, y: number, width: number, height: number): 
   return spots[0][0];
 }
 
-/** Your camera, one full page to the left of the call. Swipe right lands here. */
-function selfPage(height: number): PhoneStyle {
-  return {
-    position: "absolute",
-    left: "-100%",
-    top: "0",
-    width: "100%",
-    height: `${Math.max(0, Math.round(height))}px`,
-    zIndex: "1",
-  };
-}
-
 /**
  * `keys` is visual order: other people first, you last.
  * `localKey` is your camera, when you are in the call.
- * With other people your camera is not on the call. It is the page to the left.
+ * With other people, your camera is the vertical tile on the right of their row.
  */
 export function phonePlan(args: {
   keys: string[];
@@ -78,14 +66,13 @@ export function phonePlan(args: {
   const others = keys.filter((key) => key !== args.localKey);
   const gridKeys = others.length > 0 ? others : keys;
   const withOthers = Boolean(args.localKey && others.length > 0 && keys.includes(args.localKey));
-  const parkSelf = () => {
-    if (withOthers && args.localKey) places[args.localKey] = selfPage(args.height);
-  };
 
-  // Desktop cameras stay 16:9. A phone camera is one vertical tile of the
-  // same height, in the same row. Two equal columns is the layout to avoid.
+  // The drawing: desktop cameras stay 16:9. On an upright phone your camera
+  // is the one vertical tile of that same height, on the right. Not a second
+  // page, and not two equal columns.
   const portraits = new Set(args.portraitKeys ?? []);
   const items = gridKeys.map((key) => ({ key, portrait: portraits.has(key) }));
+  if (withOthers && args.localKey) items.push({ key: args.localKey, portrait: !args.landscape });
   const stageW = Math.max(1, args.width);
   const stageH = Math.max(1, args.height);
   const ratio = (portrait: boolean) => (portrait ? 9 / 16 : 16 / 9);
@@ -119,7 +106,6 @@ export function phonePlan(args: {
     }
     top += h + gap;
   });
-  parkSelf();
   return { mode: withOthers ? "duo" : "stack", scroll: false, grid: {}, places };
 }
 
