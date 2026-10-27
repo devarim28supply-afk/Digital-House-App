@@ -23,7 +23,7 @@ import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../dat
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
-import { type PipSpot, type ShareView, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
+import { type PipSpot, type ShareView, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 export async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -526,6 +526,7 @@ export function VoiceRoom(props: {
         RoomEvent.LocalTrackUnpublished,
         RoomEvent.TrackPublished,
         RoomEvent.TrackUnpublished,
+        RoomEvent.ParticipantAttributesChanged,
       ]) {
         next.on(event, bump);
       }
@@ -538,6 +539,9 @@ export function VoiceRoom(props: {
       setRoom(next);
       joinTries = 0;
       bump();
+      if (phoneNow()) {
+        void next.localParticipant.setAttributes({ dh_phone: "1" }).catch(() => {});
+      }
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
@@ -1247,19 +1251,21 @@ export function VoiceRoom(props: {
   });
 
   // ---- the layout (Kaalob's drawings) --------------------------------------
-  // Desktop: every tile is one 16:9 size; the Room view is one of the tiles:
+  // Desktop, when somebody is on a phone: rows of mixed tiles. A desktop
+  // camera stays 16:9. A phone camera is the vertical tile of that same
+  // height, and a shorter row is centred. With nobody on a phone, the old
+  // equal 16:9 grid stays, Room view included:
   //   1 person   [you][Room view]
   //   2 people   the two stacked on the left, the Room view on the right, centred
   //   3 people   a 2x2 grid, the Room view in the last spot
   //   4 or more  everyone in the grid, the Room view small at the top right
   // Phone (pointer is coarse and the short side is under 540px): the room view
-  // stays hidden. You alone fill the phone. With other people the call is only
-  // them in one row. A desktop camera stays 16:9. Your camera is the one
-  // vertical tile of that same height on the right. Swipe right opens the
-  // channel list. Swipe left opens
-  // the channel chat. When someone is sharing, that same left swipe opens
-  // the screen shares instead. Tap a share to open it beside the person
-  // sharing it. Swipe back to the call.
+  // stays hidden. You alone fill the phone. With other people, two wide
+  // cameras stack full width. Everyone else sits in a small row at the bottom.
+  // Your camera is the small vertical tile. Swipe right opens the channel
+  // list. Swipe left opens the channel chat. When someone is sharing, that
+  // same left swipe opens the screen shares instead. Tap a share to open it
+  // beside the person sharing it. Swipe back to the call.
   let tilesEl: HTMLDivElement | undefined;
   let boxObserver: ResizeObserver | undefined;
   function watchBox(el: HTMLDivElement) {
@@ -1366,7 +1372,9 @@ export function VoiceRoom(props: {
         height,
         pipSpot: pipSpot(),
         pipWide: pipWide(),
-        portraitKeys: Object.keys(wide).filter((key) => wide[key] === false),
+        portraitKeys: cams
+          .filter((t) => !t.participant.isLocal && (wide[t.key] === false || t.participant.attributes?.dh_phone === "1"))
+          .map((t) => t.key),
       });
       const open = screens.find((t) => t.key === openShare());
       const entered = shareView() === "open" && open ? open : undefined;
@@ -1413,6 +1421,47 @@ export function VoiceRoom(props: {
     const tileW = narrow ? Math.floor(w) : Math.max(96, Math.floor(Math.min(byWidth, byHeight)));
     const tileH = Math.floor((tileW * 9) / 16);
     const smallW = Math.floor(tileW * SMALL_ROOM_VIEW);
+    const wideMap = frameWide();
+    const onPhone = (key: string) => {
+      const tile = tiles().find((t) => t.key === key);
+      if (!tile || tile.screen || tile.participant.isLocal) return wideMap[key] === false && !tile?.screen;
+      if (tile.participant.attributes?.dh_phone === "1") return true;
+      return wideMap[key] === false;
+    };
+    const gridKeys = [
+      ...tiles().map((t) => t.key),
+      ...loneRoomFaces().map(([name]) => `face:${name}`),
+      ...teamScreens().map(teamKey),
+    ];
+    if (rv && !small && !narrow) gridKeys.push("roomview");
+    const portraitKeys = gridKeys.filter(onPhone);
+    if (portraitKeys.length > 0 && w > 0 && h > 0) {
+      const packW = small ? Math.max(1, w - smallW - GAP) : w;
+      const places = deskPlan({ keys: gridKeys, portraitKeys, width: packW, height: h, cols: narrow ? 1 : cols, gap: GAP });
+      if (small) {
+        places.roomview = {
+          position: "absolute",
+          left: `${Math.max(0, Math.round(w - smallW))}px`,
+          top: "0px",
+          width: `${smallW}px`,
+          height: `${Math.floor((smallW * 9) / 16)}px`,
+          zIndex: "1",
+        };
+      }
+      return {
+        n,
+        narrow,
+        phone: false,
+        scroll: false,
+        pipKey: undefined as string | undefined,
+        places: places as Record<string, JSX.CSSProperties>,
+        small,
+        grid: {} as JSX.CSSProperties,
+        cols,
+        tileH,
+        smallSize: { width: `${smallW}px`, height: `${Math.floor((smallW * 9) / 16)}px` },
+      };
+    }
     return {
       n,
       narrow,
@@ -1870,6 +1919,7 @@ export function VoiceRoom(props: {
           classList={{
             spotlight: Boolean(spot()),
             narrow: !spot() && layout().narrow,
+            placed: !spot() && !layout().phone && Boolean(layout().places),
             phone: layout().phone,
             "phone-scroll": layout().phone && layout().scroll,
             "share-away": shareOn(),
