@@ -2662,6 +2662,8 @@ img.live-tile-still {
 
 .tiles.phone.phone-scroll .phone-track > .tile {
   position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 /* Shares (and the sharer, once entered) stay on the page to the right,

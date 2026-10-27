@@ -1,6 +1,6 @@
-// Phone videochat geometry from Kaalob's sketches. Desktop never calls this.
-// Cells fill the stage edge to edge. Each camera still draws its whole 16:9
-// picture inside its cell (the tile's object-fit does that, not this file).
+// Phone videochat geometry. Desktop never calls this.
+// Other people's cameras are half the phone width, two side by side, 16:9.
+// Your own camera is a small picture on top of them. You alone fill the phone.
 
 export type PipSpot = "top" | "left" | "right" | "bottom";
 
@@ -8,7 +8,7 @@ export type PhoneStyle = Record<string, string>;
 
 export type PhonePlan = {
   /** duo: the other person fills the stage and your camera is a small picture */
-  mode: "solo" | "pair" | "duo" | "trio" | "quad" | "stack";
+  mode: "solo" | "duo" | "stack";
   scroll: boolean;
   pipKey?: string;
   grid: PhoneStyle;
@@ -16,10 +16,6 @@ export type PhonePlan = {
 };
 
 const full: PhoneStyle = { left: "0", top: "0", width: "100%", height: "100%", zIndex: "1" };
-
-function box(left: string, top: string, width: string, height: string): PhoneStyle {
-  return { left, top, width, height, zIndex: "1" };
-}
 
 /** Where a dragged self-view lands: the stage edge closest to the pointer. */
 export function pipSpotAt(x: number, y: number, width: number, height: number): PipSpot {
@@ -90,64 +86,30 @@ export function phonePlan(args: {
 
   if (n === 0) return empty;
 
-  if (n === 1) {
+  if (n === 1 && keys[0] === args.localKey) {
     places[keys[0]] = full;
     return { mode: "solo", scroll: false, grid: {}, places };
   }
 
-  const other = keys.filter((key) => key !== args.localKey);
-  if (args.localKey && other.length === 1 && keys.includes(args.localKey)) {
-    places[other[0]] = full;
-    places[args.localKey] = pipBox(args.pipSpot, args.pipWide, args.width, args.height);
-    return { mode: "duo", scroll: false, pipKey: args.localKey, grid: {}, places };
-  }
-
-  if (n === 2) {
-    if (args.landscape) {
-      places[keys[0]] = box("0", "0", "50%", "100%");
-      places[keys[1]] = box("50%", "0", "50%", "100%");
-    } else {
-      places[keys[0]] = box("0", "0", "100%", "50%");
-      places[keys[1]] = box("0", "50%", "100%", "50%");
-    }
-    return { mode: "pair", scroll: false, grid: {}, places };
-  }
-
-  if (n === 3) {
-    places[keys[0]] = box("0", "0", "50%", "40%");
-    places[keys[1]] = box("50%", "0", "50%", "40%");
-    places[keys[2]] = box("0", "40%", "100%", "60%");
-    return { mode: "trio", scroll: false, grid: {}, places };
-  }
-
-  if (n === 4 && args.landscape) {
-    keys.forEach((key, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      places[key] = box(`${col * 50}%`, `${row * 50}%`, "50%", "50%");
-    });
-    return { mode: "quad", scroll: false, grid: {}, places };
-  }
-
-  if (n === 4) {
-    keys.forEach((key, i) => {
-      places[key] = box("0", `${i * 25}%`, "100%", "25%");
-    });
-    return { mode: "quad", scroll: false, grid: {}, places };
-  }
-
-  const row = Math.max(96, Math.floor(args.width * (9 / 16)));
-  keys.forEach((key, i) => {
-    places[key] = { gridColumn: "1", gridRow: String(i + 1) };
+  const others = keys.filter((key) => key !== args.localKey);
+  const gridKeys = others.length > 0 ? others : keys;
+  const usePip = Boolean(args.localKey && others.length > 0 && keys.includes(args.localKey));
+  const rowH = Math.max(72, Math.round((Math.max(1, args.width) / 2) * (9 / 16)));
+  const rows = Math.max(1, Math.ceil(gridKeys.length / 2));
+  gridKeys.forEach((key, i) => {
+    places[key] = { gridColumn: String((i % 2) + 1), gridRow: String(Math.floor(i / 2) + 1) };
   });
+  if (usePip && args.localKey) places[args.localKey] = pipBox(args.pipSpot, args.pipWide, args.width, args.height);
   return {
-    mode: "stack",
+    mode: usePip ? "duo" : "stack",
     scroll: true,
+    pipKey: usePip ? args.localKey : undefined,
     grid: {
       display: "grid",
-      gridTemplateColumns: "1fr",
-      gridTemplateRows: `repeat(${n}, minmax(${row}px, 1fr))`,
+      gridTemplateColumns: "1fr 1fr",
+      gridTemplateRows: `repeat(${rows}, ${rowH}px)`,
       alignContent: "start",
+      width: "100%",
     },
     places,
   };
