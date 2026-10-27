@@ -71,19 +71,24 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
   // while streaming) cannot carry much more next to a stream
   videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
 };
-// LiveKit's default camera is an exact 1280×720. On a phone that is a 16:9
-// crop. The phone's own video camera is 9:16, the same shape as the tall
-// tile. Ideals, not exact pixels, and the picture is not stretched.
+// LiveKit's default camera is an exact 1280×720. On a phone that is 16:9,
+// so the picture sits inside the 9:16 tile with black above and below.
+// The phone's video camera is 9:16, the same shape as the tall tile.
+// An ideal size was ignored and the camera stayed wide. exact aspect is
+// required. crop-and-scale reaches 9:16 from the sensor. Nothing is stretched.
 const PHONE_ASPECT = 9 / 16;
-function phoneCameraCapture(): VideoCaptureOptions | undefined {
+function phoneCameraCapture(loose = false): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
   // 1080×1920 is 9:16. 1920×1080 is the 16:9 crop and is not used.
+  const width = loose ? 720 : 1080;
+  const height = loose ? 1280 : 1920;
   return {
-    aspectRatio: { ideal: PHONE_ASPECT },
+    aspectRatio: loose ? { ideal: PHONE_ASPECT } : { exact: PHONE_ASPECT },
+    resizeMode: "crop-and-scale",
     resolution: {
-      width: { ideal: 1080 } as unknown as number,
-      height: { ideal: 1920 } as unknown as number,
+      width: { ideal: width } as unknown as number,
+      height: { ideal: height } as unknown as number,
       frameRate: { ideal: 30, max: 30 } as unknown as number,
     },
   } as VideoCaptureOptions;
@@ -92,32 +97,103 @@ function isNineSixteen(width: number, height: number): boolean {
   if (width <= 0 || height <= 0) return false;
   return Math.abs(width / height - PHONE_ASPECT) < 0.06;
 }
-/** Ask again when the phone opened 16:9 or 3:4. The tile stays 9:16. */
+function settingsSize(media: MediaStreamTrack): { width: number; height: number } {
+  const settings = media.getSettings();
+  return { width: settings.width ?? 0, height: settings.height ?? 0 };
+}
+/** The frame the tile draws. getSettings() can still be the sideways sensor. */
+async function shownSize(media: MediaStreamTrack): Promise<{ width: number; height: number }> {
+  const fallback = settingsSize(media);
+  if (typeof document === "undefined") return fallback;
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = new MediaStream([media]);
+  try {
+    await video.play().catch(() => undefined);
+    const sawFrame = await new Promise<boolean>((resolve) => {
+      if (typeof video.requestVideoFrameCallback === "function") {
+        video.requestVideoFrameCallback(() => resolve(true));
+      } else {
+        video.addEventListener("loadeddata", () => resolve(true), { once: true });
+      }
+      window.setTimeout(() => resolve(false), 400);
+    });
+    if (sawFrame && video.videoWidth > 0 && video.videoHeight > 0) {
+      return { width: video.videoWidth, height: video.videoHeight };
+    }
+  } finally {
+    video.pause();
+    video.srcObject = null;
+  }
+  return fallback;
+}
+async function shownNineSixteen(media: MediaStreamTrack): Promise<boolean> {
+  const settings = settingsSize(media);
+  if (isNineSixteen(settings.width, settings.height)) return true;
+  const shown = await shownSize(media);
+  return isNineSixteen(shown.width, shown.height);
+}
+const PHONE_LOCK = {
+  width: { ideal: 1080 },
+  height: { ideal: 1920 },
+  aspectRatio: { exact: PHONE_ASPECT },
+  resizeMode: "crop-and-scale",
+  frameRate: { ideal: 30, max: 30 },
+} as MediaTrackConstraints;
+/** The camera opened wider than 9:16. Ask again until the frame matches the tile. */
 async function widenPhoneCamera(active: LocalParticipant) {
-  const capture = phoneCameraCapture();
-  if (!capture) return;
+  if (!phoneCameraCapture()) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track;
   const media = local?.mediaStreamTrack;
   if (!media || media.readyState !== "live") return;
-  const sw = media.getSettings().width ?? 0;
-  const sh = media.getSettings().height ?? 0;
-  if (isNineSixteen(sw, sh)) return;
+  if (await shownNineSixteen(media)) return;
+  let acceptedTall = false;
   try {
-    await media.applyConstraints({
-      width: { ideal: 1080 },
-      height: { ideal: 1920 },
-      aspectRatio: { ideal: PHONE_ASPECT },
-      frameRate: { ideal: 30, max: 30 },
-    });
+    await media.applyConstraints(PHONE_LOCK);
+    acceptedTall = true;
   } catch {
-    /* a restart below asks again */
+    /* an exact pixel size below asks again */
   }
-  const now = media.getSettings();
-  if (isNineSixteen(now.width ?? 0, now.height ?? 0)) return;
+  if (await shownNineSixteen(media)) return;
+  for (const constraints of [
+    { width: { exact: 1080 }, height: { exact: 1920 }, resizeMode: "crop-and-scale", frameRate: { ideal: 30, max: 30 } },
+    { width: { exact: 720 }, height: { exact: 1280 }, resizeMode: "crop-and-scale", frameRate: { ideal: 30, max: 30 } },
+  ] as unknown as MediaTrackConstraints[]) {
+    try {
+      await media.applyConstraints(constraints);
+    } catch {
+      continue;
+    }
+    if (await shownNineSixteen(media)) return;
+  }
+  // A phone that applies aspect in sensor space, then rotates, turns a 9:16
+  // request into a 16:9 picture. The wide ratio is what comes back tall.
+  const shown = await shownSize(media);
+  if (acceptedTall && shown.width > shown.height * 1.4) {
+    try {
+      await media.applyConstraints({
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        aspectRatio: { exact: 16 / 9 },
+        resizeMode: "crop-and-scale",
+        frameRate: { ideal: 30, max: 30 },
+      } as MediaTrackConstraints);
+    } catch {
+      /* put the tall request back below */
+    }
+    if (await shownNineSixteen(media)) return;
+    try {
+      await media.applyConstraints(PHONE_LOCK);
+    } catch {
+      /* the picture already publishing stays */
+    }
+    if (await shownNineSixteen(media)) return;
+  }
   const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
   if (!restart.restartTrack) return;
   try {
-    await restart.restartTrack(capture);
+    await restart.restartTrack(phoneCameraCapture());
   } catch {
     /* the picture already publishing stays */
   }
@@ -881,15 +957,9 @@ export function VoiceRoom(props: {
         // A permission refusal is not that: asking again would prompt twice.
         const name = err instanceof Error ? err.name : "";
         if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
-        // Still 9:16. A bare retry would open LiveKit's exact 1280×720, which is 16:9.
-        await active.setCameraEnabled(true, {
-          aspectRatio: { ideal: PHONE_ASPECT },
-          resolution: {
-            width: { ideal: 720 } as unknown as number,
-            height: { ideal: 1280 } as unknown as number,
-            frameRate: { ideal: 30, max: 30 } as unknown as number,
-          },
-        } as VideoCaptureOptions, CAMERA_PUBLISH);
+        // Still 9:16, without the exact ratio that this phone rejected.
+        // A bare retry would open LiveKit's exact 1280×720, which is 16:9.
+        await active.setCameraEnabled(true, phoneCameraCapture(true), CAMERA_PUBLISH);
       }
     })()
       .then(
