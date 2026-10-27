@@ -804,6 +804,10 @@ function makeAvatar(mine) {
   el.className = "avatar hexagon" + (mine ? " mine" : "");
   const plate = document.createElement("div");
   plate.className = "plate";
+  // The crop slides this box, not the video. A transform on the video itself
+  // drops object-fit, and a tall phone camera then shows only its top.
+  const crop = document.createElement("div");
+  crop.className = "crop";
   const video = document.createElement("video");
   video.autoplay = true;
   video.muted = true;
@@ -811,7 +815,8 @@ function makeAvatar(mine) {
   const off = document.createElement("div");
   off.className = "off";
   off.textContent = "Camera off";
-  plate.append(video, off);
+  crop.append(video);
+  plate.append(crop, off);
   // the back: black, with the username in the middle (no webcam)
   const back = document.createElement("div");
   back.className = "plate-back";
@@ -831,7 +836,7 @@ function makeAvatar(mine) {
     }
   }
   world.append(el);
-  return { el, video, plate, back, tags, backName };
+  return { el, video, crop, plate, back, tags, backName };
 }
 
 /** CSS y of the eye (positive down), the same spot the three.js eye uses. */
@@ -861,7 +866,7 @@ function placeAvatar(av, p, cam) {
   const shownOpacity = opacity.toFixed(3);
   av.plate.style.opacity = shownOpacity;
   av.back.style.opacity = shownOpacity;
-  av.video.style.transform = cropTransform(p.cx, p.cy, p.zoom);
+  av.crop.style.transform = cropTransform(p.cx, p.cy, p.zoom);
 }
 
 // The crop is a 16:9 window on the 640 x 360 picture: the video is slid and
