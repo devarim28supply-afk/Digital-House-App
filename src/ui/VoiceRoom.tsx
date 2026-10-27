@@ -1254,9 +1254,9 @@ export function VoiceRoom(props: {
   //   4 or more  everyone in the grid, the Room view small at the top right
   // Phone (pointer is coarse and the short side is under 540px): the room view
   // stays hidden. You alone fill the phone. With other people the call is only
-  // them. A desktop camera stays 16:9. A phone camera is one vertical tile
-  // of that same height, beside it. Your camera is not on that call. Swipe right for your whole
-  // camera. Swipe right again there for the channel list. Swipe left opens
+  // them in one row. A desktop camera stays 16:9. Your camera is the one
+  // vertical tile of that same height on the right. Swipe right opens the
+  // channel list. Swipe left opens
   // the channel chat. When someone is sharing, that same left swipe opens
   // the screen shares instead. Tap a share to open it beside the person
   // sharing it. Swipe back to the call.
