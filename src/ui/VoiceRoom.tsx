@@ -1330,12 +1330,8 @@ export function VoiceRoom(props: {
   // Which cameras are taller than wide. Phone tiles use this: desktop stays
   // 16:9, a phone picture is the vertical tile beside it.
   const [frameWide, setFrameWide] = createSignal<Record<string, boolean>>({});
-  const [frameAspect, setFrameAspect] = createSignal<Record<string, number>>({});
-  function rememberFrame(key: string, width: number, height: number) {
-    const wide = width >= height;
-    const aspect = height > 0 ? Math.round((width / height) * 1000) / 1000 : 0;
+  function rememberFrame(key: string, wide: boolean) {
     setFrameWide((prev) => (prev[key] === wide ? prev : { ...prev, [key]: wide }));
-    setFrameAspect((prev) => (prev[key] === aspect ? prev : { ...prev, [key]: aspect }));
   }
   const setPip = (spot: PipSpot) => {
     setPipSpot(spot);
@@ -1384,7 +1380,6 @@ export function VoiceRoom(props: {
         portraitKeys: cams
           .filter((t) => !t.participant.isLocal && (wide[t.key] === false || t.participant.attributes?.dh_phone === "1"))
           .map((t) => t.key),
-        aspects: frameAspect(),
       });
       const open = screens.find((t) => t.key === openShare());
       const entered = shareView() === "open" && open ? open : undefined;
@@ -1447,15 +1442,7 @@ export function VoiceRoom(props: {
     const portraitKeys = gridKeys.filter(onPhone);
     if (portraitKeys.length > 0 && w > 0 && h > 0) {
       const packW = small ? Math.max(1, w - smallW - GAP) : w;
-      const places = deskPlan({
-        keys: gridKeys,
-        portraitKeys,
-        aspects: frameAspect(),
-        width: packW,
-        height: h,
-        cols: narrow ? 1 : cols,
-        gap: GAP,
-      });
+      const places = deskPlan({ keys: gridKeys, portraitKeys, width: packW, height: h, cols: narrow ? 1 : cols, gap: GAP });
       if (small) {
         places.roomview = {
           position: "absolute",
@@ -1793,9 +1780,9 @@ export function VoiceRoom(props: {
                 shareSlot={onSharePage(tile.key)}
                 pip={pip()}
                 onPipDrop={setPip}
-                onFrame={(width, height) => {
-                  rememberFrame(tile.key, width, height);
-                  if (pip()) setPipWide(width >= height);
+                onFrame={(wide) => {
+                  rememberFrame(tile.key, wide);
+                  if (pip()) setPipWide(wide);
                 }}
                 tile={tile}
                 version={version()}
@@ -2453,8 +2440,8 @@ function Tile(props: {
   /** phone 1-on-1: this tile is your camera, dragged onto an edge of the call */
   pip?: boolean;
   onPipDrop?: (spot: PipSpot) => void;
-  /** your camera's own picture, in pixels, so the tile can match it */
-  onFrame?: (width: number, height: number) => void;
+  /** your camera's own picture: wide when landscape, tall when portrait */
+  onFrame?: (wide: boolean) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let inset: HTMLVideoElement | undefined;
@@ -2479,7 +2466,7 @@ function Tile(props: {
     if (!t || !el) return;
     t.attach(el);
     const report = () => {
-      if (el.videoWidth && el.videoHeight) props.onFrame?.(el.videoWidth, el.videoHeight);
+      if (el.videoWidth) props.onFrame?.(el.videoWidth >= el.videoHeight);
     };
     el.addEventListener("loadedmetadata", report);
     el.addEventListener("resize", report);
