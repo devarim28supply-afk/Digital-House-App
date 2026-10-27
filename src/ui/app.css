@@ -1246,10 +1246,10 @@
   border-color: var(--green);
 }
 
-/* A webcam is the whole picture (Kaalob), never cropped to the tile. A phone
-   camera is taller than 16:9 and still fits inside, black around it. Out of
-   the grid: a tall video's own height was spilling down and the tile, which
-   hides overflow, kept only the top. */
+/* A webcam is the whole picture (Kaalob), never cropped to the tile. The
+   phone tile is the camera's own shape, so the picture meets every edge.
+   Out of the grid: a tall video's own height was spilling down and the tile,
+   which hides overflow, kept only the top. */
 .tile video {
   position: absolute;
   inset: 0;

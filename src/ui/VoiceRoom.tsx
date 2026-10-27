@@ -73,60 +73,65 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
 };
 // LiveKit's default camera is an exact 1280×720. On a phone that is a 16:9
 // crop from the top of the sensor, so a desktop only receives that slice.
-// A square ideal, and no aspect ratio, keeps the camera's own picture.
-// resizeMode "none" asks Chrome not to crop into the requested box.
+// The whole camera is the sensor's own portrait picture (usually 3:4).
+// Ideals, not exact pixels, so the browser is not forced to crop.
 function phoneCameraCapture(): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
-  const box = { ideal: 1280, max: 1280 };
   return {
     resizeMode: { ideal: "none" },
+    aspectRatio: { ideal: 3 / 4 },
     resolution: {
-      width: box as unknown as number,
-      height: box as unknown as number,
+      width: { ideal: 1080, max: 1920 } as unknown as number,
+      height: { ideal: 1440, max: 1920 } as unknown as number,
       frameRate: { ideal: 30, max: 30 } as unknown as number,
     },
   } as VideoCaptureOptions;
 }
-/** The long side over the short side. 16:9 is about 1.78, 4:3 is about 1.33. */
-function frameRatio(width: number, height: number): number {
-  const short = Math.min(width, height);
-  return short > 0 ? Math.max(width, height) / short : 0;
-}
 /**
- * If the phone still opened a 16:9 crop and the camera can do a taller
- * picture, ask for that. A failure leaves the picture already publishing.
+ * The whole phone camera, upright. 3:4 is the usual full sensor. If the
+ * camera cannot do that, use the tallest picture it offers. A 16:9 frame
+ * is the top crop and is not the picture that fills the tall tile.
  */
-async function widenPhoneCamera(active: LocalParticipant) {
-  if (!phoneCameraCapture()) return;
-  const media = active.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
-  const sw = media?.getSettings().width ?? 0;
-  const sh = media?.getSettings().height ?? 0;
-  // Already portrait or square: that is the whole camera. A wide 16:9 frame is the top crop.
-  if (!media || media.readyState !== "live" || sh >= sw || frameRatio(sw, sh) < 1.6) return;
-  let minAspect = 0;
-  let longCap = 0;
+function phoneAspect(media: MediaStreamTrack): number {
   try {
     const caps = media.getCapabilities?.();
-    minAspect = caps?.aspectRatio?.min ?? 0;
-    longCap = Math.max(caps?.width?.max ?? 0, caps?.height?.max ?? 0);
+    const min = caps?.aspectRatio?.min ?? 0;
+    const max = caps?.aspectRatio?.max ?? 0;
+    if (min > 0 && max >= min && min <= 3 / 4 && max >= 3 / 4) return 3 / 4;
+    if (min > 0 && min < 1) return Math.max(min, 0.5);
   } catch {
-    return;
+    /* 3:4 */
   }
-  // Tallest the camera offers, but not a sliver. 0.5 is 9:16.
-  const aspect = Math.max(minAspect, 0.5);
-  if (!minAspect || aspect >= 1.5) return;
-  const settings = media.getSettings();
-  const long = Math.min(1280, Math.max(settings.width ?? 0, settings.height ?? 0, longCap));
-  const short = Math.max(2, Math.round(long * (aspect < 1 ? aspect : 1 / aspect)));
-  const tall = aspect < 1;
+  return 3 / 4;
+}
+async function widenPhoneCamera(active: LocalParticipant) {
+  const capture = phoneCameraCapture();
+  if (!capture) return;
+  const local = active.getTrackPublication(Track.Source.Camera)?.track;
+  const media = local?.mediaStreamTrack;
+  const sw = media?.getSettings().width ?? 0;
+  const sh = media?.getSettings().height ?? 0;
+  if (!media || media.readyState !== "live" || (sh > 0 && sh >= sw)) return;
+  const aspect = phoneAspect(media);
+  const long = 1440;
+  const short = Math.max(2, Math.round(long * aspect));
   try {
     await media.applyConstraints({
-      width: { ideal: tall ? short : long },
-      height: { ideal: tall ? long : short },
+      width: { ideal: short },
+      height: { ideal: long },
       aspectRatio: { ideal: aspect },
       frameRate: { ideal: 30, max: 30 },
     });
+  } catch {
+    /* a restart below asks again */
+  }
+  const now = media.getSettings();
+  if ((now.height ?? 0) > 0 && (now.height ?? 0) >= (now.width ?? 0)) return;
+  const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
+  if (!restart.restartTrack) return;
+  try {
+    await restart.restartTrack({ ...capture, aspectRatio: { ideal: aspect } } as VideoCaptureOptions);
   } catch {
     /* the picture already publishing stays */
   }
@@ -887,7 +892,7 @@ export function VoiceRoom(props: {
         // A permission refusal is not that: asking again would prompt twice.
         const name = err instanceof Error ? err.name : "";
         if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
-        await active.setCameraEnabled(true, undefined, CAMERA_PUBLISH);
+        await active.setCameraEnabled(true, { aspectRatio: { ideal: 3 / 4 } } as VideoCaptureOptions, CAMERA_PUBLISH);
       }
     })()
       .then(
@@ -1325,8 +1330,12 @@ export function VoiceRoom(props: {
   // Which cameras are taller than wide. Phone tiles use this: desktop stays
   // 16:9, a phone picture is the vertical tile beside it.
   const [frameWide, setFrameWide] = createSignal<Record<string, boolean>>({});
-  function rememberFrame(key: string, wide: boolean) {
+  const [frameAspect, setFrameAspect] = createSignal<Record<string, number>>({});
+  function rememberFrame(key: string, width: number, height: number) {
+    const wide = width >= height;
+    const aspect = height > 0 ? Math.round((width / height) * 1000) / 1000 : 0;
     setFrameWide((prev) => (prev[key] === wide ? prev : { ...prev, [key]: wide }));
+    setFrameAspect((prev) => (prev[key] === aspect ? prev : { ...prev, [key]: aspect }));
   }
   const setPip = (spot: PipSpot) => {
     setPipSpot(spot);
@@ -1375,6 +1384,7 @@ export function VoiceRoom(props: {
         portraitKeys: cams
           .filter((t) => !t.participant.isLocal && (wide[t.key] === false || t.participant.attributes?.dh_phone === "1"))
           .map((t) => t.key),
+        aspects: frameAspect(),
       });
       const open = screens.find((t) => t.key === openShare());
       const entered = shareView() === "open" && open ? open : undefined;
@@ -1437,7 +1447,15 @@ export function VoiceRoom(props: {
     const portraitKeys = gridKeys.filter(onPhone);
     if (portraitKeys.length > 0 && w > 0 && h > 0) {
       const packW = small ? Math.max(1, w - smallW - GAP) : w;
-      const places = deskPlan({ keys: gridKeys, portraitKeys, width: packW, height: h, cols: narrow ? 1 : cols, gap: GAP });
+      const places = deskPlan({
+        keys: gridKeys,
+        portraitKeys,
+        aspects: frameAspect(),
+        width: packW,
+        height: h,
+        cols: narrow ? 1 : cols,
+        gap: GAP,
+      });
       if (small) {
         places.roomview = {
           position: "absolute",
@@ -1775,9 +1793,9 @@ export function VoiceRoom(props: {
                 shareSlot={onSharePage(tile.key)}
                 pip={pip()}
                 onPipDrop={setPip}
-                onFrame={(wide) => {
-                  rememberFrame(tile.key, wide);
-                  if (pip()) setPipWide(wide);
+                onFrame={(width, height) => {
+                  rememberFrame(tile.key, width, height);
+                  if (pip()) setPipWide(width >= height);
                 }}
                 tile={tile}
                 version={version()}
@@ -2435,8 +2453,8 @@ function Tile(props: {
   /** phone 1-on-1: this tile is your camera, dragged onto an edge of the call */
   pip?: boolean;
   onPipDrop?: (spot: PipSpot) => void;
-  /** your camera's own picture: wide when landscape, tall when portrait */
-  onFrame?: (wide: boolean) => void;
+  /** your camera's own picture, in pixels, so the tile can match it */
+  onFrame?: (width: number, height: number) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   let inset: HTMLVideoElement | undefined;
@@ -2461,7 +2479,7 @@ function Tile(props: {
     if (!t || !el) return;
     t.attach(el);
     const report = () => {
-      if (el.videoWidth) props.onFrame?.(el.videoWidth >= el.videoHeight);
+      if (el.videoWidth && el.videoHeight) props.onFrame?.(el.videoWidth, el.videoHeight);
     };
     el.addEventListener("loadedmetadata", report);
     el.addEventListener("resize", report);
