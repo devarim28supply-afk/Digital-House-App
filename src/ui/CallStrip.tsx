@@ -10,11 +10,12 @@ export type Caller = { identity: string; name: string; video?: MediaStream };
 
 /**
  * Videochat webcams: up to 4 in a row, the rest in a column on the right.
+ * fit keeps every person in that one row and lets the boxes shrink.
  * A camera that is off is black with the username in the middle.
  */
-export function CamRow(props: { callers: Caller[]; profiles: Map<string, Profile> }) {
-  const row = () => props.callers.slice(0, 4);
-  const side = () => props.callers.slice(4);
+export function CamRow(props: { callers: Caller[]; profiles: Map<string, Profile>; fit?: boolean }) {
+  const row = () => (props.fit ? props.callers : props.callers.slice(0, 4));
+  const side = () => (props.fit ? [] : props.callers.slice(4));
   // Index keeps each screen (and its video) in place while the list is
   // rebuilt, so a refresh never flashes anyone's webcam black.
   const tile = (c: () => Caller) => {
@@ -33,7 +34,7 @@ export function CamRow(props: { callers: Caller[]; profiles: Map<string, Profile
   };
   return (
     <>
-      <div class="call-strip">
+      <div class="call-strip" classList={{ fit: Boolean(props.fit) }}>
         <Index each={row()}>{tile}</Index>
       </div>
       <Show when={side().length}>

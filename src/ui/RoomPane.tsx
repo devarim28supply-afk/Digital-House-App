@@ -1,8 +1,9 @@
 import { Show, createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
 
-import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
+import { callFaces } from "../data/callFaces";
+import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, operationSessionUrl, roomCamOf, roomUrlOf } from "../data/store";
 import { setInRoom, watchRequest } from "../data/where";
-import { CallStrip } from "./CallStrip";
+import { CallStrip, CamRow } from "./CallStrip";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -44,9 +45,18 @@ export function RoomPane(props: {
   // The room page loads the first time it is shown, then stays loaded.
   const [roomLoaded, setRoomLoaded] = createSignal(pane() === "room");
 
+  const operation = () => props.channel.roomKey === "m2a-operation";
+  // One bunker page for the whole visit. Window and Room only tell that
+  // page which camera to use, so the src never changes and nobody drops.
+  const operationSrc = operationSessionUrl(props.serverId, props.channel.id, pane() === "room" ? "room" : "window");
+  const operationOrigin = new URL(operationSrc, location.href).origin;
+  let operationFrame: HTMLIFrameElement | undefined;
+  const tellOperation = (view: "window" | "room") =>
+    operationFrame?.contentWindow?.postMessage({ type: "dh-operation-view", view }, operationOrigin);
   // Looking at the room: the Online list says "In <room>".
+  // The Operation Room is always that window, so it counts the whole time.
   createEffect(() => {
-    if (pane() !== "room") return;
+    if (!operation() && pane() !== "room") return;
     setInRoom(props.channel.name);
     onCleanup(() => setInRoom(undefined));
   });
@@ -81,6 +91,7 @@ export function RoomPane(props: {
     if (phone() && next === "room") return;
     setPane(next);
     if (next === "room") setRoomLoaded(true);
+    if (operation()) tellOperation(next === "room" ? "room" : "window");
     try {
       localStorage.setItem(paneKey(props.channel.id), next);
     } catch {
@@ -124,11 +135,19 @@ export function RoomPane(props: {
   // (none while the tile has no room attached, and none from the Darkwood
   // Room, which has no room camera)
   const roomView = () => {
-    const cam = url() && !hasDarkwoodRoom(props.channel) ? roomCamOf(props.channel) : null;
+    const cam = url() && !hasDarkwoodRoom(props.channel) && !operation() ? roomCamOf(props.channel) : null;
     return cam ? { ...cam, username: props.username } : undefined;
+  };
+  const operationCallers = () => {
+    const faces = callFaces();
+    if (!faces || faces.channelKey !== `${props.serverId}/${props.channel.id}`) return [];
+    return faces.callers;
   };
 
   return (
+    <Show
+      when={operation()}
+      fallback={
     <div class="room-pane">
       <div class="pane-switch" role="group" aria-label={`${props.channel.name} view`}>
         <div class="pane-switch-track" classList={{ "room-selected": pane() === "room" }}>
@@ -185,5 +204,45 @@ export function RoomPane(props: {
         </Show>
       </div>
     </div>
+      }
+    >
+      <div class="room-pane operation">
+        <div class="pane-switch" role="group" aria-label={`${props.channel.name} view`}>
+          <div class="pane-switch-track" classList={{ "room-selected": pane() === "room" }}>
+            <button type="button" aria-pressed={pane() === "video"} onClick={() => show("video")}>
+              Window
+            </button>
+            <button type="button" aria-pressed={pane() === "room"} onClick={() => show("room")} disabled={phone()}>
+              Room
+            </button>
+          </div>
+        </div>
+        <div class="operation-stage">
+          <div class="operation-view">
+            <iframe
+              ref={operationFrame}
+              src={operationSrc}
+              onLoad={() => tellOperation(pane() === "room" ? "room" : "window")}
+              title={props.channel.name}
+              allow="camera; microphone; fullscreen; autoplay; pointer-lock"
+            />
+          </div>
+          <div class="operation-cams">
+            <CamRow callers={operationCallers()} profiles={props.profiles} fit />
+          </div>
+        </div>
+        <VoiceRoom
+          serverId={props.serverId}
+          channel={props.channel}
+          uid={props.uid}
+          name={props.name}
+          profiles={props.profiles}
+          teams={props.teams}
+          autoJoin
+          webcamOnly
+          onLeave={props.onLeave}
+        />
+      </div>
+    </Show>
   );
 }
