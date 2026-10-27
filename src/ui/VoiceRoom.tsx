@@ -372,6 +372,11 @@ export function VoiceRoom(props: {
    * screen share on and off (one camera and one share for both).
    */
   seats?: boolean;
+  /**
+   * Operation Room: mic and camera only. The window is the view, so this
+   * call's own tiles stay hidden, and Share screen and Stream are not here.
+   */
+  webcamOnly?: boolean;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
@@ -698,6 +703,7 @@ export function VoiceRoom(props: {
   const [streamOn, setStreamOn] = createSignal(false);
   const [streamBusy, setStreamBusy] = createSignal(false);
   async function toggleStream() {
+    if (props.webcamOnly) return;
     const me = room()?.localParticipant;
     if (!me || streamBusy()) return;
     setError("");
@@ -1134,6 +1140,7 @@ export function VoiceRoom(props: {
   }
 
   async function startStreamCam() {
+    if (props.webcamOnly) return;
     const me = room()?.localParticipant;
     const id = streamCamDevice;
     if (!me || !id) {
@@ -1222,7 +1229,7 @@ export function VoiceRoom(props: {
     setError("");
     try {
       if (kind === "mic") await toggleMicrophone();
-      if (kind === "screen") await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
+      if (kind === "screen" && !props.webcamOnly) await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That device could not be turned on.");
     }
@@ -1970,7 +1977,7 @@ export function VoiceRoom(props: {
   }
 
   return (
-    <div class="voice" classList={{ phone: Boolean(room()) && layout().phone }}>
+    <div class="voice" classList={{ phone: Boolean(room()) && layout().phone, "cams-only": Boolean(props.webcamOnly) }}>
       <Show
         when={room()}
         fallback={
@@ -2053,7 +2060,9 @@ export function VoiceRoom(props: {
                     full={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
                   />
                 </button>
-                <StreamMenu />
+                <Show when={!props.webcamOnly}>
+                  <StreamMenu />
+                </Show>
               </>
             }
           >
@@ -2064,6 +2073,7 @@ export function VoiceRoom(props: {
             )}
           </Show>
           {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
+          <Show when={!props.webcamOnly}>
           <div
             class="share-wrap"
             classList={{ hidden: !CAN_SHARE }}
@@ -2113,6 +2123,7 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
+          </Show>
           {/* Attention: flash your tile for everyone, or for one person only */}
           <div
             class="share-wrap attention-wrap"

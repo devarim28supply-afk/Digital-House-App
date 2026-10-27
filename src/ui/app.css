@@ -788,6 +788,60 @@
   background: #000;
 }
 
+/* Operation Room: the bunker window stays on top. Every webcam, including
+   yours, is one shrinking row under it. Mic and camera stay in the dock. */
+.room-pane.operation {
+  background: #000;
+}
+.operation-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: #000;
+}
+.operation-view {
+  min-width: 0;
+  min-height: 0;
+}
+.operation-view iframe,
+.operation-stage iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+.operation-cams {
+  --strip-h: 72px;
+  min-width: 0;
+  padding: 8px 10px 0;
+}
+.operation-cams .call-strip.fit {
+  width: 100%;
+  justify-content: center;
+}
+.operation-cams .strip-tile {
+  flex: 1 1 0;
+  max-width: 280px;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.room-pane.operation .voice.cams-only {
+  flex: none;
+  padding: 8px 14px 12px;
+  gap: 0;
+  background: var(--bg, #0b0b0d);
+}
+.room-pane.operation .voice.cams-only .tiles {
+  display: none;
+}
+.room-pane.operation .voice.cams-only .voice-lobby {
+  flex: none;
+  padding: 8px 0 4px;
+}
+
 /* ---- avatars --------------------------------------------------------------- */
 
 .avatar {

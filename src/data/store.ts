@@ -124,7 +124,7 @@ const GESTR_ROOMS: Record<string, GestrRoom> = {
     live: "/living/",
     cam: { localToken: "http://localhost:5176/api/livekit-token", liveToken: "/living/api/livekit-token", room: "gestr-living", wide: false },
   },
-  // the booth behind the bunker's one-way glass (M2A-access is / live)
+  // The operation booth behind the bunker's one-way glass (M2A-access is / live).
   "m2a-operation": {
     local: "http://localhost:5179/?spawn=operation",
     live: "/?spawn=operation",
@@ -153,10 +153,9 @@ export function imageSrc(image?: string) {
 
 /**
  * The tiles whose Room side is the Darkwood Room (room.html, this app's own
- * CSS 3D room where everyone walks around as their webcam). Every other
- * tile opens only its videochat for now: its Room toggle shows greyed out.
- * The older 3D rooms are still listed above (GESTR_ROOMS) but no tile opens
- * them.
+ * CSS 3D room where everyone walks around as their webcam). The Operation
+ * Room is not one of these: it opens the M2A bunker. Every other tile
+ * opens only its videochat for now, Room greyed out.
  */
 const DARKWOOD_ROOM_TILES = new Set(["gestr-living"]);
 
@@ -186,8 +185,23 @@ function linkSite(url?: string) {
   }
 }
 
+/**
+ * The M2A bunker, one page for the whole visit. Window and Room only change
+ * the camera, so switching does not reload it. People in it are the Living
+ * Room hex plate and eye, not a MetaPhysical body.
+ */
+export function operationSessionUrl(_serverId: string, _channelId: string, view: "window" | "room") {
+  const room = GESTR_ROOMS["m2a-operation"];
+  const url = new URL(ON_THIS_PC() ? room.local : room.live, location.href);
+  url.searchParams.set("spawn", "operation");
+  url.searchParams.set("view", view);
+  url.searchParams.delete("fixed");
+  return url.href;
+}
+
 /** The page a tile's Room side shows, or "" when it has none. */
 export function roomUrlOf(channel: Channel, serverId: string) {
+  if (channel.roomKey === "m2a-operation") return operationSessionUrl(serverId, channel.id, "window");
   if (!channel.roomKey && ROOM_LINK_SITES.has(linkSite(channel.url))) {
     if (PLAY_IN_PAGE.has(linkSite(channel.url))) return "/api/white-torture";
     return channel.url!;
@@ -204,7 +218,7 @@ export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
   roomKey: "gestr-living",
 };
 
-/** The booth behind the window in M2A-access: you spawn inside it. */
+/** The booth behind the bunker's window. You spawn in it. */
 export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
   name: "M2A ACCESS Operation Room",
   kind: "room",
