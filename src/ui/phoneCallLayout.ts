@@ -1,17 +1,15 @@
-// Phone videochat geometry. Desktop never calls this.
-// You alone fill the phone. With other people, one row: each desktop camera
-// stays 16:9, and your phone camera is the one vertical tile of that same
-// height on the right. Two equal columns is the crossed-out sketch.
-// Screen shares stay a full page to the right. Swipe left reaches them only
-// while someone is sharing. With nobody sharing, that swipe is the channel chat.
-// A second swipe right, while your camera is showing, opens the channel list.
+// Phone videochat geometry. Desktop uses deskPlan.
+// You alone fill the phone. With other people, two wide cameras stack full
+// width. Everyone who does not fit there sits in a small row at the bottom.
+// A wide camera stays 16:9. A phone camera stays vertical, including yours,
+// so yours is the small tall tile. Screen shares stay a full page to the right.
 
 export type PipSpot = "top" | "left" | "right" | "bottom";
 
 export type PhoneStyle = Record<string, string>;
 
 export type PhonePlan = {
-  /** duo: other people fill the call. Your camera is the page to the left. */
+  /** duo: wide cameras are the big stack. Your camera is in the small row. */
   mode: "solo" | "duo" | "stack";
   scroll: boolean;
   pipKey?: string;
@@ -38,7 +36,8 @@ export function pipSpotAt(x: number, y: number, width: number, height: number): 
 /**
  * `keys` is visual order: other people first, you last.
  * `localKey` is your camera, when you are in the call.
- * With other people, your camera is the vertical tile on the right of their row.
+ * Two wide cameras stack full width. The rest share a small row underneath.
+ * On an upright phone your own camera is vertical, so it stays in that small row.
  */
 export function phonePlan(args: {
   keys: string[];
@@ -48,7 +47,7 @@ export function phonePlan(args: {
   height: number;
   pipSpot: PipSpot;
   pipWide: boolean;
-  /** Cameras whose picture is taller than wide. Everyone else stays 16:9. */
+  /** Cameras whose picture is taller than wide, and people who joined from a phone. */
   portraitKeys?: string[];
 }): PhonePlan {
   const keys = args.keys.filter(Boolean);
@@ -63,50 +62,115 @@ export function phonePlan(args: {
     return { mode: "solo", scroll: false, grid: {}, places };
   }
 
-  const others = keys.filter((key) => key !== args.localKey);
-  const gridKeys = others.length > 0 ? others : keys;
-  const withOthers = Boolean(args.localKey && others.length > 0 && keys.includes(args.localKey));
-
-  // The drawing: desktop cameras stay 16:9. On an upright phone your camera
-  // is the one vertical tile of that same height, on the right. Not a second
-  // page, and not two equal columns.
   const portraits = new Set(args.portraitKeys ?? []);
-  const items = gridKeys.map((key) => ({ key, portrait: portraits.has(key) }));
-  if (withOthers && args.localKey) items.push({ key: args.localKey, portrait: !args.landscape });
+  const items = keys.map((key) => ({
+    key,
+    portrait: (key === args.localKey && !args.landscape) || portraits.has(key),
+  }));
+  const big: { key: string; portrait: boolean }[] = [];
+  const small: { key: string; portrait: boolean }[] = [];
+  for (const item of items) {
+    if (!item.portrait && big.length < 2) big.push(item);
+    else small.push(item);
+  }
+
+  const gap = 8;
+  const pad = 8;
   const stageW = Math.max(1, args.width);
   const stageH = Math.max(1, args.height);
+  const innerW = Math.max(1, stageW - pad * 2);
+  const innerH = Math.max(1, stageH - pad * 2);
   const ratio = (portrait: boolean) => (portrait ? 9 / 16 : 16 / 9);
-  const rowHeight = (row: { portrait: boolean }[], maxH: number) => {
-    const unit = row.reduce((sum, item) => sum + ratio(item.portrait), 0) || 1;
-    return Math.max(0, Math.min(maxH, stageW / unit));
-  };
-  const unit = items.reduce((sum, item) => sum + ratio(item.portrait), 0) || 1;
-  const oneRowH = Math.min(stageH, stageW / unit);
-  const split = items.length > 2 && oneRowH < stageH * 0.34;
-  const rows = split ? [items.slice(0, Math.ceil(items.length / 2)), items.slice(Math.ceil(items.length / 2))] : [items];
-  const gap = split ? 8 : 0;
-  const heights = rows.map((row) => rowHeight(row, (stageH - gap * (rows.length - 1)) / rows.length));
-  const totalH = heights.reduce((sum, h) => sum + h, 0) + gap * (rows.length - 1);
-  let top = Math.max(0, (stageH - totalH) / 2);
-  rows.forEach((row, r) => {
-    const h = heights[r];
-    const rowW = h * row.reduce((sum, item) => sum + ratio(item.portrait), 0);
-    let x = Math.max(0, (stageW - rowW) / 2);
-    for (const item of row) {
-      const w = h * ratio(item.portrait);
-      places[item.key] = {
-        position: "absolute",
-        left: px(x),
-        top: px(top),
-        width: px(w),
-        height: px(h),
-        zIndex: "1",
-      };
-      x += w;
-    }
-    top += h + gap;
+  const smallUnit = small.reduce((sum, item) => sum + ratio(item.portrait), 0);
+  const smallGaps = gap * Math.max(0, small.length - 1);
+  const bigGaps = gap * Math.max(0, big.length - 1);
+  const groupGap = big.length && small.length ? gap * 2 : 0;
+  let bigH = (innerW * 9) / 16;
+  let smallH = big.length ? bigH * 0.42 : innerH;
+  if (smallUnit > 0) smallH = Math.min(smallH, Math.max(0, (innerW - smallGaps) / smallUnit));
+  let total = big.length * bigH + bigGaps + groupGap + (small.length ? smallH : 0);
+  if (total > innerH && total > 0) {
+    const scale = innerH / total;
+    bigH *= scale;
+    smallH *= scale;
+    total *= scale;
+  }
+  let y = pad + Math.max(0, (innerH - total) / 2);
+  big.forEach((item, i) => {
+    const w = bigH * (16 / 9);
+    places[item.key] = box(pad + (innerW - w) / 2, y, w, bigH);
+    y += bigH;
+    if (i < big.length - 1) y += gap;
   });
-  return { mode: withOthers ? "duo" : "stack", scroll: false, grid: {}, places };
+  if (groupGap) y += groupGap;
+  if (small.length) {
+    const rowW = smallH * smallUnit + smallGaps;
+    let x = pad + Math.max(0, (innerW - rowW) / 2);
+    for (const item of small) {
+      const w = smallH * ratio(item.portrait);
+      places[item.key] = box(x, y, w, smallH);
+      x += w + gap;
+    }
+  }
+  return { mode: big.length ? "duo" : "stack", scroll: false, grid: {}, places };
+}
+
+/**
+ * Desktop grid. Every row shares one height. A desktop camera is 16:9.
+ * A phone camera is the vertical tile of that same height. Rows wrap by
+ * `cols`, and a shorter row is centred under the wider ones.
+ */
+export function deskPlan(args: {
+  keys: string[];
+  portraitKeys?: string[];
+  width: number;
+  height: number;
+  cols: number;
+  gap?: number;
+}): Record<string, PhoneStyle> {
+  const keys = args.keys.filter(Boolean);
+  const places: Record<string, PhoneStyle> = {};
+  if (keys.length === 0 || args.width <= 0 || args.height <= 0) return places;
+  const portraits = new Set(args.portraitKeys ?? []);
+  const cols = Math.max(1, Math.min(args.cols || 1, keys.length));
+  const gap = args.gap ?? 10;
+  const ratio = (key: string) => (portraits.has(key) ? 9 / 16 : 16 / 9);
+  const rows: string[][] = [];
+  for (let i = 0; i < keys.length; i += cols) rows.push(keys.slice(i, i + cols));
+  const units = rows.map((row) => row.reduce((sum, key) => sum + ratio(key), 0));
+  let tileH = Infinity;
+  rows.forEach((row, i) => {
+    const extra = gap * Math.max(0, row.length - 1);
+    tileH = Math.min(tileH, Math.max(0, (args.width - extra) / units[i]));
+  });
+  const gapsY = gap * Math.max(0, rows.length - 1);
+  if (rows.length * tileH + gapsY > args.height) {
+    tileH = Math.max(0, (args.height - gapsY) / rows.length);
+  }
+  const blockH = rows.length * tileH + gapsY;
+  let top = Math.max(0, (args.height - blockH) / 2);
+  rows.forEach((row) => {
+    const rowW = tileH * row.reduce((sum, key) => sum + ratio(key), 0) + gap * Math.max(0, row.length - 1);
+    let x = Math.max(0, (args.width - rowW) / 2);
+    for (const key of row) {
+      const w = tileH * ratio(key);
+      places[key] = box(x, top, w, tileH);
+      x += w + gap;
+    }
+    top += tileH + gap;
+  });
+  return places;
+}
+
+function box(x: number, y: number, width: number, height: number): PhoneStyle {
+  return {
+    position: "absolute",
+    left: px(x),
+    top: px(y),
+    width: px(width),
+    height: px(height),
+    zIndex: "1",
+  };
 }
 
 /** your camera | the call | the share shelf | one share entered beside the person sharing it */
