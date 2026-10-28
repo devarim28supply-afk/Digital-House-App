@@ -842,6 +842,39 @@
   padding: 8px 0 4px;
 }
 
+/* Room uses the Living Room's room screen: the view fills the pane, with
+   the same inset and frame, and the webcams sit on the bottom of it.
+   The operation window stays the big screen with the row underneath. */
+.room-pane.operation.in-room {
+  background: transparent;
+}
+.room-pane.operation.in-room .operation-stage {
+  display: block;
+  position: relative;
+  padding: 10px 14px 14px;
+}
+.room-pane.operation.in-room .operation-view {
+  position: absolute;
+  inset: 10px 14px 14px;
+}
+.room-pane.operation.in-room .operation-view iframe {
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+}
+.room-pane.operation.in-room .operation-cams {
+  position: absolute;
+  z-index: 2;
+  left: 24px;
+  right: 24px;
+  bottom: 22px;
+  padding: 0;
+  pointer-events: none;
+}
+.room-pane.operation.in-room .operation-cams .call-strip,
+.room-pane.operation.in-room .operation-cams .strip-tile {
+  pointer-events: auto;
+}
+
 /* ---- avatars --------------------------------------------------------------- */
 
 .avatar {
