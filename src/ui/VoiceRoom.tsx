@@ -560,15 +560,16 @@ export function VoiceRoom(props: {
     const gen = joinGen;
     try {
       const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
-      // The wall in a 3D room (viewOnly) is a page turned in 3D space: LiveKit's
-      // "is this video on screen?" check misjudges it and paused the wall's
-      // videos (black). The wall gets every video as it is; tiles here keep it.
+      // LiveKit pauses a video it cannot see attached on the page, and the
+      // picture goes black. The wall (viewOnly) is a page turned in 3D space.
+      // The operation room hides these tiles and plays the same tracks in the
+      // webcam row, which LiveKit does not know about. Both keep every video.
       // H.264 for everything we send: Chrome hands it to the graphics card's own
       // video encoder (NVENC), so a game holding the GPU's 3D engine near 100%
       // no longer starves the webcam and the stream (Kaalob's slow webcam).
       const phoneCap = phoneCameraCapture();
       const next = new Room({
-        adaptiveStream: !props.viewOnly,
+        adaptiveStream: !props.viewOnly && !props.webcamOnly,
         dynacast: true,
         publishDefaults: { videoCodec: "h264" },
         // Without this, LiveKit fills a missing size with exact 1280×720 (16:9).

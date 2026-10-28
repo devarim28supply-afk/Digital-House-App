@@ -28,6 +28,7 @@ import {
   setInviteCode,
   setServerOpen,
   imageSrc,
+  hiddenFromSidebar,
   isBuiltInTile,
   removeServerMember,
   saveServerSettings,
@@ -66,7 +67,11 @@ type SidebarMode = "slide" | "pinned" | "hover";
 // a tile shows up to this many faces, then "+N"
 const TILE_FACES = 5;
 // other names a tile's room goes by in people's "where"
-const TILE_ALIASES: Record<string, string[]> = { "m2a-operation": ["M2A-access"] };
+const TILE_ALIASES: Record<string, string[]> = {
+  "m2a-operation": ["M2A-access"],
+  // The tile was Living Room. People already standing there still count.
+  "gestr-living": ["Living Room"],
+};
 // how long a new chat message keeps the right sidebar slid in
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
@@ -358,8 +363,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
       const saved = recall(lastChannelKey(sid));
-      // only picture tiles are shown (Kaalob): reopen the last tile, else the first
-      const pick = list.find((c) => c.id === saved && c.kind === "room") ?? list.find((c) => c.kind === "room") ?? list[0];
+      // only picture tiles are shown: reopen the last tile, else the first.
+      // Don't Lie, White Torture, and Viper 11 stay off this list for now.
+      const shown = (c: Channel) => c.kind === "room" && !hiddenFromSidebar(c);
+      const pick = list.find((c) => c.id === saved && shown(c)) ?? list.find(shown) ?? list[0];
       setChannelId(pick?.id);
     });
     onCleanup(stop);
@@ -557,7 +564,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
 
   // Picture tiles all the way (Kaalob): # text and voice channels are no
   // longer listed (their data stays). A tile's chat lives in the right sidebar.
-  const roomTiles = () => channels().filter((c) => c.kind === "room");
+  const roomTiles = () => channels().filter((c) => c.kind === "room" && !hiddenFromSidebar(c));
   const chatsOf = (tileId: string) => channels().filter((c) => c.kind === "text" && c.parentId === tileId);
   // With a tile open, its chat sits in the right sidebar.
   const tileChat = createMemo(() => {
@@ -696,7 +703,10 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           <Show when={!dmMode()}>
           <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
-            <For each={liveStreams()}>
+            <For each={liveStreams().filter((key) => {
+              const ch = channels().find((c) => c.id === key.split("|")[1]);
+              return !ch || !hiddenFromSidebar(ch);
+            })}>
               {(key) => {
                 const [members, channelId] = key.split("|");
                 const uids = members.split(",");

@@ -44,12 +44,51 @@
 .customize-banner-edit:hover { background: #25252d; }
 .customize-avatar-row {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
   padding: 0 20px;
   margin-top: -45px;
+}
+button.avatar.big.customize-avatar {
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+}
+button.avatar.big.customize-avatar:focus-visible {
+  outline: 2px solid #def0ba;
+  outline-offset: 3px;
+}
+.customize-photo-menu {
+  position: absolute;
+  z-index: 6;
+  top: 4px;
+  left: 132px;
+  display: flex;
+  flex-direction: column;
+  width: 156px;
+  padding: 6px;
+  border: 1px solid #ffffff24;
+  border-radius: 10px;
+  background: #1c2124;
+  box-shadow: 0 12px 28px #000a;
+}
+.customize-photo-menu button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #eef5f7;
+  font: 600 12px/1.3 var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.customize-photo-menu button:hover,
+.customize-photo-menu button:focus-visible {
+  background: #ffffff18;
+  outline: none;
 }
 .avatar.big.customize-avatar {
   --avatar-border-width: 7px;

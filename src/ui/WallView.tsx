@@ -50,7 +50,7 @@ export function WallView(props: { uid: string; name: string; username: string; r
     <main class="wall">
       <Switch>
         <Match when={tile.loading}>
-          <p class="wall-note">Opening the Living Room…</p>
+          <p class="wall-note">Opening Node Lounge…</p>
         </Match>
         <Match when={tile()}>
           {(found) => (
@@ -68,7 +68,7 @@ export function WallView(props: { uid: string; name: string; username: string; r
           )}
         </Match>
         <Match when={true}>
-          <p class="wall-note">No Living Room tile in your servers yet.</p>
+          <p class="wall-note">No Node Lounge tile in your servers yet.</p>
         </Match>
       </Switch>
     </main>
