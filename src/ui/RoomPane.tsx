@@ -53,6 +53,64 @@ export function RoomPane(props: {
   let operationFrame: HTMLIFrameElement | undefined;
   const tellOperation = (view: "window" | "room") =>
     operationFrame?.contentWindow?.postMessage({ type: "dh-operation-view", view }, operationOrigin);
+  // One camera: this call already has it. The bunker must not open a second
+  // one, or the device goes black for everyone else. Frames of this person's
+  // camera are handed to that page for the hex plate.
+  let operationCamGen = 0;
+  createEffect(on(
+    () => {
+      if (!operation()) return undefined;
+      const faces = callFaces();
+      if (!faces || faces.channelKey !== `${props.serverId}/${props.channel.id}`) return undefined;
+      return faces.callers.find((c) => c.identity === props.uid)?.video;
+    },
+    (stream) => {
+      const gen = ++operationCamGen;
+      const send = (data: Record<string, unknown>, transfer?: Transferable[]) =>
+        operationFrame?.contentWindow?.postMessage({ gen, ...data }, operationOrigin, transfer ?? []);
+      if (!stream) {
+        send({ type: "dh-operation-cam", on: false });
+        return;
+      }
+      const video = document.createElement("video");
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
+      video.srcObject = stream;
+      document.body.appendChild(video);
+      video.play().catch(() => {});
+      let alive = true;
+      let busy = false;
+      const pump = () => {
+        if (!alive) return;
+        window.setTimeout(async () => {
+          if (!alive) return;
+          const win = operationFrame?.contentWindow;
+          if (!busy && win && video.readyState >= 2 && video.videoWidth > 0) {
+            busy = true;
+            try {
+              const frame = await createImageBitmap(video);
+              if (!alive || !operationFrame?.contentWindow) frame.close();
+              else send({ type: "dh-operation-frame", frame }, [frame]);
+            } catch {
+              /* this frame missed; the next one still goes */
+            }
+            busy = false;
+          }
+          if (alive) pump();
+        }, 80);
+      };
+      pump();
+      onCleanup(() => {
+        alive = false;
+        send({ type: "dh-operation-cam", on: false, gen: ++operationCamGen });
+        video.srcObject = null;
+        video.remove();
+      });
+    },
+  ));
   // Looking at the room: the Online list says "In <room>".
   // The Operation Room is always that window, so it counts the whole time.
   createEffect(() => {

@@ -26,13 +26,23 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
   const [publicName, setPublicName] = createSignal(props.profile?.callName ?? props.name);
   const maxDisplayNameLength = 24;
   const [bannerFile, setBannerFile] = createSignal<File>();
+  const [photoFile, setPhotoFile] = createSignal<File>();
+  const [photoMenu, setPhotoMenu] = createSignal(false);
   let bannerPreviewUrl: string | undefined;
+  let photoPreviewUrl: string | undefined;
   let bannerPicker: HTMLInputElement | undefined;
+  let stillPicker: HTMLInputElement | undefined;
+  let gifPicker: HTMLInputElement | undefined;
   const releaseBannerPreview = () => {
     if (bannerPreviewUrl) URL.revokeObjectURL(bannerPreviewUrl);
     bannerPreviewUrl = undefined;
   };
+  const releasePhotoPreview = () => {
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    photoPreviewUrl = undefined;
+  };
   onCleanup(releaseBannerPreview);
+  onCleanup(releasePhotoPreview);
   function clearBanner() {
     releaseBannerPreview(); setBannerFile(undefined); setBanner("");
   }
@@ -44,10 +54,33 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
     bannerPreviewUrl = URL.createObjectURL(file);
     setBannerFile(file); setBanner(bannerPreviewUrl);
   }
+  function clearPhoto() {
+    releasePhotoPreview();
+    setPhotoFile(undefined);
+    setPhoto("");
+    setPhotoMenu(false);
+  }
+  function choosePhoto(file: File | undefined, kind: "still" | "gif") {
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const gif = file.type === "image/gif" || (!file.type && ext === "gif");
+    const still = (/^image\/(png|webp|jpeg)$/.test(file.type) || (!file.type && ["png", "jpg", "jpeg", "webp"].includes(ext))) && !gif;
+    if ((kind === "gif" && !gif) || (kind === "still" && !still)) {
+      setError(kind === "gif" ? "Choose a GIF." : "Choose a PNG, JPG, or WebP picture.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) { setError("A profile picture can be up to 10 MB."); return; }
+    setError("");
+    releasePhotoPreview();
+    photoPreviewUrl = URL.createObjectURL(file);
+    setPhotoFile(file);
+    setPhoto(photoPreviewUrl);
+    setPhotoMenu(false);
+  }
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const initial = { customization: JSON.stringify(draft()), photo: photo(), banner: banner(), publicName: publicName() };
-  const profileDirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || publicName().trim() !== initial.publicName || Boolean(bannerFile());
+  const profileDirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || publicName().trim() !== initial.publicName || Boolean(bannerFile()) || Boolean(photoFile());
   const dirty = () => profileDirty() || themeDraft() !== initialLayout;
   const [warnUnsaved, setWarnUnsaved] = createSignal(false);
   let warningTimer: ReturnType<typeof setTimeout> | undefined;
@@ -70,12 +103,15 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
       const selectedTheme = themeDraft();
       const selectedProfileDirty = profileDirty();
       const selectedFile = bannerFile();
+      const selectedPhotoFile = photoFile();
       const selectedDraft = draft();
       const selectedPhoto = photo();
       const selectedBanner = banner();
       const selectedName = publicName().trim();
       const savedBanner = selectedFile ? await uploadPicture(selectedFile, { kind: "profile", name: "banner" }) : selectedBanner;
-      if (selectedProfileDirty) await saveCustomization(props.uid, selectedDraft, selectedPhoto !== (props.profile?.photo ?? "") ? selectedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined, selectedName !== (props.profile?.callName ?? props.name) ? selectedName : undefined);
+      const savedPhoto = selectedPhotoFile ? await uploadPicture(selectedPhotoFile, { kind: "profile", name: "photo" }) : selectedPhoto;
+      const photoChanged = selectedPhoto !== (props.profile?.photo ?? "") || Boolean(selectedPhotoFile);
+      if (selectedProfileDirty) await saveCustomization(props.uid, selectedDraft, photoChanged ? savedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined, selectedName !== (props.profile?.callName ?? props.name) ? selectedName : undefined);
       saveLayoutTheme(selectedTheme);
       themeSaved = true;
       props.onClose();
@@ -83,7 +119,7 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
     finally { setSaving(false); }
   }
   return <Modal title="Customize your profile" open class={warnUnsaved() ? "customize-unsaved-warning" : ""} onClose={requestClose}>
-    <div class="customize-layout">
+    <div class="customize-layout" onClick={() => setPhotoMenu(false)}>
       <aside class={`customize-preview profile-effect-${draft().effect}`} aria-label="Your profile preview">
         <div class="customize-banner" style={{ "background-color": draft().bannerColor, "background-image": banner() ? `url("${banner()}")` : "none" }}>
           <button class="customize-banner-edit" type="button" aria-label="Edit banner" title="Edit banner" onClick={() => setCategory("Banner")}>
@@ -91,7 +127,18 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
           </button>
         </div>
         <div class="customize-avatar-row">
-          <span class="avatar big customize-avatar" style={faceStyle(preview())}>{faceText(preview(), displayName(preview()))}<i class="dot" aria-hidden="true" /></span>
+          <button class="avatar big customize-avatar" type="button" style={faceStyle(preview())} aria-label="Change profile picture" aria-expanded={photoMenu()} title="Change profile picture" disabled={saving()} onClick={(e) => { e.stopPropagation(); setPhotoMenu((open) => !open); }}>
+            {faceText(preview(), displayName(preview()))}<i class="dot" aria-hidden="true" />
+          </button>
+          <Show when={photoMenu()}>
+            <div class="customize-photo-menu" role="menu" aria-label="Profile picture" onClick={(e) => e.stopPropagation()}>
+              <button type="button" role="menuitem" disabled={saving()} onClick={() => { setPhotoMenu(false); stillPicker?.click(); }}>Still picture</button>
+              <button type="button" role="menuitem" disabled={saving()} onClick={() => { setPhotoMenu(false); gifPicker?.click(); }}>GIF</button>
+              <Show when={photo()}><button type="button" role="menuitem" disabled={saving()} onClick={clearPhoto}>Remove picture</button></Show>
+            </div>
+          </Show>
+          <input ref={stillPicker} type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" hidden disabled={saving()} onChange={(e) => { choosePhoto(e.currentTarget.files?.[0], "still"); e.currentTarget.value = ""; }} />
+          <input ref={gifPicker} type="file" accept="image/gif,.gif" hidden disabled={saving()} onChange={(e) => { choosePhoto(e.currentTarget.files?.[0], "gif"); e.currentTarget.value = ""; }} />
           <span class="customize-preview-label">PROFILE PREVIEW</span>
         </div>
         <div class="customize-profile-details">
@@ -107,9 +154,9 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
       </aside>
       <nav class="customize-tabs" aria-label="Customization categories"><For each={categories}>{item => <button type="button" aria-pressed={category() === item} onClick={() => setCategory(item)}>{item}</button>}</For></nav>
       <div class="customize-options">
-        <Show when={category() === "Avatar & Decoration"}><section><h3>Avatar &amp; Decoration</h3><p>Choose a frame around your current picture.</p><div class="cosmetic-grid">
+        <Show when={category() === "Avatar & Decoration"}><section><h3>Avatar &amp; Decoration</h3><p>Click your picture on the left. Choose a still photo or a GIF, then a frame around it.</p><div class="cosmetic-grid">
           <For each={["none", "patrick", "orbit", "neon"] as const}>{id => <button type="button" class="cosmetic-choice cosmetic-avatar-choice" aria-pressed={draft().decoration === id} onClick={() => patch({ decoration: id })}><span class="avatar big" style={faceStyle({ ...preview(), customization: { ...draft(), decoration: id } })}>{faceText(preview(), props.name)}</span><span>{id === "none" ? "No decoration" : id === "patrick" ? "Patrick · animated" : id === "orbit" ? "Silver orbit" : "Neon ring"}</span><Show when={draft().decoration === id}><b aria-hidden="true">✓</b></Show></button>}</For>
-        </div><div class="patrick-asset"><img src={PATRICK_GIF} alt="Animated Patrick Star artwork" /><div><h4>Patrick Star GIF</h4><p>Use the animation as a decoration around your avatar.</p><div class="cosmetic-actions"><button class="btn" aria-pressed={draft().decoration === "patrick"} onClick={() => patch({ decoration: "patrick" })}>Use as decoration</button></div></div></div><div class="cosmetic-actions"><button class="btn" onClick={() => setPhoto("")}>Remove avatar picture</button><button class="btn" onClick={clearBanner}>Remove banner image</button></div></section></Show>
+        </div><div class="patrick-asset"><img src={PATRICK_GIF} alt="Animated Patrick Star artwork" /><div><h4>Patrick Star GIF</h4><p>Use the animation as a decoration around your avatar.</p><div class="cosmetic-actions"><button class="btn" aria-pressed={draft().decoration === "patrick"} onClick={() => patch({ decoration: "patrick" })}>Use as decoration</button></div></div></div><div class="cosmetic-actions"><button class="btn" onClick={clearPhoto}>Remove avatar picture</button><button class="btn" onClick={clearBanner}>Remove banner image</button></div></section></Show>
         <Show when={category() === "Nameplate"}><section><h3>Nameplate</h3><p>Choose one of eight animated nameplates. Preview it on your name bar before saving.</p>
           <div class="nameplate-picker"><For each={NAMEPLATE_OPTIONS}>{option => <button type="button" class={`nameplate-option ${nameplateClass(option.id)}`} aria-pressed={draft().nameplate === option.id} disabled={saving()} onClick={() => patch({ nameplate: option.id })}><span class="nameplate-option-label">{option.label}</span><Show when={draft().nameplate === option.id}><span class="nameplate-option-check" aria-hidden="true">✓</span></Show></button>}</For></div>
           <button class="btn nameplate-clear" type="button" aria-pressed={draft().nameplate === "none"} disabled={saving()} onClick={() => patch({ nameplate: "none" })}>No nameplate</button>

@@ -185,6 +185,21 @@ function linkSite(url?: string) {
   }
 }
 
+/** Off the left sidebar for now. The channels stay. */
+const HIDDEN_SIDEBAR_SITES = new Set([
+  "dont-lie.vercel.app",
+  "viperoneone.com",
+  "rimyshrimp-white-torture-br.vercel.app",
+]);
+
+export function hiddenFromSidebar(channel: Channel) {
+  const name = channel.name.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, "");
+  if (name === "dontlie" || name.startsWith("dontlie") || name === "whitetorture" || name.startsWith("whitetorture") || name === "viper11" || name.startsWith("viper11")) {
+    return true;
+  }
+  return HIDDEN_SIDEBAR_SITES.has(linkSite(channel.url));
+}
+
 /**
  * The M2A bunker, one page for the whole visit. Window and Room only change
  * the camera, so switching does not reload it. People in it are the Living
@@ -212,7 +227,7 @@ export function roomUrlOf(channel: Channel, serverId: string) {
 }
 
 export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
-  name: "Living Room",
+  name: "Node Lounge",
   kind: "room",
   image: "/living.png",
   roomKey: "gestr-living",
@@ -229,7 +244,7 @@ export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
 /** The home server's built-in tiles, top to bottom, each with its own chat. */
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: OPERATION_TILE, chat: "operation-room" },
-  { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #livingroom-chat
+  { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #nodelounge-chat
 ];
 
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
@@ -601,9 +616,9 @@ export async function restoreHomeMembers(sid: string) {
 
 /**
  * The home server's built-in tiles, each with its chat, made once: the
- * Living Room (#livingroom-chat) and the M2A ACCESS Operation Room
- * (#operation-room), in that order above the other channels. Also renames
- * an older "Living" tile and gives a tile without one its chat.
+ * M2A ACCESS Operation Room (#operation-room) and Node Lounge
+ * (#nodelounge-chat), in that order above the other channels. Also renames
+ * an older Living Room tile and its chat, and gives a tile without one its chat.
  */
 export async function ensureHomeTiles(sid: string, channels: Channel[]) {
   const channelsRef = collection(db, "servers", sid, "channels");
@@ -619,8 +634,11 @@ export async function ensureHomeTiles(sid: string, channels: Channel[]) {
     } else if (tile.name !== spec.name || tile.position !== position) {
       await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position });
     }
-    if (!channels.some((c) => c.parentId === tile!.id)) {
+    const text = channels.find((c) => c.kind === "text" && c.parentId === tile.id);
+    if (!text) {
       await addDoc(channelsRef, { name: chat, kind: "text", position, parentId: tile.id });
+    } else if (text.name !== chat) {
+      await updateDoc(doc(channelsRef, text.id), { name: chat });
     }
   }
 }
