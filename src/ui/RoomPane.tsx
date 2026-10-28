@@ -206,7 +206,7 @@ export function RoomPane(props: {
     </div>
       }
     >
-      <div class="room-pane operation">
+      <div class="room-pane operation" classList={{ "in-room": pane() === "room" }}>
         <div class="pane-switch" role="group" aria-label={`${props.channel.name} view`}>
           <div class="pane-switch-track" classList={{ "room-selected": pane() === "room" }}>
             <button type="button" aria-pressed={pane() === "video"} onClick={() => show("video")}>
