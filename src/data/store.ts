@@ -644,12 +644,18 @@ export async function restoreHomeMembers(sid: string) {
   try {
     const snap = await getDocs(query(collection(db, "members"), where("status", "==", "approved")));
     const uids = snap.docs.map((d) => d.id);
+    const before = await getDoc(doc(db, "servers", sid));
+    const existing = new Set<string>((before.data()?.memberUids as string[] | undefined) ?? []);
+    const added = uids.filter((u) => !existing.has(u));
+    const wasOpen = before.data()?.open === true;
     for (let i = 0; i < uids.length; i += 100) {
       const chunk = uids.slice(i, i + 100);
       if (chunk.length) await updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(...chunk) });
     }
-    await updateDoc(doc(db, "servers", sid), { open: true });
-    audit("member.add", { serverId: sid, detail: `restored ${uids.length} approved members` });
+    if (!wasOpen) await updateDoc(doc(db, "servers", sid), { open: true });
+    // only the pure routine re-check (nothing actually changed) stays quiet;
+    // log only when this run truly added someone or opened the server
+    if (added.length || !wasOpen) audit("member.add", { serverId: sid, detail: `restored ${added.length} approved member${added.length === 1 ? "" : "s"}` });
   } catch (err) {
     restoredHomes.delete(sid);
     throw err;
