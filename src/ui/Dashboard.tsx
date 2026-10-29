@@ -2,20 +2,24 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 
 import { ACTION_LABEL, type AuditEntry, audit, watchAudit } from "../data/audit";
 import { availabilityStatus } from "../data/status";
+import { watchAllFeedback } from "../data/feedback";
 import { type Profile, type Server, ONLINE_WINDOW_MS, displayName, watchAllServers, watchPresence } from "../data/store";
-import { access } from "../firebase";
+import { Inbox } from "./Feedback";
+import { access, auth } from "../firebase";
+import { OversightBody } from "./Oversight";
 import { faceStyle, faceText } from "./Shell";
 import "./dashboard.css";
 
 /*
- * Dashboard: staff's one place to see how Darkwood Node is doing right now —
- * join requests, every member's standing (approve, deny, suspend, ban,
- * restore), who is online and where, every server's size, and the live audit
- * trail. Calls the same access.admin methods the bunker's own admin panel
- * uses (members/{uid}.status and .roles — M2A-Access-Control's rules let
- * staff write them). Nothing here is new data: it is Roles' members list,
- * Oversight's server list, presence, and the audit log, brought together and
- * kept live.
+ * Dashboard: staff's one place for all of it — join requests, every member's
+ * standing (approve, deny, suspend, ban, restore), who is online and where,
+ * every server's size, looking into any server (Oversight), answering
+ * feedback (Inbox), who committed/pushed/deployed what (Activity), and the
+ * live audit trail. Calls the same access.admin methods the bunker's own
+ * admin panel uses (members/{uid}.status and .roles — M2A-Access-Control's
+ * rules let staff write them). Nothing here is new data: it is Roles'
+ * members list, Oversight's server list, Feedback's inbox, Activity's feed,
+ * presence, and the audit log, brought together in one place and kept live.
  */
 
 type Role = "staff" | "admin" | "develop";
@@ -29,18 +33,71 @@ type MemberRow = {
   roles?: Partial<Record<Role, boolean>>;
 };
 
-type Tab = "overview" | "members" | "online" | "servers" | "audit";
+export type Page = "insights" | "tools";
+export type Section = "overview" | "members" | "online" | "servers" | "feedback" | "audit";
 type Confirm = { row: MemberRow; status: Status; label: string };
 
-export function DashboardDialog(props: { open: boolean; onClose: () => void; profiles: Map<string, Profile> }) {
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "members", label: "Members" },
+  { id: "online", label: "Online" },
+  { id: "servers", label: "Servers" },
+  { id: "feedback", label: "Feedback" },
+  { id: "audit", label: "Audit log" },
+];
+
+const ACTIVITY_SEEN_KEY = "dh_activity_seen";
+const ACTIVITY_POLL_MS = 60_000;
+function lastActivitySeen() {
+  try {
+    const v = Number(localStorage.getItem(ACTIVITY_SEEN_KEY));
+    if (v) return v;
+  } catch {
+    /* private mode */
+  }
+  const now = Date.now();
+  try {
+    localStorage.setItem(ACTIVITY_SEEN_KEY, String(now));
+  } catch {
+    /* private mode */
+  }
+  return now;
+}
+
+export function DashboardDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  profiles: Map<string, Profile>;
+  uid: string;
+  name: string;
+  username: string;
+  initialPage?: Page;
+  focusSection?: Section;
+}) {
   return (
     <Show when={props.open}>
-      <DashboardScreen onClose={props.onClose} profiles={props.profiles} />
+      <DashboardScreen
+        onClose={props.onClose}
+        profiles={props.profiles}
+        uid={props.uid}
+        name={props.name}
+        username={props.username}
+        initialPage={props.initialPage}
+        focusSection={props.focusSection}
+      />
     </Show>
   );
 }
 
-function DashboardScreen(props: { onClose: () => void; profiles: Map<string, Profile> }) {
+function DashboardScreen(props: {
+  onClose: () => void;
+  profiles: Map<string, Profile>;
+  uid: string;
+  name: string;
+  username: string;
+  initialPage?: Page;
+  focusSection?: Section;
+}) {
   const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
   onMount(() => window.addEventListener("keydown", onKey));
   onCleanup(() => window.removeEventListener("keydown", onKey));
@@ -53,23 +110,40 @@ function DashboardScreen(props: { onClose: () => void; profiles: Map<string, Pro
           ✕
         </button>
       </header>
-      <div class="dashboard-screen-body">
-        <DashboardBody profiles={props.profiles} />
-      </div>
+      <DashboardBody
+        profiles={props.profiles}
+        uid={props.uid}
+        name={props.name}
+        username={props.username}
+        initialPage={props.initialPage}
+        focusSection={props.focusSection}
+      />
     </div>
   );
 }
 
-function DashboardBody(props: { profiles: Map<string, Profile> }) {
-  const [tab, setTab] = createSignal<Tab>("overview");
+function DashboardBody(props: {
+  profiles: Map<string, Profile>;
+  uid: string;
+  name: string;
+  username: string;
+  initialPage?: Page;
+  focusSection?: Section;
+}) {
+  const [page, setPage] = createSignal<Page>(props.initialPage ?? "insights");
   const [members, setMembers] = createSignal<MemberRow[] | undefined>();
   const [membersError, setMembersError] = createSignal("");
+  const [memberQuery, setMemberQuery] = createSignal("");
   const [busy, setBusy] = createSignal(new Set<string>());
   const [servers, setServers] = createSignal<Server[] | undefined>();
   const [serversError, setServersError] = createSignal("");
   const [presence, setPresence] = createSignal<Map<string, import("../data/store").Presence>>(new Map());
   const [entries, setEntries] = createSignal<AuditEntry[]>([]);
+  const [auditQuery, setAuditQuery] = createSignal("");
   const [now, setNow] = createSignal(Date.now());
+  const [workTimes, setWorkTimes] = createSignal<number[]>([]);
+  const [activitySeen, setActivitySeen] = createSignal(lastActivitySeen());
+  const [feedbackNew, setFeedbackNew] = createSignal(0);
 
   const nameOf = (uid: string, row?: MemberRow) =>
     displayName(props.profiles.get(uid) ?? (row ? { name: row.name ?? "", username: row.username ?? "" } : undefined), row?.name || row?.username || "Member");
@@ -83,35 +157,99 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
     }
   }
 
+  // Commits, pushes, deploys and pull requests, for the Activity tab's badge
+  // (the same count ActivityPanel used to poll before Activity moved in here).
+  async function pollWork() {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await fetch("/api/activity", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const d = (await res.json()) as {
+        repos: { commits: { at: string }[]; pushes: { at: string }[]; pulls: { at: string }[] }[];
+        deploys: { at?: string }[];
+      };
+      setWorkTimes(
+        [
+          ...d.repos.flatMap((r) => [...r.commits, ...r.pushes, ...r.pulls].map((x) => Date.parse(x.at))),
+          ...d.deploys.map((x) => Date.parse(x.at ?? "")),
+        ].filter((t) => !Number.isNaN(t)),
+      );
+    } catch {
+      /* try again next minute */
+    }
+  }
+
   onMount(() => {
     void loadMembers();
     const stopServers = watchAllServers(setServers, () => setServersError("Could not load the servers."));
     const stopPresence = watchPresence(setPresence);
     const stopAudit = watchAudit(setEntries);
+    const stopFeedback = watchAllFeedback((list) => setFeedbackNew(list.filter((f) => f.status === "new").length), () => {});
+    void pollWork();
+    if (props.initialPage === "tools") markActivitySeen();
+    if (props.focusSection) {
+      const id = `dashboard-section-${props.focusSection}`;
+      window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+    }
     const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+    const workTick = window.setInterval(() => void pollWork(), ACTIVITY_POLL_MS);
     onCleanup(() => {
       stopServers();
       stopPresence();
       stopAudit();
+      stopFeedback();
       window.clearInterval(tick);
+      window.clearInterval(workTick);
     });
   });
 
-  const approved = createMemo(() => members()?.filter((m) => m.status === "approved") ?? []);
-  const pending = createMemo(() => members()?.filter((m) => m.status === "pending") ?? []);
-  const denied = createMemo(() => members()?.filter((m) => m.status === "denied") ?? []);
-  const suspended = createMemo(() => members()?.filter((m) => m.status === "suspended") ?? []);
-  const banned = createMemo(() => members()?.filter((m) => m.status === "banned") ?? []);
-  const staffMembers = createMemo(() => approved().filter((m) => m.roles?.staff || m.roles?.develop));
-  const admins = createMemo(() => approved().filter((m) => m.roles?.admin));
-  const developers = createMemo(() => approved().filter((m) => m.roles?.develop));
+  const activityUnseen = createMemo(
+    () => [...workTimes(), ...entries().filter((e) => e.uid !== props.uid).map((e) => e.at)].filter((t) => t > activitySeen()).length,
+  );
+  function markActivitySeen() {
+    const now = Date.now();
+    setActivitySeen(now);
+    try {
+      localStorage.setItem(ACTIVITY_SEEN_KEY, String(now));
+    } catch {
+      /* private mode */
+    }
+  }
+  function selectPage(id: Page) {
+    setPage(id);
+    if (id === "tools") markActivitySeen();
+  }
+  const jump = (id: Section) =>
+    document.getElementById(`dashboard-section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const matches = (row: MemberRow, term: string) =>
+    !term || `${nameOf(row.uid, row)} ${row.username ?? ""}`.toLowerCase().includes(term);
+
+  const byStatus = (status: Status) => {
+    const term = memberQuery().trim().toLowerCase();
+    return (members() ?? []).filter((m) => m.status === status && matches(m, term));
+  };
+  const approved = createMemo(() => byStatus("approved"));
+  const pending = createMemo(() => byStatus("pending"));
+  const denied = createMemo(() => byStatus("denied"));
+  const suspended = createMemo(() => byStatus("suspended"));
+  const banned = createMemo(() => byStatus("banned"));
+  const pendingTotal = createMemo(() => members()?.filter((m) => m.status === "pending").length ?? 0);
+
+  const allApproved = createMemo(() => members()?.filter((m) => m.status === "approved") ?? []);
+  const staffMembers = createMemo(() => allApproved().filter((m) => m.roles?.staff || m.roles?.develop));
+  const admins = createMemo(() => allApproved().filter((m) => m.roles?.admin));
+  const developers = createMemo(() => allApproved().filter((m) => m.roles?.develop));
+  const suspendedTotal = createMemo(() => members()?.filter((m) => m.status === "suspended").length ?? 0);
+  const bannedTotal = createMemo(() => members()?.filter((m) => m.status === "banned").length ?? 0);
 
   const isOnline = (uid: string) => {
     const p = presence().get(uid);
     if (!p) return false;
     return availabilityStatus(props.profiles.get(uid)?.availability) !== "invisible" && now() - p.lastSeen < ONLINE_WINDOW_MS;
   };
-  const online = createMemo(() => approved().filter((m) => isOnline(m.uid)));
+  const online = createMemo(() => allApproved().filter((m) => isOnline(m.uid)));
 
   const recent24h = createMemo(() => entries().filter((e) => now() - e.at < 24 * 60 * 60_000));
   const topActions = createMemo(() => {
@@ -120,6 +258,7 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   });
   const maxTopCount = createMemo(() => Math.max(1, ...topActions().map((t) => t[1])));
+  const recentFeed = createMemo(() => entries().slice(0, 6));
 
   const AUDIT_FOR: Record<Status, "member.approve" | "member.deny" | "member.suspend" | "member.ban" | "member.restore"> = {
     approved: "member.approve",
@@ -156,277 +295,377 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
   const [confirm, setConfirm] = createSignal<Confirm | undefined>();
   const ask = (row: MemberRow, status: Status, label: string) => setConfirm({ row, status, label });
 
-  const TABS: { id: Tab; label: string; badge?: () => number }[] = [
-    { id: "overview", label: "Overview" },
-    { id: "members", label: "Members", badge: () => pending().length },
-    { id: "online", label: "Online", badge: () => online().length },
-    { id: "servers", label: "Servers" },
-    { id: "audit", label: "Audit log" },
-  ];
+  const filteredEntries = createMemo(() => {
+    const term = auditQuery().trim().toLowerCase();
+    const list = entries().slice(0, 300);
+    if (!term) return list;
+    return list.filter((e) => {
+      const label = ACTION_LABEL[e.action as keyof typeof ACTION_LABEL] ?? e.action;
+      return `${nameOf(e.uid)} ${label} ${e.target ?? ""} ${e.detail ?? ""}`.toLowerCase().includes(term);
+    });
+  });
+  const auditDays = createMemo(() => {
+    const groups: { day: string; items: AuditEntry[] }[] = [];
+    for (const e of filteredEntries()) {
+      const day = new Date(e.at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      const last = groups[groups.length - 1];
+      if (last && last.day === day) last.items.push(e);
+      else groups.push({ day, items: [e] });
+    }
+    return groups;
+  });
+  const actionAccent = (action: string) =>
+    action.startsWith("member.") ? "accent-green" : action === "oversight.view" ? "accent-amber" : "accent-dim";
 
   return (
     <div class="dashboard">
-      <div class="dashboard-tabs" role="tablist">
-        <For each={TABS}>
-          {(t) => (
-            <button
-              type="button"
-              class="dashboard-tab"
-              role="tab"
-              aria-selected={tab() === t.id}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-              <Show when={t.badge && t.badge() > 0}>
-                <span class="dashboard-badge">{t.badge?.()}</span>
-              </Show>
-            </button>
-          )}
-        </For>
+      <div class="dashboard-toolbar">
+        <div class="dashboard-pages" role="tablist">
+          <button type="button" class="dashboard-page-btn" classList={{ active: page() === "insights" }} onClick={() => selectPage("insights")}>
+            Insights
+          </button>
+          <button type="button" class="dashboard-page-btn" classList={{ active: page() === "tools" }} onClick={() => selectPage("tools")}>
+            Tools
+            <Show when={activityUnseen() > 0}>
+              <span class="dashboard-badge">{activityUnseen() > 99 ? "99+" : activityUnseen()}</span>
+            </Show>
+          </button>
+        </div>
+        <Show when={page() === "insights"}>
+          <div class="dashboard-jumps">
+            <For each={SECTIONS}>
+              {(s) => (
+                <button type="button" class="dashboard-jump" onClick={() => jump(s.id)}>
+                  {s.label}
+                  <Show when={s.id === "members" && pendingTotal() > 0}> ({pendingTotal()})</Show>
+                  <Show when={s.id === "online" && online().length > 0}> ({online().length})</Show>
+                  <Show when={s.id === "feedback" && feedbackNew() > 0}> ({feedbackNew()})</Show>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
       </div>
 
-      <Show when={tab() === "overview"}>
-        <div class="dashboard-stats">
-          <StatTile label="Servers" value={servers()?.length ?? "…"} />
-          <StatTile label="Approved members" value={approved().length || (members() ? 0 : "…")} />
-          <StatTile label="Online now" value={online().length} />
-          <StatTile label="Pending" value={pending().length} warn={pending().length > 0} />
-          <StatTile label="Staff" value={staffMembers().length} />
-          <StatTile label="Admins" value={admins().length} />
-          <StatTile label="Developers" value={developers().length} />
-          <StatTile label="Suspended" value={suspended().length} warn={suspended().length > 0} />
-          <StatTile label="Banned" value={banned().length} warn={banned().length > 0} />
-        </div>
-        <h3 class="dashboard-subhead">Busiest in the last 24 hours</h3>
-        <Show when={topActions().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
-          <div class="dashboard-bars">
-            <For each={topActions()}>
-              {([action, count]) => (
-                <div class="dashboard-bar-row">
-                  <span class="dashboard-bar-label">{ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? action}</span>
-                  <div class="dashboard-bar-track">
-                    <div class="dashboard-bar-fill" style={{ width: `${(count / maxTopCount()) * 100}%` }} />
-                  </div>
-                  <span class="dashboard-bar-count">{count}</span>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </Show>
+      <div class="dashboard-content">
+        <Show when={page() === "insights"}>
+        <div class="dashboard-grid">
+          <section id="dashboard-section-overview" class="dashboard-section">
+            <h1 class="dashboard-title">Overview</h1>
+            <p class="modal-text">Darkwood Node, right now.</p>
+            <div class="dashboard-stats">
+              <StatTile label="Servers" value={servers()?.length ?? "…"} />
+              <StatTile label="Approved members" value={allApproved().length || (members() ? 0 : "…")} />
+              <StatTile label="Online now" value={online().length} accent="green" />
+              <StatTile label="Pending" value={pendingTotal()} accent={pendingTotal() > 0 ? "amber" : undefined} />
+              <StatTile label="Staff" value={staffMembers().length} />
+              <StatTile label="Admins" value={admins().length} />
+              <StatTile label="Developers" value={developers().length} />
+              <StatTile label="Suspended" value={suspendedTotal()} accent={suspendedTotal() > 0 ? "amber" : undefined} />
+              <StatTile label="Banned" value={bannedTotal()} accent={bannedTotal() > 0 ? "red" : undefined} />
+            </div>
 
-      <Show when={tab() === "members"}>
-        <Show when={membersError()}>
-          <p class="roles-error" role="alert">
-            {membersError()}
-          </p>
-        </Show>
-        <Show when={confirm()}>
-          {(c) => (
-            <div class="roles-confirm" role="alertdialog" aria-label={`Confirm ${c().label}`}>
-              <p class="modal-text">
-                {c().label} {nameOf(c().row.uid, c().row)}? {c().status === "banned" && "This locks them out of the whole app."}
-                {c().status === "suspended" && "This locks them out of the whole app until restored."}
+            <h3 class="dashboard-subhead">Busiest in the last 24 hours</h3>
+            <Show when={topActions().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
+              <div class="dashboard-bars">
+                <For each={topActions()}>
+                  {([action, count]) => (
+                    <div class="dashboard-bar-row">
+                      <span class="dashboard-bar-label">{ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? action}</span>
+                      <div class="dashboard-bar-track">
+                        <div class="dashboard-bar-fill" style={{ width: `${(count / maxTopCount()) * 100}%` }} />
+                      </div>
+                      <span class="dashboard-bar-count">{count}</span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </section>
+
+          <div class="dashboard-masonry">
+          <section id="dashboard-section-members" class="dashboard-section">
+            <h2 class="dashboard-title">Members</h2>
+            <p class="modal-text">Everyone who has ever asked to join, and what you've decided.</p>
+            <input
+              class="roles-search"
+              type="search"
+              placeholder="Find a member"
+              aria-label="Find a member"
+              value={memberQuery()}
+              onInput={(e) => setMemberQuery(e.currentTarget.value)}
+            />
+            <Show when={membersError()}>
+              <p class="roles-error" role="alert">
+                {membersError()}
               </p>
-              <div class="modal-actions">
-                <button
-                  class="btn"
-                  type="button"
-                  onClick={() => {
-                    const { row, status } = c();
-                    setConfirm(undefined);
-                    void setStatus(row, status);
-                  }}
-                >
-                  Yes
-                </button>
-                <button class="btn" type="button" onClick={() => setConfirm(undefined)}>
-                  No
-                </button>
+            </Show>
+            <Show when={confirm()}>
+              {(c) => (
+                <div class="roles-confirm" role="alertdialog" aria-label={`Confirm ${c().label}`}>
+                  <p class="modal-text">
+                    {c().label} {nameOf(c().row.uid, c().row)}? {c().status === "banned" && "This locks them out of the whole app."}
+                    {c().status === "suspended" && "This locks them out of the whole app until restored."}
+                  </p>
+                  <div class="modal-actions">
+                    <button
+                      class="btn"
+                      type="button"
+                      onClick={() => {
+                        const { row, status } = c();
+                        setConfirm(undefined);
+                        void setStatus(row, status);
+                      }}
+                    >
+                      Yes
+                    </button>
+                    <button class="btn" type="button" onClick={() => setConfirm(undefined)}>
+                      No
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Show>
+            <Show when={members()} fallback={<p class="modal-text">Loading…</p>}>
+              <h3 class="dashboard-subhead">Waiting to join ({pending().length})</h3>
+              <div class="people-list find-list dashboard-people">
+                <For each={pending()} fallback={<p class="modal-text">Nobody is waiting.</p>}>
+                  {(row) => (
+                    <div class="person">
+                      <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                        {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                      </span>
+                      <span class="member-name">
+                        {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                      </span>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
+                        Approve
+                      </button>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "denied")}>
+                        Deny
+                      </button>
+                    </div>
+                  )}
+                </For>
               </div>
-            </div>
-          )}
-        </Show>
-        <Show when={members()} fallback={<p class="modal-text">Loading…</p>}>
-          <h3 class="dashboard-subhead">Waiting to join ({pending().length})</h3>
-          <div class="people-list find-list">
-            <For each={pending()} fallback={<p class="modal-text">Nobody is waiting.</p>}>
-              {(row) => (
-                <div class="person">
-                  <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
-                    {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
-                  </span>
-                  <span class="member-name">
-                    {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
-                  </span>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
-                    Approve
-                  </button>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "denied")}>
-                    Deny
-                  </button>
-                </div>
-              )}
-            </For>
-          </div>
 
-          <h3 class="dashboard-subhead">Approved ({approved().length})</h3>
-          <div class="people-list find-list">
-            <For each={approved()} fallback={<p class="modal-text">No approved members.</p>}>
-              {(row) => (
-                <div class="person">
-                  <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
-                    {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
-                  </span>
-                  <span class="member-name">
-                    {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
-                  </span>
-                  <Show when={row.roles?.staff || row.roles?.develop}>
-                    <span class="dashboard-chip">Staff</span>
-                  </Show>
-                  <Show when={row.roles?.admin}>
-                    <span class="dashboard-chip">Admin</span>
-                  </Show>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
-                    Suspend
-                  </button>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
-                    Ban
-                  </button>
-                </div>
-              )}
-            </For>
-          </div>
+              <h3 class="dashboard-subhead">Approved ({approved().length})</h3>
+              <div class="people-list find-list dashboard-people">
+                <For each={approved()} fallback={<p class="modal-text">No approved members.</p>}>
+                  {(row) => (
+                    <div class="person">
+                      <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                        {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                      </span>
+                      <span class="member-name">
+                        {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                      </span>
+                      <Show when={row.roles?.staff || row.roles?.develop}>
+                        <span class="dashboard-pill staff">Staff</span>
+                      </Show>
+                      <Show when={row.roles?.admin}>
+                        <span class="dashboard-pill">Admin</span>
+                      </Show>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
+                        Suspend
+                      </button>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                        Ban
+                      </button>
+                    </div>
+                  )}
+                </For>
+              </div>
 
-          <Show when={suspended().length}>
-            <h3 class="dashboard-subhead">Suspended ({suspended().length})</h3>
-            <div class="people-list find-list">
-              <For each={suspended()}>
+              <Show when={suspended().length}>
+                <details class="dashboard-group" open>
+                  <summary class="dashboard-subhead">Suspended ({suspended().length})</summary>
+                  <div class="people-list find-list dashboard-people">
+                    <For each={suspended()}>
+                      {(row) => (
+                        <div class="person">
+                          <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                            {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                          </span>
+                          <span class="member-name">
+                            {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                          </span>
+                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
+                            Restore
+                          </button>
+                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                            Ban
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </details>
+              </Show>
+
+              <Show when={banned().length}>
+                <details class="dashboard-group" open>
+                  <summary class="dashboard-subhead">Banned ({banned().length})</summary>
+                  <div class="people-list find-list dashboard-people">
+                    <For each={banned()}>
+                      {(row) => (
+                        <div class="person">
+                          <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                            {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                          </span>
+                          <span class="member-name">
+                            {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                          </span>
+                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
+                            Restore
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </details>
+              </Show>
+
+              <Show when={denied().length}>
+                <details class="dashboard-group">
+                  <summary class="dashboard-subhead">Denied ({denied().length})</summary>
+                  <div class="people-list find-list dashboard-people">
+                    <For each={denied()}>
+                      {(row) => (
+                        <div class="person">
+                          <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                            {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                          </span>
+                          <span class="member-name">
+                            {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                          </span>
+                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
+                            Reopen
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </details>
+              </Show>
+            </Show>
+          </section>
+
+          <section id="dashboard-section-online" class="dashboard-section">
+            <h2 class="dashboard-title">Online</h2>
+            <p class="modal-text">{online().length} online right now.</p>
+            <div class="people-list find-list dashboard-people">
+              <For each={online()} fallback={<p class="modal-text">Nobody is online.</p>}>
                 {(row) => (
                   <div class="person">
                     <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
                       {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                      <span class="dot" />
                     </span>
-                    <span class="member-name">
-                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
-                    </span>
-                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
-                      Restore
-                    </button>
-                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
-                      Ban
-                    </button>
+                    <span class="member-name">{nameOf(row.uid, row)}</span>
+                    <span class="dashboard-where">{presence().get(row.uid)?.where || "—"}</span>
                   </div>
                 )}
               </For>
             </div>
-          </Show>
+          </section>
 
-          <Show when={banned().length}>
-            <h3 class="dashboard-subhead">Banned ({banned().length})</h3>
-            <div class="people-list find-list">
-              <For each={banned()}>
-                {(row) => (
-                  <div class="person">
-                    <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
-                      {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
-                    </span>
-                    <span class="member-name">
-                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
-                    </span>
-                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
-                      Restore
-                    </button>
-                  </div>
-                )}
-              </For>
+          <section id="dashboard-section-servers" class="dashboard-section">
+            <h2 class="dashboard-title">Servers</h2>
+            <p class="modal-text">Every server except DMs, same as Oversight on the Tools page.</p>
+            <Show when={serversError()}>
+              <p class="roles-error" role="alert">
+                {serversError()}
+              </p>
+            </Show>
+            <div class="people-list find-list dashboard-people">
+              <Show when={servers()} fallback={<p class="modal-text">Loading…</p>}>
+                <For each={servers()} fallback={<p class="modal-text">No servers.</p>}>
+                  {(s) => (
+                    <div class="person">
+                      <span class="member-name">{s.name}</span>
+                      <span class="dashboard-pill">{s.memberUids.length} member{s.memberUids.length === 1 ? "" : "s"}</span>
+                      <span class="dashboard-pill" classList={{ staff: Boolean(s.open) }}>{s.open ? "Open" : "Invite only"}</span>
+                      <span class="dashboard-where">owner: {nameOf(s.ownerUid)}</span>
+                    </div>
+                  )}
+                </For>
+              </Show>
             </div>
-          </Show>
+          </section>
 
-          <Show when={denied().length}>
-            <h3 class="dashboard-subhead">Denied ({denied().length})</h3>
-            <div class="people-list find-list">
-              <For each={denied()}>
-                {(row) => (
-                  <div class="person">
-                    <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
-                      {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
-                    </span>
-                    <span class="member-name">
-                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
-                    </span>
-                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
-                      Reopen
-                    </button>
+          <section id="dashboard-section-feedback" class="dashboard-section">
+            <h2 class="dashboard-title">Feedback</h2>
+            <p class="modal-text">Everyone's bug reports and ideas. Reply and they see it in their own Feedback.</p>
+            <div class="dashboard-bounded">
+              <Inbox by={props.username || props.name} />
+            </div>
+          </section>
+
+          <section id="dashboard-section-audit" class="dashboard-section">
+            <h2 class="dashboard-title">Audit log</h2>
+            <p class="modal-text">Every staff action, permanently recorded.</p>
+            <input
+              class="roles-search"
+              type="search"
+              placeholder="Search the log"
+              aria-label="Search the log"
+              value={auditQuery()}
+              onInput={(e) => setAuditQuery(e.currentTarget.value)}
+            />
+            <div class="dashboard-audit-days">
+              <For each={auditDays()} fallback={<p class="modal-text">Nothing logged yet.</p>}>
+                {(group) => (
+                  <div class="dashboard-audit-day">
+                    <h4 class="dashboard-audit-date">{group.day}</h4>
+                    <div class="dashboard-audit">
+                      <For each={group.items}>
+                        {(e) => (
+                          <div class={`dashboard-audit-row ${actionAccent(e.action)}`}>
+                            <time>{new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>
+                            <span>
+                              <b>{nameOf(e.uid)}</b> {ACTION_LABEL[e.action as keyof typeof ACTION_LABEL] ?? e.action}
+                              <Show when={e.target}> — {e.target}</Show>
+                              <Show when={e.detail}> ({e.detail})</Show>
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
                   </div>
                 )}
               </For>
             </div>
-          </Show>
+          </section>
+        </div>
+        </div>
         </Show>
-      </Show>
 
-      <Show when={tab() === "online"}>
-        <div class="people-list find-list">
-          <For each={online()} fallback={<p class="modal-text">Nobody is online.</p>}>
-            {(row) => (
-              <div class="person">
-                <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
-                  {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
-                </span>
-                <span class="member-name">{nameOf(row.uid, row)}</span>
-                <span class="dashboard-where">{presence().get(row.uid)?.where || "—"}</span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
+        <Show when={page() === "tools"}>
+          <section class="dashboard-section">
+            <h1 class="dashboard-title">Oversight</h1>
+            <OversightBody profiles={props.profiles} />
+          </section>
 
-      <Show when={tab() === "servers"}>
-        <Show when={serversError()}>
-          <p class="roles-error" role="alert">
-            {serversError()}
-          </p>
+          <section class="dashboard-section">
+            <h2 class="dashboard-title">Activity</h2>
+            <div class="dashboard-activity-head">
+              <p class="modal-text">Who committed, pushed and deployed what.</p>
+              <a class="dashboard-link" href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener">
+                Open in its own tab ↗
+              </a>
+            </div>
+            <iframe class="dashboard-activity-frame" src={`${import.meta.env.BASE_URL}activity.html?embed`} title="Activity" />
+          </section>
         </Show>
-        <div class="people-list find-list">
-          <Show when={servers()} fallback={<p class="modal-text">Loading…</p>}>
-            <For each={servers()} fallback={<p class="modal-text">No servers.</p>}>
-              {(s) => (
-                <div class="person">
-                  <span class="member-name">{s.name}</span>
-                  <span class="dashboard-chip">{s.memberUids.length} member{s.memberUids.length === 1 ? "" : "s"}</span>
-                  <span class="dashboard-chip">{s.open ? "Open" : "Invite only"}</span>
-                  <span class="dashboard-where">owner: {nameOf(s.ownerUid)}</span>
-                </div>
-              )}
-            </For>
-          </Show>
-        </div>
-      </Show>
-
-      <Show when={tab() === "audit"}>
-        <div class="dashboard-audit find-list">
-          <For each={entries().slice(0, 100)} fallback={<p class="modal-text">Nothing logged yet.</p>}>
-            {(e) => (
-              <div class="dashboard-audit-row">
-                <time>{new Date(e.at).toLocaleString()}</time>
-                <span>
-                  <b>{nameOf(e.uid)}</b> {ACTION_LABEL[e.action as keyof typeof ACTION_LABEL] ?? e.action}
-                  <Show when={e.target}> — {e.target}</Show>
-                  <Show when={e.detail}> ({e.detail})</Show>
-                </span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
+      </div>
     </div>
   );
 }
 
-function StatTile(props: { label: string; value: number | string; warn?: boolean }) {
+function StatTile(props: { label: string; value: number | string; accent?: "green" | "amber" | "red" }) {
   return (
-    <div class="dashboard-tile" classList={{ warn: props.warn }}>
+    <div class="dashboard-tile" classList={{ [`accent-${props.accent}`]: Boolean(props.accent) }}>
       <span class="dashboard-tile-value">{props.value}</span>
       <span class="dashboard-tile-label">{props.label}</span>
     </div>

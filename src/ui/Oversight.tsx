@@ -2,32 +2,23 @@ import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid
 
 import { audit } from "../data/audit";
 import { type Channel, type Message, type Profile, type Server, displayName, watchAllServers, watchChannels, watchMessages } from "../data/store";
-import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
 import "./oversight.css";
 
 /*
- * Oversight: an admin looks into any server's channels and messages,
- * read-only, without joining it or showing up on its member list (rules:
- * M2A-Access-Control's firestore.rules, servers/{sid} isAdmin() read; DMs are
+ * Oversight: staff looks into any server's channels and messages, read-only,
+ * without joining it or showing up on its member list (rules:
+ * M2A-Access-Control's firestore.rules, servers/{sid} isStaff() read; DMs are
  * excluded there, so a private conversation never shows here). Every server
- * and channel opened in this window is written to the audit log
- * (oversight.view), so the access is on the permanent record even though
- * nothing appears to the people in that server at the time. Disclosed in
- * Darkwood Node's terms of agreement.
+ * and channel opened is written to the audit log (oversight.view), so the
+ * access is on the permanent record even though nothing appears to the
+ * people in that server at the time. Disclosed in Darkwood Node's terms of
+ * agreement. Lives inside the Dashboard, a tab among the rest of it.
  */
 
 const KIND_LABEL: Record<Channel["kind"], string> = { text: "#", voice: "🔊", room: "▦" };
 
-export function OversightDialog(props: { open: boolean; onClose: () => void; profiles: Map<string, Profile> }) {
-  return (
-    <Modal title="Oversight" class="oversight-modal" open={props.open} onClose={props.onClose}>
-      <OversightBody profiles={props.profiles} />
-    </Modal>
-  );
-}
-
-function OversightBody(props: { profiles: Map<string, Profile> }) {
+export function OversightBody(props: { profiles: Map<string, Profile> }) {
   const [servers, setServers] = createSignal<Server[] | undefined>();
   const [error, setError] = createSignal("");
   const [serverId, setServerId] = createSignal<string | undefined>();
