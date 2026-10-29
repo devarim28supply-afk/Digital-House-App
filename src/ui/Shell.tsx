@@ -44,6 +44,8 @@ import {
   watchProfiles,
   watchServers,
   hasDarkwoodRoom,
+  LIVING_ROOM_TILE,
+  WALL_STREET_TILE,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
@@ -79,6 +81,10 @@ const TILE_ALIASES: Record<string, string[]> = {
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
 const RIGHT_LINGER_MS = 5_000;
+// Living Room and Wall Street: tiles that exist but aren't ready yet -
+// neither side (videochat or Room) opens; a plain message instead. Remove a
+// roomKey here once that room is ready for real use.
+const UNDER_CONSTRUCTION = new Set([LIVING_ROOM_TILE.roomKey, WALL_STREET_TILE.roomKey]);
 
 function remember(key: string, value: string) {
   try {
@@ -436,7 +442,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setNavOpen(false);
     // clicking a room tile or voice channel puts you in its videochat
     const ch = channels().find((c) => c.id === id);
-    if (sid && ch && (ch.kind === "room" || ch.kind === "voice")) joinCall(sid, ch);
+    if (sid && ch && (ch.kind === "room" || ch.kind === "voice") && !UNDER_CONSTRUCTION.has(ch.roomKey ?? "")) joinCall(sid, ch);
   }
   const inThisCall = () => Boolean(channel() && call()?.serverId === serverId() && call()?.channel.id === channel()!.id);
 
@@ -944,6 +950,13 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               emojis={emojis()}
               members={server()?.memberUids}
               />
+            )}
+          </Match>
+          <Match when={server() && channel() && UNDER_CONSTRUCTION.has(channel()!.roomKey ?? "") && channel()}>
+            {(ch) => (
+              <div class="main-empty">
+                🚧 {ch().name} is under construction. Check back soon.
+              </div>
             )}
           </Match>
           {/* your call is showing (it lives below, outside the channel switch) */}
