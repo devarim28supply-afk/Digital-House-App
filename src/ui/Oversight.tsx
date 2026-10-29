@@ -183,7 +183,7 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
                     {watchingRoom() === r.name ? "Stop watching" : "Watch"}
                   </button>
                   <Show when={watchingRoom() === r.name}>
-                    <LiveCallWatch room={r.name} serverName={server()?.name ?? c().name} profiles={props.profiles} onClose={() => setWatchingRoom(undefined)} />
+                    <LiveCallWatch room={r.name} serverId={r.serverId} serverName={server()?.name ?? c().name} profiles={props.profiles} onClose={() => setWatchingRoom(undefined)} />
                   </Show>
                 </div>
               )}

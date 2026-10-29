@@ -15,7 +15,7 @@ import { type Profile, displayName } from "../data/store";
  * visibility-based quality adjustment helps rather than blacking out video.
  */
 
-export function LiveCallWatch(props: { room: string; serverName: string; profiles: Map<string, Profile>; onClose: () => void }) {
+export function LiveCallWatch(props: { room: string; serverId: string; serverName: string; profiles: Map<string, Profile>; onClose: () => void }) {
   const [tracks, setTracks] = createSignal(new Map<string, { track: RemoteTrack; identity: string }>());
   const [error, setError] = createSignal("");
   const [connecting, setConnecting] = createSignal(true);
@@ -30,7 +30,11 @@ export function LiveCallWatch(props: { room: string; serverName: string; profile
     audioHost.hidden = true;
     document.body.appendChild(audioHost);
 
-    audit("call.watch", { serverId: props.room, target: props.serverName });
+    // serverId here is the real Firestore server, never the LiveKit room's
+    // own name - that one is only ever this call's own identity, and
+    // writing it as serverId instead would make this entry impossible to
+    // attribute to a server afterward (it never matches one).
+    audit("call.watch", { serverId: props.serverId, target: props.serverName });
 
     void (async () => {
       try {
