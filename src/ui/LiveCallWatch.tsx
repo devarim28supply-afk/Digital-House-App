@@ -102,7 +102,7 @@ export function LiveCallWatch(props: { room: string; serverName: string; profile
   return (
     <div class="dashboard-watch">
       <div class="dashboard-watch-head">
-        <span>Watching {props.serverName} — read-only, nobody is told</span>
+        <span>Monitoring {props.serverName} — read-only</span>
         <button class="btn" type="button" onClick={props.onClose}>
           Close
         </button>
