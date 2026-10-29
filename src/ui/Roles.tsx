@@ -9,14 +9,15 @@ import { faceStyle, faceText } from "./Shell";
 import "./roles.css";
 
 /*
- * Roles: the owner hands out Admin and Developer, like the bunker's admin
- * panel (members/{uid}.roles.admin / .develop; M2A-Access-Control's rules
- * let admins write them). Admins run any server, approve people and remove
- * people from calls; Developers see the Activity page. Only approved members
- * are listed, and your own row is locked so you cannot take your own role.
+ * Roles: the owner hands out Staff, Admin and Developer (members/{uid}.roles.
+ * staff / .admin / .develop; M2A-Access-Control's rules let staff write
+ * them). Staff reach every server — approvals, suspends, bans, feedback,
+ * oversight. Admin runs only the server(s) they already belong to. A
+ * Developer counts as staff too. Only approved members are listed, and your
+ * own row is locked so you cannot take your own role.
  */
 
-type Role = "admin" | "develop";
+type Role = "staff" | "admin" | "develop";
 type Row = {
   uid: string;
   name?: string;
@@ -26,7 +27,7 @@ type Row = {
   roles?: Partial<Record<Role, boolean>>;
 };
 
-const LABEL: Record<Role, string> = { admin: "Admin", develop: "Developer" };
+const LABEL: Record<Role, string> = { staff: "Staff", admin: "Admin", develop: "Developer" };
 
 export function RolesDialog(props: { open: boolean; onClose: () => void; uid: string; profiles: Map<string, Profile> }) {
   return (
@@ -41,7 +42,7 @@ function RolesBody(props: { uid: string; profiles: Map<string, Profile> }) {
   const [error, setError] = createSignal("");
   const [q, setQ] = createSignal("");
   const [busy, setBusy] = createSignal(new Set<string>());
-  const [ask, setAsk] = createSignal<{ row: Row; on: boolean } | undefined>();
+  const [ask, setAsk] = createSignal<{ row: Row; role: Role; on: boolean } | undefined>();
 
   const nameOf = (r: Row) => displayName(props.profiles.get(r.uid), r.name || r.username || "Member");
 
@@ -80,32 +81,33 @@ function RolesBody(props: { uid: string; profiles: Map<string, Profile> }) {
     }
   }
 
-  // Admin is the strong one: ask first. Developer changes go straight through.
+  // Staff and Admin are the strong ones: ask first. Developer goes straight through.
   const toggle = (row: Row, role: Role) => {
     const on = !row.roles?.[role];
-    if (role === "admin") setAsk({ row, on });
+    if (role === "staff" || role === "admin") setAsk({ row, role, on });
     else void setRole(row, role, on);
   };
 
   return (
     <>
       <p class="modal-text">
-        Admins can run every server, approve people and remove people from calls. Developers can see the Activity page.
+        Staff reach every server — approvals, suspending, banning, oversight, and feedback. Admin runs only the
+        server(s) they already belong to. Developers count as staff too.
       </p>
       <Show when={ask()}>
         {(a) => (
-          <div class="roles-confirm" role="alertdialog" aria-label="Confirm admin change">
+          <div class="roles-confirm" role="alertdialog" aria-label={`Confirm ${a().role} change`}>
             <p class="modal-text">
-              {a().on ? `Make ${nameOf(a().row)} an admin?` : `Take admin away from ${nameOf(a().row)}?`}
+              {a().on ? `Make ${nameOf(a().row)} ${LABEL[a().role]}?` : `Take ${LABEL[a().role]} away from ${nameOf(a().row)}?`}
             </p>
             <div class="modal-actions">
               <button
                 class="btn"
                 type="button"
                 onClick={() => {
-                  const { row, on } = a();
+                  const { row, role, on } = a();
                   setAsk(undefined);
-                  void setRole(row, "admin", on);
+                  void setRole(row, role, on);
                 }}
               >
                 Yes
@@ -141,7 +143,7 @@ function RolesBody(props: { uid: string; profiles: Map<string, Profile> }) {
                 <span class="member-name">
                   {nameOf(r)} <small>@{r.username || "member"}</small>
                 </span>
-                <For each={["admin", "develop"] as Role[]}>
+                <For each={["staff", "admin", "develop"] as Role[]}>
                   {(role) => (
                     <button
                       class="btn role-toggle"

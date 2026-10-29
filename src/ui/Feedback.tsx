@@ -28,7 +28,7 @@ const when = (d: Date | null) => (d ? d.toLocaleString([], { dateStyle: "medium"
 /**
  * Feedback for the developers: Send (bug / idea / other, text, screenshots
  * or files, where you are added by itself), My feedback (your own, with the
- * status and reply), and for the owner and admins the Inbox of everyone's.
+ * status and reply), and for the owner and staff the Inbox of everyone's.
  */
 export function FeedbackDialog(props: {
   open: boolean;
@@ -40,7 +40,7 @@ export function FeedbackDialog(props: {
   uid: string;
   name: string;
   username: string;
-  admin: boolean;
+  staff?: boolean;
   /** where they are, added to what they send (a channel, a tile, the room) */
   where: string;
 }) {
@@ -64,7 +64,7 @@ export function FeedbackDialog(props: {
             My feedback {badge("mine")}
           </button>
           <button type="button" role="tab" aria-pressed={tab() === "notifications"} onClick={() => setTab("notifications")}>Notifications {badge("notifications")}</button>
-          <Show when={props.admin}>
+          <Show when={props.staff}>
             <button type="button" role="tab" aria-pressed={tab() === "inbox"} onClick={() => setTab("inbox")}>
               Inbox {badge("inbox")}
             </button>
@@ -77,7 +77,7 @@ export function FeedbackDialog(props: {
         <Show when={tab() === "mine"}>
           <MyFeedback uid={props.uid} />
         </Show>
-        <Show when={tab() === "inbox" && props.admin}>
+        <Show when={tab() === "inbox" && props.staff}>
           <Inbox by={props.username || props.name} />
         </Show>
       </div>

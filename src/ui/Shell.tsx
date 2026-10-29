@@ -137,7 +137,7 @@ function pictureStyle(profile: Profile | undefined, field: "banner" | "backgroun
  * server's channels next to them, the channel in the middle, and who is in
  * the server on the right. On a phone the two left columns slide in.
  */
-export function Shell(props: { uid: string; admin: boolean; developer?: boolean; name: string; username: string; onLogout: () => void }) {
+export function Shell(props: { uid: string; admin: boolean; staff?: boolean; developer?: boolean; name: string; username: string; onLogout: () => void }) {
   const [servers, setServers] = createSignal<Server[]>([]);
   const [profiles, setProfiles] = createSignal(new Map<string, Profile>());
   const [presence, setPresence] = createSignal(new Map<string, Presence>());
@@ -886,20 +886,20 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
               </>
             )}
           </Show>
-          <Notifications uid={props.uid} admin={props.admin} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
-          {/* who committed, pushed and deployed what (owner, admins, developers) */}
-          <Show when={props.admin || props.developer}>
+          <Notifications uid={props.uid} staff={props.staff} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
+          {/* who committed, pushed and deployed what (owner and staff; a developer counts as staff) */}
+          <Show when={props.staff}>
             <ActivityButton uid={props.uid} />
           </Show>
-          {/* every server's channels and messages, read-only (admins only) */}
-          <Show when={props.admin}>
+          {/* every server's channels and messages, read-only (staff only) */}
+          <Show when={props.staff}>
             <button class="btn" type="button" title="Look into any server" onClick={() => setOversightOpen(true)}>
               Oversight
             </button>
           </Show>
-          {/* stats, pending approvals, who's online, servers, and the audit log in one place (admins only) */}
-          <Show when={props.admin}>
-            <button class="btn" type="button" title="Staff & admin dashboard" onClick={() => setDashboardOpen(true)}>
+          {/* stats, approvals, who's online, servers, and the audit log in one place (staff only) */}
+          <Show when={props.staff}>
+            <button class="btn" type="button" title="Staff dashboard" onClick={() => setDashboardOpen(true)}>
               Dashboard
             </button>
           </Show>
@@ -1178,7 +1178,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
         uid={props.uid}
         name={nameOf(props.uid)}
         username={props.username}
-        admin={props.admin}
+        staff={props.staff}
         where={
           feedbackWhere() ||
           [server()?.name, channel() ? `${channel()!.kind === "room" ? "tile" : "#"} ${channel()!.name}` : ""].filter(Boolean).join(" · ") ||

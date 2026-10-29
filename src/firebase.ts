@@ -25,12 +25,14 @@ export const access = createAccessClient({ firebaseConfig, ownerEmail: OWNER_EMA
 export const db = access.db as Firestore;
 export const auth = access.auth as Auth;
 
-export type AccessStatus = "guest" | "pending" | "approved" | "denied" | "unregistered" | "error";
+export type AccessStatus = "guest" | "pending" | "approved" | "denied" | "suspended" | "banned" | "unregistered" | "error";
 
 export type AccessState = {
   status: AccessStatus;
   user: { uid: string; loginEmail: string; displayName: string } | null;
   member: { name?: string; username?: string; email?: string; roles?: Record<string, boolean> } | null;
   admin: boolean;
+  /** Reaches every server (Oversight, Dashboard, feedback, approvals). A developer counts as staff too. */
+  staff: boolean;
   error: string | null;
 };

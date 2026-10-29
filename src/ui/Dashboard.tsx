@@ -4,21 +4,22 @@ import { ACTION_LABEL, type AuditEntry, audit, watchAudit } from "../data/audit"
 import { availabilityStatus } from "../data/status";
 import { type Profile, type Server, ONLINE_WINDOW_MS, displayName, watchAllServers, watchPresence } from "../data/store";
 import { access } from "../firebase";
-import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
 import "./dashboard.css";
 
 /*
- * Dashboard: one place for the owner and admins to see how Darkwood Node is
- * doing right now — pending join requests, who is online and where, every
- * server's size, and the live audit trail. Approve/deny calls the same
- * access.admin methods the bunker's own admin panel uses (members/{uid}.status,
- * M2A-Access-Control's rules let an admin write it). Nothing here is new data:
- * it is Roles' members list, Oversight's server list, presence, and the audit
- * log, brought together and kept live.
+ * Dashboard: staff's one place to see how Darkwood Node is doing right now —
+ * join requests, every member's standing (approve, deny, suspend, ban,
+ * restore), who is online and where, every server's size, and the live audit
+ * trail. Calls the same access.admin methods the bunker's own admin panel
+ * uses (members/{uid}.status and .roles — M2A-Access-Control's rules let
+ * staff write them). Nothing here is new data: it is Roles' members list,
+ * Oversight's server list, presence, and the audit log, brought together and
+ * kept live.
  */
 
-type Role = "admin" | "develop";
+type Role = "staff" | "admin" | "develop";
+type Status = "pending" | "approved" | "denied" | "suspended" | "banned";
 type MemberRow = {
   uid: string;
   name?: string;
@@ -28,13 +29,34 @@ type MemberRow = {
   roles?: Partial<Record<Role, boolean>>;
 };
 
-type Tab = "overview" | "approvals" | "online" | "servers" | "audit";
+type Tab = "overview" | "members" | "online" | "servers" | "audit";
+type Confirm = { row: MemberRow; status: Status; label: string };
 
 export function DashboardDialog(props: { open: boolean; onClose: () => void; profiles: Map<string, Profile> }) {
   return (
-    <Modal title="Dashboard" class="dashboard-modal" open={props.open} onClose={props.onClose}>
-      <DashboardBody profiles={props.profiles} />
-    </Modal>
+    <Show when={props.open}>
+      <DashboardScreen onClose={props.onClose} profiles={props.profiles} />
+    </Show>
+  );
+}
+
+function DashboardScreen(props: { onClose: () => void; profiles: Map<string, Profile> }) {
+  const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
+  onMount(() => window.addEventListener("keydown", onKey));
+  onCleanup(() => window.removeEventListener("keydown", onKey));
+
+  return (
+    <div class="dashboard-screen" role="dialog" aria-modal="true" aria-label="Dashboard">
+      <header class="dashboard-screen-head">
+        <h2>Dashboard</h2>
+        <button class="icon-btn" type="button" aria-label="Close" onClick={props.onClose}>
+          ✕
+        </button>
+      </header>
+      <div class="dashboard-screen-body">
+        <DashboardBody profiles={props.profiles} />
+      </div>
+    </div>
   );
 }
 
@@ -78,6 +100,9 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
   const approved = createMemo(() => members()?.filter((m) => m.status === "approved") ?? []);
   const pending = createMemo(() => members()?.filter((m) => m.status === "pending") ?? []);
   const denied = createMemo(() => members()?.filter((m) => m.status === "denied") ?? []);
+  const suspended = createMemo(() => members()?.filter((m) => m.status === "suspended") ?? []);
+  const banned = createMemo(() => members()?.filter((m) => m.status === "banned") ?? []);
+  const staffMembers = createMemo(() => approved().filter((m) => m.roles?.staff || m.roles?.develop));
   const admins = createMemo(() => approved().filter((m) => m.roles?.admin));
   const developers = createMemo(() => approved().filter((m) => m.roles?.develop));
 
@@ -96,16 +121,27 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
   });
   const maxTopCount = createMemo(() => Math.max(1, ...topActions().map((t) => t[1])));
 
-  async function decide(row: MemberRow, status: "approved" | "denied") {
+  const AUDIT_FOR: Record<Status, "member.approve" | "member.deny" | "member.suspend" | "member.ban" | "member.restore"> = {
+    approved: "member.approve",
+    denied: "member.deny",
+    suspended: "member.suspend",
+    banned: "member.ban",
+    pending: "member.restore",
+  };
+
+  async function setStatus(row: MemberRow, status: Status) {
     if (busy().has(row.uid)) return;
     setBusy((prev) => new Set(prev).add(row.uid));
     try {
       if (status === "approved") await access.admin.approve(row.uid);
-      else await access.admin.deny(row.uid);
+      else if (status === "denied") await access.admin.deny(row.uid);
+      else if (status === "pending") await access.admin.reset(row.uid);
+      else if (status === "suspended") await access.admin.suspend(row.uid);
+      else await access.admin.ban(row.uid);
       setMembers((prev) => prev?.map((m) => (m.uid === row.uid ? { ...m, status } : m)));
-      audit(status === "approved" ? "member.approve" : "member.deny", { target: nameOf(row.uid, row) });
+      audit(AUDIT_FOR[status], { target: nameOf(row.uid, row) });
     } catch {
-      setMembersError(`Could not decide on ${nameOf(row.uid, row)}. The database refused it.`);
+      setMembersError(`Could not change ${nameOf(row.uid, row)}. The database refused it.`);
     } finally {
       setBusy((prev) => {
         const next = new Set(prev);
@@ -115,26 +151,14 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
     }
   }
 
-  async function reopen(row: MemberRow) {
-    if (busy().has(row.uid)) return;
-    setBusy((prev) => new Set(prev).add(row.uid));
-    try {
-      await access.admin.reset(row.uid);
-      setMembers((prev) => prev?.map((m) => (m.uid === row.uid ? { ...m, status: "pending" } : m)));
-    } catch {
-      setMembersError(`Could not reopen ${nameOf(row.uid, row)}. The database refused it.`);
-    } finally {
-      setBusy((prev) => {
-        const next = new Set(prev);
-        next.delete(row.uid);
-        return next;
-      });
-    }
-  }
+  // Suspend and ban lock someone out of the whole app, not just a server —
+  // ask first, the same as a strong role change in Roles.
+  const [confirm, setConfirm] = createSignal<Confirm | undefined>();
+  const ask = (row: MemberRow, status: Status, label: string) => setConfirm({ row, status, label });
 
   const TABS: { id: Tab; label: string; badge?: () => number }[] = [
     { id: "overview", label: "Overview" },
-    { id: "approvals", label: "Approvals", badge: () => pending().length },
+    { id: "members", label: "Members", badge: () => pending().length },
     { id: "online", label: "Online", badge: () => online().length },
     { id: "servers", label: "Servers" },
     { id: "audit", label: "Audit log" },
@@ -167,8 +191,11 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
           <StatTile label="Approved members" value={approved().length || (members() ? 0 : "…")} />
           <StatTile label="Online now" value={online().length} />
           <StatTile label="Pending" value={pending().length} warn={pending().length > 0} />
+          <StatTile label="Staff" value={staffMembers().length} />
           <StatTile label="Admins" value={admins().length} />
           <StatTile label="Developers" value={developers().length} />
+          <StatTile label="Suspended" value={suspended().length} warn={suspended().length > 0} />
+          <StatTile label="Banned" value={banned().length} warn={banned().length > 0} />
         </div>
         <h3 class="dashboard-subhead">Busiest in the last 24 hours</h3>
         <Show when={topActions().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
@@ -188,11 +215,37 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
         </Show>
       </Show>
 
-      <Show when={tab() === "approvals"}>
+      <Show when={tab() === "members"}>
         <Show when={membersError()}>
           <p class="roles-error" role="alert">
             {membersError()}
           </p>
+        </Show>
+        <Show when={confirm()}>
+          {(c) => (
+            <div class="roles-confirm" role="alertdialog" aria-label={`Confirm ${c().label}`}>
+              <p class="modal-text">
+                {c().label} {nameOf(c().row.uid, c().row)}? {c().status === "banned" && "This locks them out of the whole app."}
+                {c().status === "suspended" && "This locks them out of the whole app until restored."}
+              </p>
+              <div class="modal-actions">
+                <button
+                  class="btn"
+                  type="button"
+                  onClick={() => {
+                    const { row, status } = c();
+                    setConfirm(undefined);
+                    void setStatus(row, status);
+                  }}
+                >
+                  Yes
+                </button>
+                <button class="btn" type="button" onClick={() => setConfirm(undefined)}>
+                  No
+                </button>
+              </div>
+            </div>
+          )}
         </Show>
         <Show when={members()} fallback={<p class="modal-text">Loading…</p>}>
           <h3 class="dashboard-subhead">Waiting to join ({pending().length})</h3>
@@ -206,16 +259,90 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
                   <span class="member-name">
                     {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
                   </span>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => decide(row, "approved")}>
+                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
                     Approve
                   </button>
-                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => decide(row, "denied")}>
+                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "denied")}>
                     Deny
                   </button>
                 </div>
               )}
             </For>
           </div>
+
+          <h3 class="dashboard-subhead">Approved ({approved().length})</h3>
+          <div class="people-list find-list">
+            <For each={approved()} fallback={<p class="modal-text">No approved members.</p>}>
+              {(row) => (
+                <div class="person">
+                  <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                    {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                  </span>
+                  <span class="member-name">
+                    {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                  </span>
+                  <Show when={row.roles?.staff || row.roles?.develop}>
+                    <span class="dashboard-chip">Staff</span>
+                  </Show>
+                  <Show when={row.roles?.admin}>
+                    <span class="dashboard-chip">Admin</span>
+                  </Show>
+                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
+                    Suspend
+                  </button>
+                  <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                    Ban
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+
+          <Show when={suspended().length}>
+            <h3 class="dashboard-subhead">Suspended ({suspended().length})</h3>
+            <div class="people-list find-list">
+              <For each={suspended()}>
+                {(row) => (
+                  <div class="person">
+                    <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                      {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                    </span>
+                    <span class="member-name">
+                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                    </span>
+                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
+                      Restore
+                    </button>
+                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                      Ban
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={banned().length}>
+            <h3 class="dashboard-subhead">Banned ({banned().length})</h3>
+            <div class="people-list find-list">
+              <For each={banned()}>
+                {(row) => (
+                  <div class="person">
+                    <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                      {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                    </span>
+                    <span class="member-name">
+                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                    </span>
+                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
+                      Restore
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
           <Show when={denied().length}>
             <h3 class="dashboard-subhead">Denied ({denied().length})</h3>
             <div class="people-list find-list">
@@ -228,7 +355,7 @@ function DashboardBody(props: { profiles: Map<string, Profile> }) {
                     <span class="member-name">
                       {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
                     </span>
-                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => reopen(row)}>
+                    <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
                       Reopen
                     </button>
                   </div>
