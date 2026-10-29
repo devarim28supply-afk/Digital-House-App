@@ -750,6 +750,11 @@
   place-items: center;
   color: #fff;
 }
+/* A phone's camera, in the strip: the same row height, just narrower -
+   never squeezed down to a thin sliver inside a box still shaped 16:9. */
+.strip-tile.portrait {
+  aspect-ratio: 9 / 16;
+}
 .strip-tile video {
   position: absolute;
   inset: 0;
@@ -827,6 +832,16 @@
   width: auto;
   height: auto;
   aspect-ratio: 16 / 9;
+}
+/* Equal-width flex siblings would make a 9:16 tile enormously tall instead
+   (the same width, but aspect-ratio asking for far more height) - fixed to
+   the row's own height instead, narrower rather than taller, same as the
+   non-operation strip above. */
+.operation-cams .strip-tile.portrait {
+  flex: none;
+  width: auto;
+  height: var(--strip-h);
+  aspect-ratio: 9 / 16;
 }
 .room-pane.operation .voice.cams-only {
   flex: none;

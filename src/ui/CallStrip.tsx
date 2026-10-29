@@ -6,7 +6,7 @@ import { type RemoteParticipant, Room, RoomEvent, Track } from "livekit-client";
 import { displayName, type Profile } from "../data/store";
 import { fetchPass } from "./VoiceRoom";
 
-export type Caller = { identity: string; name: string; video?: MediaStream };
+export type Caller = { identity: string; name: string; video?: MediaStream; phone?: boolean };
 
 /**
  * Videochat webcams: up to 4 in a row, the rest in a column on the right.
@@ -20,12 +20,31 @@ export function CamRow(props: { callers: Caller[]; profiles: Map<string, Profile
   // rebuilt, so a refresh never flashes anyone's webcam black.
   const tile = (c: () => Caller) => {
     let video: HTMLVideoElement | undefined;
+    // c().phone (the dh_phone attribute, same signal the main call grid
+    // already trusts) is the guess the tile opens with, so it never flashes
+    // a vertical camera as a wide box first; the video's own decoded size,
+    // once it has one, is the real answer and wins from then on.
+    const [portrait, setPortrait] = createSignal(Boolean(c().phone));
+    createEffect(() => setPortrait(Boolean(c().phone)));
     createEffect(() => {
       const stream = c().video ?? null;
       if (video && video.srcObject !== stream) video.srcObject = stream;
     });
+    onMount(() => {
+      const el = video;
+      if (!el) return;
+      const report = () => {
+        if (el.videoWidth) setPortrait(el.videoWidth < el.videoHeight);
+      };
+      el.addEventListener("loadedmetadata", report);
+      el.addEventListener("resize", report);
+      onCleanup(() => {
+        el.removeEventListener("loadedmetadata", report);
+        el.removeEventListener("resize", report);
+      });
+    });
     return (
-      <div class="strip-tile" classList={{ live: Boolean(c().video) }}>
+      <div class="strip-tile" classList={{ live: Boolean(c().video), portrait: portrait() }}>
         <video autoplay muted playsinline ref={video} />
         <span class="name">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
         <span class="who">{c().name}<DeveloperBadge username={props.profiles.get(c().identity.split(":")[0])?.username} /></span>
@@ -69,7 +88,7 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
       [...room.remoteParticipants.values()].map((p) => {
         const cam = p.getTrackPublication(Track.Source.Camera);
         const live = cam?.track && cam.isSubscribed && !cam.isMuted;
-        return { identity: p.identity, name: nameOf(p), video: live ? cam.track!.mediaStream : undefined };
+        return { identity: p.identity, name: nameOf(p), video: live ? cam.track!.mediaStream : undefined, phone: p.attributes?.dh_phone === "1" };
       }),
     );
   // Names can change in Firestore without a LiveKit participant/track event.
@@ -91,7 +110,8 @@ export function CallStrip(props: { serverId: string; channelId: string; profiles
       .on(RoomEvent.TrackUnsubscribed, later)
       .on(RoomEvent.TrackUnpublished, later)
       .on(RoomEvent.TrackMuted, refresh)
-      .on(RoomEvent.TrackUnmuted, refresh);
+      .on(RoomEvent.TrackUnmuted, refresh)
+      .on(RoomEvent.ParticipantAttributesChanged, refresh);
     try {
       const pass = await fetchPass(props.serverId, props.channelId, true);
       await room.connect(pass.url, pass.token);
