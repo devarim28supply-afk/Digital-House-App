@@ -57,6 +57,13 @@
 .dashboard-chat-form input{flex:1;min-width:0;height:38px;padding:0 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit}
 
 /* ---- stat tiles ---- */
+/* Overview: stat tiles on one side, the busiest-bars charts on the other,
+   so the bars only ever run about half the window, not edge to edge. */
+.dashboard-overview-row{display:flex;gap:24px;align-items:flex-start}
+.dashboard-overview-row > .dashboard-stats{flex:1;min-width:0;margin:0}
+.dashboard-overview-bars{flex:1;min-width:0}
+.dashboard-overview-bars .dashboard-subhead:first-child{margin-top:0}
+
 .dashboard-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 6px}
 .dashboard-tile{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--line-2);border-radius:9px;background:var(--panel);transition:transform .12s ease,border-color .12s ease}
 .dashboard-tile:hover{transform:translateY(-1px);border-color:var(--line-2)}
@@ -69,11 +76,11 @@
 .dashboard-tile-label{font-size:11px;color:var(--muted)}
 
 /* ---- busiest bars ---- */
-.dashboard-bars{display:flex;flex-direction:column;gap:7px}
+.dashboard-bars{--purple:#a78bfa;display:flex;flex-direction:column;gap:9px}
 .dashboard-bar-row{display:grid;grid-template-columns:150px 1fr 28px;align-items:center;gap:8px;font-size:12px}
 .dashboard-bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
-.dashboard-bar-track{height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden}
-.dashboard-bar-fill{height:100%;border-radius:4px;background:var(--green);transition:width .3s ease}
+.dashboard-bar-track{height:12px;border-radius:5px;background:var(--panel-2);overflow:hidden}
+.dashboard-bar-fill{height:100%;border-radius:5px;background:var(--purple);transition:width .3s ease}
 .dashboard-bar-count{text-align:right;color:var(--muted);font-family:var(--mono)}
 
 /* ---- pills + rows ---- */
@@ -118,6 +125,7 @@
 @media (max-width: 820px) {
   .dashboard-masonry{column-count:1}
   .dashboard-tools-row{flex-direction:column}
+  .dashboard-overview-row{flex-direction:column}
 }
 
 @media (max-width: 760px) {

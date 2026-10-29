@@ -549,51 +549,55 @@ function DashboardBody(props: {
           <section id="dashboard-section-overview" class="dashboard-section">
             <h1 class="dashboard-title">Overview</h1>
             <p class="modal-text">Darkwood Node, right now.</p>
-            <div class="dashboard-stats">
-              <StatTile label="Servers" value={servers()?.length ?? "…"} />
-              <StatTile label="Approved members" value={allApproved().length || (members() ? 0 : "…")} />
-              <StatTile label="Online now" value={online().length} accent="green" />
-              <StatTile label="Pending" value={pendingTotal()} accent={pendingTotal() > 0 ? "amber" : undefined} />
-              <StatTile label="Staff" value={staffMembers().length} />
-              <StatTile label="Admins" value={admins().length} />
-              <StatTile label="Developers" value={developers().length} />
-              <StatTile label="Suspended" value={suspendedTotal()} accent={suspendedTotal() > 0 ? "amber" : undefined} />
-              <StatTile label="Banned" value={bannedTotal()} accent={bannedTotal() > 0 ? "red" : undefined} />
+            <div class="dashboard-overview-row">
+              <div class="dashboard-stats">
+                <StatTile label="Servers" value={servers()?.length ?? "…"} />
+                <StatTile label="Approved members" value={allApproved().length || (members() ? 0 : "…")} />
+                <StatTile label="Online now" value={online().length} accent="green" />
+                <StatTile label="Pending" value={pendingTotal()} accent={pendingTotal() > 0 ? "amber" : undefined} />
+                <StatTile label="Staff" value={staffMembers().length} />
+                <StatTile label="Admins" value={admins().length} />
+                <StatTile label="Developers" value={developers().length} />
+                <StatTile label="Suspended" value={suspendedTotal()} accent={suspendedTotal() > 0 ? "amber" : undefined} />
+                <StatTile label="Banned" value={bannedTotal()} accent={bannedTotal() > 0 ? "red" : undefined} />
+              </div>
+
+              <div class="dashboard-overview-bars">
+                <h3 class="dashboard-subhead">Busiest in the last 24 hours</h3>
+                <Show when={topActions().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
+                  <div class="dashboard-bars">
+                    <For each={topActions()}>
+                      {([action, count]) => (
+                        <div class="dashboard-bar-row">
+                          <span class="dashboard-bar-label">{ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? action}</span>
+                          <div class="dashboard-bar-track">
+                            <div class="dashboard-bar-fill" style={{ width: `${(count / maxTopCount()) * 100}%` }} />
+                          </div>
+                          <span class="dashboard-bar-count">{count}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <h3 class="dashboard-subhead">Busiest servers in the last 24 hours</h3>
+                <Show when={busiestServers().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
+                  <div class="dashboard-bars">
+                    <For each={busiestServers()}>
+                      {([name, count]) => (
+                        <div class="dashboard-bar-row">
+                          <span class="dashboard-bar-label">{name}</span>
+                          <div class="dashboard-bar-track">
+                            <div class="dashboard-bar-fill" style={{ width: `${(count / maxBusiestServer()) * 100}%` }} />
+                          </div>
+                          <span class="dashboard-bar-count">{count}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </div>
             </div>
-
-            <h3 class="dashboard-subhead">Busiest in the last 24 hours</h3>
-            <Show when={topActions().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
-              <div class="dashboard-bars">
-                <For each={topActions()}>
-                  {([action, count]) => (
-                    <div class="dashboard-bar-row">
-                      <span class="dashboard-bar-label">{ACTION_LABEL[action as keyof typeof ACTION_LABEL] ?? action}</span>
-                      <div class="dashboard-bar-track">
-                        <div class="dashboard-bar-fill" style={{ width: `${(count / maxTopCount()) * 100}%` }} />
-                      </div>
-                      <span class="dashboard-bar-count">{count}</span>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-
-            <h3 class="dashboard-subhead">Busiest servers in the last 24 hours</h3>
-            <Show when={busiestServers().length} fallback={<p class="modal-text">Nothing logged in the last day.</p>}>
-              <div class="dashboard-bars">
-                <For each={busiestServers()}>
-                  {([name, count]) => (
-                    <div class="dashboard-bar-row">
-                      <span class="dashboard-bar-label">{name}</span>
-                      <div class="dashboard-bar-track">
-                        <div class="dashboard-bar-fill" style={{ width: `${(count / maxBusiestServer()) * 100}%` }} />
-                      </div>
-                      <span class="dashboard-bar-count">{count}</span>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
           </section>
 
           <div class="dashboard-masonry">
