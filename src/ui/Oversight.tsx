@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 
 import { audit } from "../data/audit";
 import { type Channel, type Message, type Profile, type Server, displayName, watchAllServers, watchChannels, watchMessages } from "../data/store";
@@ -14,6 +14,11 @@ import "./oversight.css";
  * access is on the permanent record even though nothing appears to the
  * people in that server at the time. Disclosed in Darkwood Node's terms of
  * agreement. Lives inside the Dashboard, a tab among the rest of it.
+ *
+ * Laid out as a drill-down (server -> channel -> messages) instead of three
+ * side-by-side panes, since it sits in a half-width column next to Activity
+ * on the Tools page - a vertical flow reads better narrow than three boxes
+ * squeezed together would.
  */
 
 const KIND_LABEL: Record<Channel["kind"], string> = { text: "#", voice: "🔊", room: "▦" };
@@ -22,18 +27,28 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
   const [servers, setServers] = createSignal<Server[] | undefined>();
   const [error, setError] = createSignal("");
   const [serverId, setServerId] = createSignal<string | undefined>();
+  const [serverQuery, setServerQuery] = createSignal("");
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [channelId, setChannelId] = createSignal<string | undefined>();
   const [messages, setMessages] = createSignal<Message[]>([]);
 
   onMount(() => {
-    const stop = watchAllServers(setServers, () => setError("Could not load the servers. Only admins can see them."));
+    const stop = watchAllServers(setServers, () => setError("Could not load the servers. Only staff can see them."));
     onCleanup(stop);
   });
 
   const server = () => servers()?.find((s) => s.id === serverId());
   const channel = () => channels().find((c) => c.id === channelId());
   const nameOf = (uid: string) => displayName(props.profiles.get(uid), "Member");
+
+  const shownServers = createMemo(() => {
+    const term = serverQuery().trim().toLowerCase();
+    return (servers() ?? []).filter((s) => !term || s.name.toLowerCase().includes(term));
+  });
+
+  function pickServer(sid: string) {
+    setServerId(sid === serverId() ? undefined : sid);
+  }
 
   // the chosen server's channels; opening a server is itself a view, logged once per pick
   createEffect(() => {
@@ -71,60 +86,75 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
           {error()}
         </p>
       </Show>
-      <div class="oversight-panes">
-        <div class="oversight-pane oversight-servers">
-          <Show when={servers()} fallback={<p class="modal-text">Loading…</p>}>
-            <For each={servers()} fallback={<p class="modal-text">No servers.</p>}>
+
+      <div class="oversight-step">
+        <h4 class="oversight-step-label">Server</h4>
+        <input
+          class="roles-search"
+          type="search"
+          placeholder="Find a server"
+          aria-label="Find a server"
+          value={serverQuery()}
+          onInput={(e) => setServerQuery(e.currentTarget.value)}
+        />
+        <Show when={servers()} fallback={<p class="modal-text">Loading…</p>}>
+          <div class="oversight-list">
+            <For each={shownServers()} fallback={<p class="modal-text">No servers.</p>}>
               {(s) => (
-                <button
-                  type="button"
-                  class="oversight-row"
-                  aria-pressed={s.id === serverId()}
-                  onClick={() => setServerId(s.id)}
-                >
+                <button type="button" class="oversight-pill" aria-pressed={s.id === serverId()} onClick={() => pickServer(s.id)}>
                   {s.name}
+                  <span class="oversight-pill-meta">{s.memberUids.length} member{s.memberUids.length === 1 ? "" : "s"}</span>
                 </button>
               )}
             </For>
-          </Show>
-        </div>
-        <div class="oversight-pane oversight-channels">
-          <Show when={server()} fallback={<p class="modal-text">Pick a server.</p>}>
-            <For each={channels()} fallback={<p class="modal-text">No channels.</p>}>
-              {(c) => (
-                <button
-                  type="button"
-                  class="oversight-row"
-                  aria-pressed={c.id === channelId()}
-                  onClick={() => setChannelId(c.id)}
-                >
-                  {KIND_LABEL[c.kind]} {c.name}
-                </button>
-              )}
-            </For>
-          </Show>
-        </div>
-        <div class="oversight-pane oversight-messages">
-          <Show when={channel()} fallback={<p class="modal-text">Pick a channel.</p>}>
-            <For each={messages()} fallback={<p class="modal-text">No messages.</p>}>
-              {(m) => (
-                <div class="oversight-message">
-                  <span class="avatar small" style={faceStyle(props.profiles.get(m.authorUid))}>
-                    {faceText(props.profiles.get(m.authorUid), nameOf(m.authorUid))}
-                  </span>
-                  <div class="oversight-message-body">
-                    <span class="oversight-message-head">
-                      <b>{nameOf(m.authorUid)}</b>
-                      <time>{m.createdAt?.toLocaleString() ?? ""}</time>
-                    </span>
-                    <span class="oversight-message-text">{m.text}</span>
-                  </div>
-                </div>
-              )}
-            </For>
-          </Show>
-        </div>
+          </div>
+        </Show>
       </div>
+
+      <Show when={server()}>
+        {(s) => (
+          <div class="oversight-step">
+            <h4 class="oversight-step-label">Channel in {s().name}</h4>
+            <div class="oversight-list oversight-list-row">
+              <For each={channels()} fallback={<p class="modal-text">No channels.</p>}>
+                {(c) => (
+                  <button type="button" class="oversight-pill" aria-pressed={c.id === channelId()} onClick={() => setChannelId(c.id)}>
+                    {KIND_LABEL[c.kind]} {c.name}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </Show>
+
+      <Show when={channel()}>
+        {(c) => (
+          <div class="oversight-step">
+            <h4 class="oversight-step-label">
+              {KIND_LABEL[c().kind]} {c().name}
+            </h4>
+            <div class="oversight-messages">
+              <For each={messages()} fallback={<p class="modal-text">No messages.</p>}>
+                {(m) => (
+                  <div class="oversight-message">
+                    <span class="avatar small" style={faceStyle(props.profiles.get(m.authorUid))}>
+                      {faceText(props.profiles.get(m.authorUid), nameOf(m.authorUid))}
+                    </span>
+                    <div class="oversight-message-body">
+                      <span class="oversight-message-head">
+                        <b>{nameOf(m.authorUid)}</b>
+                        <time>{m.createdAt?.toLocaleString() ?? ""}</time>
+                      </span>
+                      <span class="oversight-message-text">{m.text}</span>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </Show>
     </div>
   );
 }
