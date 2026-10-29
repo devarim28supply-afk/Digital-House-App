@@ -1187,6 +1187,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         uid={props.uid}
         name={nameOf(props.uid)}
         username={props.username}
+        owner={isOwnerAccount()}
         initialPage={dashboardPage()}
         focusSection={dashboardFocus()}
       />

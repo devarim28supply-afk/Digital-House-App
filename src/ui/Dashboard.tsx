@@ -34,12 +34,13 @@ type MemberRow = {
 };
 
 export type Page = "insights" | "tools";
-export type Section = "overview" | "members" | "online" | "servers" | "feedback" | "audit";
+export type Section = "overview" | "members" | "staff" | "online" | "servers" | "feedback" | "audit";
 type Confirm = { row: MemberRow; status: Status; label: string };
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "members", label: "Members" },
+  { id: "staff", label: "Staff" },
   { id: "online", label: "Online" },
   { id: "servers", label: "Servers" },
   { id: "feedback", label: "Feedback" },
@@ -71,6 +72,7 @@ export function DashboardDialog(props: {
   uid: string;
   name: string;
   username: string;
+  owner: boolean;
   initialPage?: Page;
   focusSection?: Section;
 }) {
@@ -82,6 +84,7 @@ export function DashboardDialog(props: {
         uid={props.uid}
         name={props.name}
         username={props.username}
+        owner={props.owner}
         initialPage={props.initialPage}
         focusSection={props.focusSection}
       />
@@ -95,6 +98,7 @@ function DashboardScreen(props: {
   uid: string;
   name: string;
   username: string;
+  owner: boolean;
   initialPage?: Page;
   focusSection?: Section;
 }) {
@@ -115,6 +119,7 @@ function DashboardScreen(props: {
         uid={props.uid}
         name={props.name}
         username={props.username}
+        owner={props.owner}
         initialPage={props.initialPage}
         focusSection={props.focusSection}
       />
@@ -127,6 +132,7 @@ function DashboardBody(props: {
   uid: string;
   name: string;
   username: string;
+  owner: boolean;
   initialPage?: Page;
   focusSection?: Section;
 }) {
@@ -226,11 +232,15 @@ function DashboardBody(props: {
   const matches = (row: MemberRow, term: string) =>
     !term || `${nameOf(row.uid, row)} ${row.username ?? ""}`.toLowerCase().includes(term);
 
+  const isStaffRow = (m: MemberRow) => Boolean(m.roles?.staff || m.roles?.develop);
+
   const byStatus = (status: Status) => {
     const term = memberQuery().trim().toLowerCase();
     return (members() ?? []).filter((m) => m.status === status && matches(m, term));
   };
-  const approved = createMemo(() => byStatus("approved"));
+  // Staff get their own list (below), not mixed into the regular member list.
+  const approved = createMemo(() => byStatus("approved").filter((m) => !isStaffRow(m)));
+  const staffList = createMemo(() => byStatus("approved").filter(isStaffRow));
   const pending = createMemo(() => byStatus("pending"));
   const denied = createMemo(() => byStatus("denied"));
   const suspended = createMemo(() => byStatus("suspended"));
@@ -238,7 +248,7 @@ function DashboardBody(props: {
   const pendingTotal = createMemo(() => members()?.filter((m) => m.status === "pending").length ?? 0);
 
   const allApproved = createMemo(() => members()?.filter((m) => m.status === "approved") ?? []);
-  const staffMembers = createMemo(() => allApproved().filter((m) => m.roles?.staff || m.roles?.develop));
+  const staffMembers = createMemo(() => allApproved().filter(isStaffRow));
   const admins = createMemo(() => allApproved().filter((m) => m.roles?.admin));
   const developers = createMemo(() => allApproved().filter((m) => m.roles?.develop));
   const suspendedTotal = createMemo(() => members()?.filter((m) => m.status === "suspended").length ?? 0);
@@ -460,18 +470,17 @@ function DashboardBody(props: {
                       <span class="member-name">
                         {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
                       </span>
-                      <Show when={row.roles?.staff || row.roles?.develop}>
-                        <span class="dashboard-pill staff">Staff</span>
-                      </Show>
                       <Show when={row.roles?.admin}>
                         <span class="dashboard-pill">Admin</span>
                       </Show>
-                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
-                        Suspend
-                      </button>
-                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
-                        Ban
-                      </button>
+                      <Show when={props.owner}>
+                        <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
+                          Suspend
+                        </button>
+                        <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                          Ban
+                        </button>
+                      </Show>
                     </div>
                   )}
                 </For>
@@ -490,12 +499,14 @@ function DashboardBody(props: {
                           <span class="member-name">
                             {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
                           </span>
-                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
-                            Restore
-                          </button>
-                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
-                            Ban
-                          </button>
+                          <Show when={props.owner}>
+                            <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "approved")}>
+                              Restore
+                            </button>
+                            <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                              Ban
+                            </button>
+                          </Show>
                         </div>
                       )}
                     </For>
@@ -516,9 +527,11 @@ function DashboardBody(props: {
                           <span class="member-name">
                             {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
                           </span>
-                          <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
-                            Restore
-                          </button>
+                          <Show when={props.owner}>
+                            <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => void setStatus(row, "pending")}>
+                              Restore
+                            </button>
+                          </Show>
                         </div>
                       )}
                     </For>
@@ -549,6 +562,37 @@ function DashboardBody(props: {
                 </details>
               </Show>
             </Show>
+          </section>
+
+          <section id="dashboard-section-staff" class="dashboard-section">
+            <h2 class="dashboard-title">Staff</h2>
+            <p class="modal-text">Reaches every server. A Developer counts as staff too.</p>
+            <div class="people-list find-list dashboard-people">
+              <For each={staffList()} fallback={<p class="modal-text">No staff yet.</p>}>
+                {(row) => (
+                  <div class="person">
+                    <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                      {faceText(props.profiles.get(row.uid), nameOf(row.uid, row))}
+                    </span>
+                    <span class="member-name">
+                      {nameOf(row.uid, row)} <small>@{row.username || "member"}</small>
+                    </span>
+                    <span class="dashboard-pill staff">Staff</span>
+                    <Show when={row.roles?.admin}>
+                      <span class="dashboard-pill">Admin</span>
+                    </Show>
+                    <Show when={props.owner}>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "suspended", "Suspend")}>
+                        Suspend
+                      </button>
+                      <button class="btn" type="button" disabled={busy().has(row.uid)} onClick={() => ask(row, "banned", "Ban")}>
+                        Ban
+                      </button>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
           </section>
 
           <section id="dashboard-section-online" class="dashboard-section">
@@ -642,21 +686,23 @@ function DashboardBody(props: {
         </Show>
 
         <Show when={page() === "tools"}>
-          <section class="dashboard-section">
-            <h1 class="dashboard-title">Oversight</h1>
-            <OversightBody profiles={props.profiles} />
-          </section>
+          <div class="dashboard-tools-row">
+            <section class="dashboard-section dashboard-tools-col">
+              <h1 class="dashboard-title">Oversight</h1>
+              <OversightBody profiles={props.profiles} />
+            </section>
 
-          <section class="dashboard-section">
-            <h2 class="dashboard-title">Activity</h2>
-            <div class="dashboard-activity-head">
-              <p class="modal-text">Who committed, pushed and deployed what.</p>
-              <a class="dashboard-link" href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener">
-                Open in its own tab ↗
-              </a>
-            </div>
-            <iframe class="dashboard-activity-frame" src={`${import.meta.env.BASE_URL}activity.html?embed`} title="Activity" />
-          </section>
+            <section class="dashboard-section dashboard-tools-col">
+              <h2 class="dashboard-title">Activity</h2>
+              <div class="dashboard-activity-head">
+                <p class="modal-text">Who committed, pushed and deployed what.</p>
+                <a class="dashboard-link" href={`${import.meta.env.BASE_URL}activity.html`} target="_blank" rel="noopener">
+                  Open in its own tab ↗
+                </a>
+              </div>
+              <iframe class="dashboard-activity-frame" src={`${import.meta.env.BASE_URL}activity.html?embed`} title="Activity" />
+            </section>
+          </div>
         </Show>
       </div>
     </div>
