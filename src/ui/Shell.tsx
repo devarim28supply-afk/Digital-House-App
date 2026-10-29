@@ -57,6 +57,7 @@ import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
 import { OversightDialog } from "./Oversight";
 import { RolesDialog } from "./Roles";
+import { DashboardDialog } from "./Dashboard";
 import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
@@ -348,6 +349,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
   const [rolesOpen, setRolesOpen] = createSignal(false);
   const [oversightOpen, setOversightOpen] = createSignal(false);
+  const [dashboardOpen, setDashboardOpen] = createSignal(false);
   const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
   // the left column shows your DMs (the ✉ button, or a DM is open)
   const dmMode = () => dmHome() || isDm(server());
@@ -895,6 +897,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
               Oversight
             </button>
           </Show>
+          {/* stats, pending approvals, who's online, servers, and the audit log in one place (admins only) */}
+          <Show when={props.admin}>
+            <button class="btn" type="button" title="Staff & admin dashboard" onClick={() => setDashboardOpen(true)}>
+              Dashboard
+            </button>
+          </Show>
           <Show when={tileChat()}>
             {(chat) => (
               <button
@@ -1180,6 +1188,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>
       <RolesDialog open={rolesOpen()} onClose={() => setRolesOpen(false)} uid={props.uid} profiles={profiles()} />
       <OversightDialog open={oversightOpen()} onClose={() => setOversightOpen(false)} profiles={profiles()} />
+      <DashboardDialog open={dashboardOpen()} onClose={() => setDashboardOpen(false)} profiles={profiles()} />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">
           Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).
