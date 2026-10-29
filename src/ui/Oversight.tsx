@@ -2,6 +2,8 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 
 import { audit } from "../data/audit";
 import { type Channel, type Message, type Profile, type Server, displayName, watchAllServers, watchChannels, watchMessages } from "../data/store";
+import { auth } from "../firebase";
+import { LiveCallWatch } from "./LiveCallWatch";
 import { faceStyle, faceText } from "./Shell";
 import "./oversight.css";
 
@@ -23,6 +25,12 @@ import "./oversight.css";
 
 const KIND_LABEL: Record<Channel["kind"], string> = { text: "#", voice: "🔊", room: "▦" };
 
+// A room Oversight can watch: the same /api/dh-rooms list the Dashboard's
+// own Live calls section polls, matched here by server+channel instead of
+// shown as its own flat list - so a channel's videochat (or its 3D room)
+// shows right where you're already looking at that channel.
+type LiveRoom = { name: string; serverId: string; channelId: string; is3dRoom: boolean; numParticipants: number };
+
 export function OversightBody(props: { profiles: Map<string, Profile> }) {
   const [servers, setServers] = createSignal<Server[] | undefined>();
   const [error, setError] = createSignal("");
@@ -31,11 +39,33 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
   const [channels, setChannels] = createSignal<Channel[]>([]);
   const [channelId, setChannelId] = createSignal<string | undefined>();
   const [messages, setMessages] = createSignal<Message[]>([]);
+  const [liveRooms, setLiveRooms] = createSignal<LiveRoom[]>([]);
+  const [watchingRoom, setWatchingRoom] = createSignal<string | undefined>();
 
   onMount(() => {
     const stop = watchAllServers(setServers, () => setError("Could not load the servers. Only staff can see them."));
     onCleanup(stop);
   });
+
+  async function pollRooms() {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) return;
+      const res = await fetch("/api/dh-rooms", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
+      if (!res.ok) return;
+      const d = (await res.json()) as { rooms?: LiveRoom[] };
+      setLiveRooms(d.rooms ?? []);
+    } catch {
+      /* the live-now markers just stay as they were; try again next tick */
+    }
+  }
+  onMount(() => {
+    void pollRooms();
+    const tick = window.setInterval(() => void pollRooms(), 15_000);
+    onCleanup(() => window.clearInterval(tick));
+  });
+  const liveInServer = () => liveRooms().filter((r) => r.serverId === serverId());
+  const liveInChannel = () => liveInServer().filter((r) => r.channelId === channelId());
 
   const server = () => servers()?.find((s) => s.id === serverId());
   const channel = () => channels().find((c) => c.id === channelId());
@@ -67,6 +97,7 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
     const sid = serverId();
     const cid = channelId();
     setMessages([]);
+    setWatchingRoom(undefined);
     if (!sid || !cid) return;
     const s = servers()?.find((x) => x.id === sid);
     const c = channels().find((x) => x.id === cid);
@@ -120,6 +151,9 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
                 {(c) => (
                   <button type="button" class="oversight-pill" aria-pressed={c.id === channelId()} onClick={() => setChannelId(c.id)}>
                     {KIND_LABEL[c.kind]} {c.name}
+                    <Show when={liveInServer().some((r) => r.channelId === c.id)}>
+                      <i class="oversight-live-dot" aria-label="live now" title="A call is active here" />
+                    </Show>
                   </button>
                 )}
               </For>
@@ -134,6 +168,26 @@ export function OversightBody(props: { profiles: Map<string, Profile> }) {
             <h4 class="oversight-step-label">
               {KIND_LABEL[c().kind]} {c().name}
             </h4>
+            <For each={liveInChannel()}>
+              {(r) => (
+                <div class="oversight-live">
+                  <span class="oversight-live-head">
+                    <i class="oversight-live-dot" aria-label="live" />
+                    {r.is3dRoom ? "3D room" : "Videochat"} · {r.numParticipants} in call
+                  </span>
+                  <button
+                    class="btn"
+                    type="button"
+                    onClick={() => setWatchingRoom(watchingRoom() === r.name ? undefined : r.name)}
+                  >
+                    {watchingRoom() === r.name ? "Stop watching" : "Watch"}
+                  </button>
+                  <Show when={watchingRoom() === r.name}>
+                    <LiveCallWatch room={r.name} serverName={server()?.name ?? c().name} profiles={props.profiles} onClose={() => setWatchingRoom(undefined)} />
+                  </Show>
+                </div>
+              )}
+            </For>
             <div class="oversight-messages">
               <For each={messages()} fallback={<p class="modal-text">No messages.</p>}>
                 {(m) => (
