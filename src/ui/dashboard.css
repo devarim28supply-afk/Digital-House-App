@@ -87,6 +87,7 @@
 .dashboard-audit-row.accent-amber{border-left-color:var(--amber)}
 .dashboard-audit-row time{flex:none;font-size:10px;color:var(--muted);font-family:var(--mono);width:52px}
 .dashboard-audit-row span{font-size:13px;overflow-wrap:anywhere}
+.dashboard-audit-count{color:var(--muted);font-family:var(--mono);font-size:11px}
 .dashboard-audit-days{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,560px);overflow-y:auto;padding-right:4px}
 .dashboard-audit-date{position:sticky;top:0;margin:0 0 2px;padding:4px 0;background:var(--bg);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
 
