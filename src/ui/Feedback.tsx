@@ -200,13 +200,21 @@ function Files(props: { files: ChatFile[] }) {
 
 function MyFeedback(props: { uid: string }) {
   const [list, setList] = createSignal<Feedback[] | null>(null);
+  const [error, setError] = createSignal("");
   createEffect(() => {
-    const stop = watchMyFeedback(props.uid, setList);
+    setList(null);
+    setError("");
+    const stop = watchMyFeedback(props.uid, setList, (err) => setError(err.message));
     onCleanup(stop);
   });
   return (
     <div class="fb-list">
-      <Show when={list()} fallback={<p class="modal-text">Loading…</p>}>
+      <Show when={error()}>
+        <p class="form-error" role="alert">
+          Could not load your feedback: {error()}. (Not actually empty — this is a connection problem, try again.)
+        </p>
+      </Show>
+      <Show when={list()} fallback={<Show when={!error()}><p class="modal-text">Loading…</p></Show>}>
         <Show when={list()!.length} fallback={<p class="modal-text">You have not sent any feedback yet.</p>}>
           <For each={list()!}>
             {(f) => (
