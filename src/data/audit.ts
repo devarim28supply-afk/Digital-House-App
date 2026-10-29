@@ -26,6 +26,9 @@ export type AuditAction =
   | "member.role"
   | "member.approve"
   | "member.deny"
+  | "member.suspend"
+  | "member.ban"
+  | "member.restore"
   | "tile.create"
   | "tile.delete"
   | "tile.picture"
@@ -61,6 +64,9 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "member.role": "changed a role",
   "member.approve": "approved a member",
   "member.deny": "denied a member",
+  "member.suspend": "suspended a member",
+  "member.ban": "banned a member",
+  "member.restore": "restored a member",
   "tile.create": "made a tile",
   "tile.delete": "deleted a tile",
   "tile.picture": "changed a tile's picture",

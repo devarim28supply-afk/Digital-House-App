@@ -61,6 +61,7 @@ export function App() {
           <Shell
             uid={user().uid}
             admin={state().admin}
+            staff={state().staff}
             developer={Boolean(state().member?.roles?.develop)}
             name={state().member?.name || user().displayName || "Member"}
             username={state().member?.username || ""}
@@ -77,6 +78,16 @@ export function App() {
       <Match when={state().status === "denied"}>
         <Notice title="Not approved" onLogout={logout}>
           The operator did not approve this account. Ask them if you think that is a mistake.
+        </Notice>
+      </Match>
+      <Match when={state().status === "suspended"}>
+        <Notice title="Account suspended" onLogout={logout}>
+          A staff member has suspended this account. Ask them if you think that is a mistake.
+        </Notice>
+      </Match>
+      <Match when={state().status === "banned"}>
+        <Notice title="Account banned" onLogout={logout}>
+          A staff member has banned this account.
         </Notice>
       </Match>
       <Match when={state().status === "unregistered"}>

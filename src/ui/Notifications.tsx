@@ -5,7 +5,7 @@ import { feedbackReceipt, unreadNotifications } from "../data/notifications";
 import "./notifications.css";
 
 export type Notice = { id: string; title: string; detail: string; at: number; target: "mine" | "inbox" };
-export function Notifications(props: { uid: string; admin: boolean; unreadInbox: number; latestInboxAt?: number; onOpen: () => void; onItems: (items: Notice[]) => void; onError: (error: string) => void }) {
+export function Notifications(props: { uid: string; staff?: boolean; unreadInbox: number; latestInboxAt?: number; onOpen: () => void; onItems: (items: Notice[]) => void; onError: (error: string) => void }) {
   const unreadCount = () => props.unreadInbox + unreadNotifications(props.uid,items());
   const [items, setItems] = createSignal<Notice[]>([]);
   const [error, setError] = createSignal("");
@@ -62,7 +62,7 @@ export function Notifications(props: { uid: string; admin: boolean; unreadInbox:
     onCleanup(stop);
   });
   createEffect(() => {
-    if (!props.admin) return;
+    if (!props.staff) return;
     const uid = props.uid;
     let first = true;
     let known = new Set<string>();

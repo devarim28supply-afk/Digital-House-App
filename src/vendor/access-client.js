@@ -37,7 +37,7 @@ import {
 
 export const MEMBER_KEY = "gestrlab_member";
 export const LOGIN_DOMAIN = "m2a-access.local";
-export const STATUSES = ["guest", "pending", "approved", "denied", "unregistered"];
+export const STATUSES = ["guest", "pending", "approved", "denied", "suspended", "banned", "unregistered"];
 
 export class AccessError extends Error {
   constructor(code, message) {
@@ -126,16 +126,21 @@ export function createAccessClient({ firebaseConfig, ownerEmail, app: givenApp }
     }
   }
 
+  const KNOWN_STATUSES = ["approved", "denied", "pending", "suspended", "banned"];
+
   function applyMember(user, snap) {
     const isOwner = String(user.email || "").toLowerCase() === owner && owner !== "";
     if (!snap.exists()) {
-      setState({ status: "unregistered", user: pack(user), member: null, admin: isOwner, error: null });
+      setState({ status: "unregistered", user: pack(user), member: null, admin: isOwner, staff: isOwner, error: null });
       return;
     }
     const m = snap.data();
     const admin = isOwner || Boolean(m.roles && m.roles.admin);
-    const status = m.status === "approved" ? "approved" : m.status === "denied" ? "denied" : "pending";
-    setState({ status, user: pack(user), member: m, admin, error: null });
+    // Staff reaches every server; an admin on its own stays inside its own
+    // server. A developer counts as staff too.
+    const staff = isOwner || Boolean(m.roles && (m.roles.staff || m.roles.develop));
+    const status = KNOWN_STATUSES.includes(m.status) ? m.status : "pending";
+    setState({ status, user: pack(user), member: m, admin, staff, error: null });
   }
 
   function watchMember(user) {
@@ -176,7 +181,7 @@ export function createAccessClient({ firebaseConfig, ownerEmail, app: givenApp }
     if (!user) {
       if (unsubMember) unsubMember();
       unsubMember = null;
-      setState({ status: "guest", user: null, member: null, admin: false, error: null });
+      setState({ status: "guest", user: null, member: null, admin: false, staff: false, error: null });
       return;
     }
     resolveMember(user).catch((err) => setState({ status: "error", error: friendly(err).message }));
@@ -236,7 +241,7 @@ export function createAccessClient({ firebaseConfig, ownerEmail, app: givenApp }
     if (unsubMember) unsubMember();
     unsubMember = null;
     await signOut(auth);
-    setState({ status: "guest", user: null, member: null, admin: false, error: null });
+    setState({ status: "guest", user: null, member: null, admin: false, staff: false, error: null });
   }
 
   async function refresh() {
@@ -254,7 +259,7 @@ export function createAccessClient({ firebaseConfig, ownerEmail, app: givenApp }
     return rows;
   }
   function setStatus(uid, status) {
-    if (!["approved", "denied", "pending"].includes(status)) throw new AccessError("invalid", "Bad status.");
+    if (!KNOWN_STATUSES.includes(status)) throw new AccessError("invalid", "Bad status.");
     return updateDoc(doc(db, "members", uid), {
       status,
       reviewedAt: serverTimestamp(),
@@ -278,7 +283,19 @@ export function createAccessClient({ firebaseConfig, ownerEmail, app: givenApp }
     },
     isApproved: () => state.status === "approved",
     isAdmin: () => Boolean(state.admin) && state.status === "approved",
-    admin: { listMembers, approve: (uid) => setStatus(uid, "approved"), deny: (uid) => setStatus(uid, "denied"), reset: (uid) => setStatus(uid, "pending"), setRoles },
+    isStaff: () => Boolean(state.staff) && state.status === "approved",
+    admin: {
+      listMembers,
+      approve: (uid) => setStatus(uid, "approved"),
+      deny: (uid) => setStatus(uid, "denied"),
+      reset: (uid) => setStatus(uid, "pending"),
+      // suspend is meant to be temporary, ban permanent; both lock the
+      // account out of the whole app the same way "denied" does (isApproved()
+      // only passes on "approved"), not just one server.
+      suspend: (uid) => setStatus(uid, "suspended"),
+      ban: (uid) => setStatus(uid, "banned"),
+      setRoles,
+    },
     auth,
     db,
     app,
