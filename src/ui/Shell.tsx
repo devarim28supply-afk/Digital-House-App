@@ -319,6 +319,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setDmHome(false);
     setServerId(id);
   }
+  // Message a staff member from the Dashboard's Staff list: close the
+  // Dashboard, then the same thing starting a DM anywhere else does.
+  function dashboardMessage(uid: string) {
+    setDashboardOpen(false);
+    void startDm(uid);
+  }
   // The joined server shows up on the next member-list snapshot. Switch to it then.
   const [pendingJoin, setPendingJoin] = createSignal("");
   createEffect(() => {
@@ -1190,6 +1196,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         owner={isOwnerAccount()}
         initialPage={dashboardPage()}
         focusSection={dashboardFocus()}
+        onMessage={dashboardMessage}
       />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">

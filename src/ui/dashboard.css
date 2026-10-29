@@ -46,6 +46,16 @@
 .dashboard-link:hover{text-decoration:underline}
 .dashboard-bounded{max-height:min(60vh,560px);overflow-y:auto;padding-right:4px}
 
+/* ---- staff chat ---- */
+.dashboard-chat-log{display:flex;flex-direction:column;gap:8px;max-height:min(46vh,420px);overflow-y:auto;padding-right:4px;margin-bottom:10px}
+.dashboard-chat-row{display:flex;gap:8px;align-items:flex-start}
+.dashboard-chat-body{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dashboard-chat-head{display:flex;gap:7px;align-items:baseline}
+.dashboard-chat-head time{font-size:10px;color:var(--muted);font-family:var(--mono)}
+.dashboard-chat-text{font-size:13px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
+.dashboard-chat-form{display:flex;gap:8px}
+.dashboard-chat-form input{flex:1;min-width:0;height:38px;padding:0 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit}
+
 /* ---- stat tiles ---- */
 .dashboard-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 6px}
 .dashboard-tile{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--line-2);border-radius:9px;background:var(--panel);transition:transform .12s ease,border-color .12s ease}
@@ -90,6 +100,16 @@
 .dashboard-audit-count{color:var(--muted);font-family:var(--mono);font-size:11px}
 .dashboard-audit-days{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,560px);overflow-y:auto;padding-right:4px}
 .dashboard-audit-date{position:sticky;top:0;margin:0 0 2px;padding:4px 0;background:var(--bg);font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+
+/* ---- live calls ---- */
+.dashboard-room{padding:10px 0;border-top:1px solid var(--line)}
+.dashboard-room:first-of-type{border-top:0;padding-top:0}
+.dashboard-room-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.dashboard-room-head .member-name{flex:1}
+.dashboard-room-head small{margin-left:6px;color:var(--muted);font-family:var(--mono);font-size:11px}
+.quality-excellent,.quality-good{color:var(--green);border-color:var(--green)}
+.quality-poor{color:var(--red);border-color:var(--red)}
+.quality-unknown{color:var(--dim)}
 
 /* ---- activity ---- */
 .dashboard-activity-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
