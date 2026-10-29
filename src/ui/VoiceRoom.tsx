@@ -2126,7 +2126,7 @@ export function VoiceRoom(props: {
                     full={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
                   />
                 </button>
-                <Show when={!props.webcamOnly}>
+                <Show when={!props.webcamOnly && !coarsePhone()}>
                   <StreamMenu />
                 </Show>
               </>
@@ -2344,7 +2344,9 @@ function doubleTap(handler: () => void) {
   };
 }
 
-// Phone browsers cannot share a screen: hide Share screen and stream mode there.
+// Phone browsers cannot share a screen: hide Share screen there.
+// Stream (a second webcam) is hidden on a phone too, but for a different
+// reason - it is desktop rig gear, gated on coarsePhone() below, not this.
 const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
 function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "remove" | "leave"; word: string; full: string }) {
