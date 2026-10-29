@@ -222,6 +222,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     // the same channel id can be in two places (every DM's call is "call")
     if (call()?.serverId === serverId && call()?.channel.id === ch.id) return;
     setCall({ serverId, channel: ch });
+    // On a phone the channel list and the right-side chat are drawers with
+    // no close button (swipe only) sitting over the call. Leaving either
+    // open when a call starts means the video and dock sit directly behind
+    // it with nothing to dismiss it - close both the moment the call does.
+    setNavOpen(false);
+    setSideChatOpen(false);
   }
   function goToCall() {
     const c = call();
@@ -876,7 +882,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         onTouchCancel={() => {callSwipe=undefined;}}
         on:dh-open-channels={() => { setSideChatOpen(false); setNavOpen(true); }}
       >
-        <header class="main-head">
+        <header class="main-head" classList={{ "in-call": inThisCall() }}>
           <Show
             when={isDm(server()) && server()}
             fallback={
