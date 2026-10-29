@@ -1,3 +1,13 @@
+/* Desktop only (phones already size everything for touch in mobile-layout.css
+   and layout-themes.css) - 15% bigger across the board: text, icons, buttons,
+   spacing all scale together, since nothing in this file uses rem/em off a
+   root font size that a single html{font-size} change could lever instead. */
+@media (min-width: 761px) {
+  .shell {
+    zoom: 1.15;
+  }
+}
+
 /* ---- layout: rail | side | main (the right sidebar slides over) ---------- */
 
 .shell {
