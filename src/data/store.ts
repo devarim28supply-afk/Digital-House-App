@@ -80,8 +80,13 @@ export type Server = {
   open?: boolean;
   /** 8-character code an approved member can enter to join this server */
   inviteCode?: string;
-  /** "dm": a direct message between two people (data/dms.ts), not a server */
-  kind?: "dm";
+  /**
+   * "dm": a direct message between two people (data/dms.ts), not a server.
+   * "server" (every server made from here on): the oversight dashboard's
+   * admin query filters on this field, so it is never left unset.
+   * Older servers made before this field existed carry neither value.
+   */
+  kind?: "dm" | "server";
 };
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle
@@ -478,12 +483,42 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
   };
 }
 
+/**
+ * Every server, for the oversight dashboard (admins only; rules:
+ * M2A-Access-Control's firestore.rules, servers/{sid} isAdmin() read). DMs
+ * are excluded there too, so this never lists a private conversation.
+ */
+export function watchAllServers(cb: (servers: Server[]) => void, onError?: (err: Error) => void): Unsubscribe {
+  // where("kind","!=","dm") matches the rule's own condition exactly (the
+  // reason every server now carries kind:"server": Firestore excludes a
+  // document from a "!=" query if the field is missing, which is also why a
+  // server made before this field existed would not show up here until
+  // migrated). The client-side filter stays as a second, harmless check.
+  return onSnapshot(
+    query(collection(db, "servers"), where("kind", "!=", "dm")),
+    (snap) => {
+      const servers = snap.docs
+        .map((d) => {
+          const data = d.data() as Omit<Server, "id">;
+          return { id: d.id, ...data, memberUids: data.memberUids ?? [] };
+        })
+        .filter((s) => s.kind !== "dm");
+      servers.sort((a, b) => a.name.localeCompare(b.name));
+      cb(servers);
+    },
+    (err) => onError?.(err as unknown as Error),
+  );
+}
+
 /** A new server with a text and a voice channel to start. */
 export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
   // The server first: the channel rules look the server up, and a write in
   // the same batch is not visible to that lookup yet.
-  await setDoc(ref, { name, ownerUid: uid, memberUids: [uid], open, createdAt: serverTimestamp() });
+  // kind:"server" (never unset after this) is what lets the oversight
+  // dashboard's admin query filter DMs out at the database level, not only
+  // in its own display: see watchAllServers and firestore.rules.
+  await setDoc(ref, { name, ownerUid: uid, memberUids: [uid], open, kind: "server", createdAt: serverTimestamp() });
   const batch = writeBatch(db);
   const start = channels ?? [
     { name: "general", kind: "text", position: 0 },

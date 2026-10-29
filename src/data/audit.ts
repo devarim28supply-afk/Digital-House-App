@@ -23,6 +23,7 @@ export type AuditAction =
   | "server.invite"
   | "member.add"
   | "member.remove"
+  | "member.role"
   | "tile.create"
   | "tile.delete"
   | "tile.picture"
@@ -30,6 +31,8 @@ export type AuditAction =
   | "channel.rename"
   | "channel.delete"
   | "message.delete"
+  | "call.remove"
+  | "oversight.view"
   | "emoji.add"
   | "emoji.delete";
 

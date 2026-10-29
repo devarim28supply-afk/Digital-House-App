@@ -1,0 +1,9 @@
+.roles-modal .roles-search{width:100%;margin:6px 0 10px;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit}
+.roles-list{max-height:min(52vh,420px);overflow-y:auto}
+.roles-list .person{flex-wrap:wrap}
+.roles-list .member-name{flex:1 1 140px}
+.role-toggle{opacity:.6}
+.role-toggle[aria-pressed="true"]{opacity:1;border-color:var(--green);color:var(--green)}
+.role-toggle:disabled{cursor:not-allowed}
+.roles-confirm{margin:0 0 10px;padding:10px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2)}
+.roles-error{margin:0 0 8px;color:var(--red);font-size:12px}
