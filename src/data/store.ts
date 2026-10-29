@@ -427,13 +427,22 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
     cb(servers);
     for (const s of servers) {
       if (s.kind === "dm" || repairing.has(s.id)) continue;
-      const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true } = {};
+      const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true; kind?: "server" } = {};
       const home = s.ownerUid === uid && s.name.startsWith("Digital House");
       if ((home || s.open === true) && !s.memberUids.includes(uid)) patch.memberUids = arrayUnion(uid);
       // The lock wrote open:false. Digital House is open to everyone approved.
       if (home && s.open !== true) patch.open = true;
+      // A server from before kind:"server" existed has no kind at all - this
+      // query (member/owner/open, same as a regular person's own server
+      // list) still finds it fine, but the staff-only oversight query
+      // (where("kind","!=","dm")) silently drops a document missing the
+      // field, so it never shows in Oversight or the Dashboard's server
+      // list, and any audit entry about it shows a raw id instead of a
+      // name. Anyone who is actually a member here backfills it the first
+      // time they load their own server list - no separate migration needed.
+      if (!s.kind) patch.kind = "server";
       if (home) void restoreHomeMembers(s.id).catch(() => {});
-      if (!patch.memberUids && patch.open !== true) continue;
+      if (!patch.memberUids && patch.open !== true && !patch.kind) continue;
       repairing.add(s.id);
       void updateDoc(doc(db, "servers", s.id), patch).catch(() => repairing.delete(s.id));
     }
