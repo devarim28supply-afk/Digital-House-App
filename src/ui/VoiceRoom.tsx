@@ -87,31 +87,44 @@ const CAMERA_PUBLISH: TrackPublishOptions = {
   // while streaming) cannot carry much more next to a stream
   videoEncoding: { maxBitrate: 1_000_000, maxFramerate: 30, priority: "high" },
 };
-// LiveKit's default camera is an exact 1280×720. On a phone that is 16:9,
-// so the picture sits inside the 9:16 tile with black above and below.
-// The phone's video camera is 9:16, the same shape as the tall tile.
-// An ideal size was ignored and the camera stayed wide. exact aspect is
-// required. crop-and-scale reaches 9:16 from the sensor. Nothing is stretched.
+// LiveKit's default camera is an exact 1280×720. Held upright, a phone's
+// sensor is 9:16, the same shape as the tall tile - an ideal size was
+// ignored and the camera stayed wide, so exact aspect is required and
+// crop-and-scale reaches it from the sensor. Turned on its side, the same
+// phone is a 16:9 tile, like a desktop's - phoneLandscape() tracks which
+// way it is held right now (screen.orientation, where it exists), and
+// every request below targets whichever shape that is, not always 9:16.
 const PHONE_ASPECT = 9 / 16;
+const PHONE_ASPECT_WIDE = 16 / 9;
+function phoneLandscape(): boolean {
+  if (typeof screen !== "undefined" && screen.orientation?.type) {
+    return screen.orientation.type.startsWith("landscape");
+  }
+  if (typeof window === "undefined") return false;
+  return window.innerWidth > window.innerHeight;
+}
+function phoneAspect(): number {
+  return phoneLandscape() ? PHONE_ASPECT_WIDE : PHONE_ASPECT;
+}
 function phoneCameraCapture(loose = false): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
-  // 1080×1920 is 9:16. 1920×1080 is the 16:9 crop and is not used.
-  const width = loose ? 720 : 1080;
-  const height = loose ? 1280 : 1920;
+  const wide = phoneLandscape();
+  const short = loose ? 720 : 1080;
+  const long = loose ? 1280 : 1920;
   return {
-    aspectRatio: loose ? { ideal: PHONE_ASPECT } : { exact: PHONE_ASPECT },
+    aspectRatio: loose ? { ideal: phoneAspect() } : { exact: phoneAspect() },
     resizeMode: "crop-and-scale",
     resolution: {
-      width: { ideal: width } as unknown as number,
-      height: { ideal: height } as unknown as number,
+      width: { ideal: wide ? long : short } as unknown as number,
+      height: { ideal: wide ? short : long } as unknown as number,
       frameRate: { ideal: 30, max: 30 } as unknown as number,
     },
   } as VideoCaptureOptions;
 }
-function isNineSixteen(width: number, height: number): boolean {
+function matchesAspect(width: number, height: number, aspect: number): boolean {
   if (width <= 0 || height <= 0) return false;
-  return Math.abs(width / height - PHONE_ASPECT) < 0.06;
+  return Math.abs(width / height - aspect) < 0.06;
 }
 function settingsSize(media: MediaStreamTrack): { width: number; height: number } {
   const settings = media.getSettings();
@@ -144,67 +157,75 @@ async function shownSize(media: MediaStreamTrack): Promise<{ width: number; heig
   }
   return fallback;
 }
-async function shownNineSixteen(media: MediaStreamTrack): Promise<boolean> {
+/** Does the live frame already match how the phone is held right now? */
+async function shownMatchesHeld(media: MediaStreamTrack): Promise<boolean> {
+  const target = phoneAspect();
   const settings = settingsSize(media);
-  if (isNineSixteen(settings.width, settings.height)) return true;
+  if (matchesAspect(settings.width, settings.height, target)) return true;
   const shown = await shownSize(media);
-  return isNineSixteen(shown.width, shown.height);
+  return matchesAspect(shown.width, shown.height, target);
 }
-const PHONE_LOCK = {
-  width: { ideal: 1080 },
-  height: { ideal: 1920 },
-  aspectRatio: { exact: PHONE_ASPECT },
-  resizeMode: "crop-and-scale",
-  frameRate: { ideal: 30, max: 30 },
-} as MediaTrackConstraints;
-/** The camera opened wider than 9:16. Ask again until the frame matches the tile. */
+function phoneLockConstraints(): MediaTrackConstraints {
+  const wide = phoneLandscape();
+  return {
+    width: { ideal: wide ? 1920 : 1080 },
+    height: { ideal: wide ? 1080 : 1920 },
+    aspectRatio: { exact: phoneAspect() },
+    resizeMode: "crop-and-scale",
+    frameRate: { ideal: 30, max: 30 },
+  } as MediaTrackConstraints;
+}
+/** The camera opened the wrong way round. Ask again until the frame matches how the phone is held. */
 async function widenPhoneCamera(active: LocalParticipant) {
   if (!phoneCameraCapture()) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track;
   const media = local?.mediaStreamTrack;
   if (!media || media.readyState !== "live") return;
-  if (await shownNineSixteen(media)) return;
-  let acceptedTall = false;
+  if (await shownMatchesHeld(media)) return;
+  const wide = phoneLandscape();
   try {
-    await media.applyConstraints(PHONE_LOCK);
-    acceptedTall = true;
+    await media.applyConstraints(phoneLockConstraints());
   } catch {
     /* an exact pixel size below asks again */
   }
-  if (await shownNineSixteen(media)) return;
-  for (const constraints of [
-    { width: { exact: 1080 }, height: { exact: 1920 }, resizeMode: "crop-and-scale", frameRate: { ideal: 30, max: 30 } },
-    { width: { exact: 720 }, height: { exact: 1280 }, resizeMode: "crop-and-scale", frameRate: { ideal: 30, max: 30 } },
-  ] as unknown as MediaTrackConstraints[]) {
-    try {
-      await media.applyConstraints(constraints);
-    } catch {
-      continue;
-    }
-    if (await shownNineSixteen(media)) return;
-  }
-  // A phone that applies aspect in sensor space, then rotates, turns a 9:16
-  // request into a 16:9 picture. The wide ratio is what comes back tall.
-  const shown = await shownSize(media);
-  if (acceptedTall && shown.width > shown.height * 1.4) {
+  if (await shownMatchesHeld(media)) return;
+  const sizes: [number, number][] = wide ? [[1920, 1080], [1280, 720]] : [[1080, 1920], [720, 1280]];
+  for (const [width, height] of sizes) {
     try {
       await media.applyConstraints({
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        aspectRatio: { exact: 16 / 9 },
+        width: { exact: width },
+        height: { exact: height },
         resizeMode: "crop-and-scale",
         frameRate: { ideal: 30, max: 30 },
       } as MediaTrackConstraints);
     } catch {
-      /* put the tall request back below */
+      continue;
     }
-    if (await shownNineSixteen(media)) return;
+    if (await shownMatchesHeld(media)) return;
+  }
+  // A phone that applies aspect in sensor space, then rotates, hands back the
+  // opposite shape from the one asked for. Ask for that shape instead.
+  const shown = await shownSize(media);
+  const opposite = wide ? PHONE_ASPECT : PHONE_ASPECT_WIDE;
+  if (matchesAspect(shown.width, shown.height, opposite)) {
     try {
-      await media.applyConstraints(PHONE_LOCK);
+      await media.applyConstraints({
+        width: { ideal: wide ? 1080 : 1920 },
+        height: { ideal: wide ? 1920 : 1080 },
+        aspectRatio: { exact: opposite },
+        resizeMode: "crop-and-scale",
+        frameRate: { ideal: 30, max: 30 },
+      } as MediaTrackConstraints);
+    } catch {
+      /* put the direct request back below */
+    }
+    if (await shownMatchesHeld(media)) return;
+    try {
+      await media.applyConstraints(phoneLockConstraints());
     } catch {
       /* the picture already publishing stays */
     }
-    if (await shownNineSixteen(media)) return;
+    if (await shownMatchesHeld(media)) return;
   }
   const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
   if (!restart.restartTrack) return;
@@ -1032,7 +1053,8 @@ export function VoiceRoom(props: {
     return result;
   }
 
-  // Turning the phone can put the crop back. Ask for the tall picture again.
+  // Turning the phone changes which shape its camera should be. Ask again
+  // for whichever one that now is - widenPhoneCamera reads it fresh.
   if (COARSE_POINTER && typeof screen !== "undefined" && screen.orientation) {
     const onTurn = () => {
       const me = room()?.localParticipant;
