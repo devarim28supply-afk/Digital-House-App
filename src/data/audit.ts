@@ -10,8 +10,11 @@ import { auth, db } from "../firebase";
  *
  * Written by the person doing it, as they do it (a tile made or deleted, a
  * server renamed, someone added, another person's message deleted, a member
- * approved...). Only the owner, admins and developers read it, on the
- * Activity page. Nobody edits or deletes an entry.
+ * approved...). Only staff read it. Nobody edits or deletes an entry - the
+ * record stays exactly as it was written, including old mistakes (like the
+ * restoreHomeMembers logging bug, fixed, that spammed "added a member" on
+ * every reload). Dashboard.tsx collapses runs of identical entries for
+ * display instead of ever removing them.
  */
 
 export type AuditAction =

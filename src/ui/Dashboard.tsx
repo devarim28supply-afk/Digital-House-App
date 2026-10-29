@@ -268,8 +268,22 @@ function DashboardBody(props: {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
   });
   const maxTopCount = createMemo(() => Math.max(1, ...topActions().map((t) => t[1])));
-  const recentFeed = createMemo(() => entries().slice(0, 6));
-
+  // A logging bug could spam identical entries before it was fixed (or a
+  // legitimate action can just repeat) - collapse a run of them into one row
+  // with a count instead of showing each one, rather than ever deleting
+  // audit history.
+  const collapsedEntries = createMemo(() => {
+    const out: (AuditEntry & { count: number })[] = [];
+    for (const e of entries()) {
+      const last = out[out.length - 1];
+      if (last && last.uid === e.uid && last.action === e.action && (last.target ?? "") === (e.target ?? "") && (last.detail ?? "") === (e.detail ?? "")) {
+        last.count++;
+      } else {
+        out.push({ ...e, count: 1 });
+      }
+    }
+    return out;
+  });
   const AUDIT_FOR: Record<Status, "member.approve" | "member.deny" | "member.suspend" | "member.ban" | "member.restore"> = {
     approved: "member.approve",
     denied: "member.deny",
@@ -307,7 +321,7 @@ function DashboardBody(props: {
 
   const filteredEntries = createMemo(() => {
     const term = auditQuery().trim().toLowerCase();
-    const list = entries().slice(0, 300);
+    const list = collapsedEntries().slice(0, 300);
     if (!term) return list;
     return list.filter((e) => {
       const label = ACTION_LABEL[e.action as keyof typeof ACTION_LABEL] ?? e.action;
@@ -315,7 +329,7 @@ function DashboardBody(props: {
     });
   });
   const auditDays = createMemo(() => {
-    const groups: { day: string; items: AuditEntry[] }[] = [];
+    const groups: { day: string; items: (AuditEntry & { count: number })[] }[] = [];
     for (const e of filteredEntries()) {
       const day = new Date(e.at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
       const last = groups[groups.length - 1];
@@ -671,6 +685,9 @@ function DashboardBody(props: {
                               <b>{nameOf(e.uid)}</b> {ACTION_LABEL[e.action as keyof typeof ACTION_LABEL] ?? e.action}
                               <Show when={e.target}> — {e.target}</Show>
                               <Show when={e.detail}> ({e.detail})</Show>
+                              <Show when={e.count > 1}>
+                                <span class="dashboard-audit-count"> ×{e.count}</span>
+                              </Show>
                             </span>
                           </div>
                         )}
