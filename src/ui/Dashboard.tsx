@@ -444,7 +444,12 @@ function DashboardBody(props: {
   // servers staff hasn't actually opened, outside the Oversight flow.
   const busiestServers = createMemo(() => {
     const counts = new Map<string, number>();
-    for (const e of recent24h()) if (e.serverId) counts.set(e.serverId, (counts.get(e.serverId) ?? 0) + 1);
+    // A real Firestore server id is never "dh-...": that shape is only ever
+    // a LiveKit room name, which a call.watch logging bug (fixed, but the
+    // old entries stay - the audit log is never edited or deleted) wrote
+    // into serverId on some older entries. Skip those rather than show the
+    // room name as if it were a server.
+    for (const e of recent24h()) if (e.serverId && !e.serverId.startsWith("dh-")) counts.set(e.serverId, (counts.get(e.serverId) ?? 0) + 1);
     return [...counts.entries()]
       .map(([sid, count]) => [servers()?.find((s) => s.id === sid)?.name ?? sid, count] as [string, number])
       .sort((a, b) => b[1] - a[1])
@@ -1075,6 +1080,7 @@ function DashboardBody(props: {
                     <Show when={watchingRoom()?.name === r.name}>
                       <LiveCallWatch
                         room={r.name}
+                        serverId={r.serverId}
                         serverName={servers()?.find((s) => s.id === r.serverId)?.name ?? r.serverId}
                         profiles={props.profiles}
                         onClose={() => setWatchingRoom(undefined)}
