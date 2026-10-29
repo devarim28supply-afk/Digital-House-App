@@ -46,7 +46,6 @@ import {
   hasDarkwoodRoom,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
-import { ActivityButton } from "./ActivityPanel";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
@@ -55,9 +54,8 @@ import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
-import { OversightDialog } from "./Oversight";
 import { RolesDialog } from "./Roles";
-import { DashboardDialog } from "./Dashboard";
+import { DashboardDialog, type Tab as DashboardTab } from "./Dashboard";
 import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
@@ -204,7 +202,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
   const [notificationItems, setNotificationItems] = createSignal<Notice[]>([]);
   const [notificationError, setNotificationError] = createSignal("");
-  const [feedbackTab, setFeedbackTab] = createSignal<"send" | "mine" | "inbox">("send", { equals: false });
+  const [feedbackTab, setFeedbackTab] = createSignal<"send" | "mine">("send", { equals: false });
   const [feedbackWhere, setFeedbackWhere] = createSignal("");
   function openFeedback(where = "") {
     setFeedbackTab("send");
@@ -348,8 +346,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // only the owner account hands out roles
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
   const [rolesOpen, setRolesOpen] = createSignal(false);
-  const [oversightOpen, setOversightOpen] = createSignal(false);
   const [dashboardOpen, setDashboardOpen] = createSignal(false);
+  const [dashboardTab, setDashboardTab] = createSignal<DashboardTab>("overview", { equals: false });
+  function openDashboard(tab: DashboardTab = "overview") {
+    setDashboardTab(tab);
+    setDashboardOpen(true);
+  }
   const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
   // the left column shows your DMs (the ✉ button, or a DM is open)
   const dmMode = () => dmHome() || isDm(server());
@@ -887,19 +889,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             )}
           </Show>
           <Notifications uid={props.uid} staff={props.staff} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
-          {/* who committed, pushed and deployed what (owner and staff; a developer counts as staff) */}
+          {/* stats, approvals, who's online, servers, oversight, feedback, activity and the audit log in one place (staff only) */}
           <Show when={props.staff}>
-            <ActivityButton uid={props.uid} />
-          </Show>
-          {/* every server's channels and messages, read-only (staff only) */}
-          <Show when={props.staff}>
-            <button class="btn" type="button" title="Look into any server" onClick={() => setOversightOpen(true)}>
-              Oversight
-            </button>
-          </Show>
-          {/* stats, approvals, who's online, servers, and the audit log in one place (staff only) */}
-          <Show when={props.staff}>
-            <button class="btn" type="button" title="Staff dashboard" onClick={() => setDashboardOpen(true)}>
+            <button class="btn" type="button" title="Staff dashboard" onClick={() => openDashboard()}>
               Dashboard
             </button>
           </Show>
@@ -1173,12 +1165,11 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         initialTab={feedbackTab()}
         notificationItems={notificationItems()}
         unreadMessages={unreadDms()}
-        notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => setFeedbackTab(tab)} />}
+        notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => tab === "inbox" ? (setFeedbackOpen(false), openDashboard("feedback")) : setFeedbackTab(tab)} />}
         onClose={() => setFeedbackOpen(false)}
         uid={props.uid}
         name={nameOf(props.uid)}
         username={props.username}
-        staff={props.staff}
         where={
           feedbackWhere() ||
           [server()?.name, channel() ? `${channel()!.kind === "room" ? "tile" : "#"} ${channel()!.name}` : ""].filter(Boolean).join(" · ") ||
@@ -1187,8 +1178,15 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       />
       <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>
       <RolesDialog open={rolesOpen()} onClose={() => setRolesOpen(false)} uid={props.uid} profiles={profiles()} />
-      <OversightDialog open={oversightOpen()} onClose={() => setOversightOpen(false)} profiles={profiles()} />
-      <DashboardDialog open={dashboardOpen()} onClose={() => setDashboardOpen(false)} profiles={profiles()} />
+      <DashboardDialog
+        open={dashboardOpen()}
+        onClose={() => setDashboardOpen(false)}
+        profiles={profiles()}
+        uid={props.uid}
+        name={nameOf(props.uid)}
+        username={props.username}
+        initialTab={dashboardTab()}
+      />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">
           Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).

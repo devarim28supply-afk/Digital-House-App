@@ -28,11 +28,12 @@ const when = (d: Date | null) => (d ? d.toLocaleString([], { dateStyle: "medium"
 /**
  * Feedback for the developers: Send (bug / idea / other, text, screenshots
  * or files, where you are added by itself), My feedback (your own, with the
- * status and reply), and for the owner and staff the Inbox of everyone's.
+ * status and reply), and Notifications. Staff answer everyone's feedback
+ * from the Dashboard's Feedback tab (Inbox, below), not from here.
  */
 export function FeedbackDialog(props: {
   open: boolean;
-  initialTab?: "send" | "mine" | "inbox";
+  initialTab?: "send" | "mine";
   notifications?: JSX.Element;
   notificationItems?: Notice[];
   unreadMessages?: number;
@@ -40,18 +41,17 @@ export function FeedbackDialog(props: {
   uid: string;
   name: string;
   username: string;
-  staff?: boolean;
   /** where they are, added to what they send (a channel, a tile, the room) */
   where: string;
 }) {
-  const [tab, setTab] = createSignal<"send" | "mine" | "inbox" | "notifications">("send");
+  const [tab, setTab] = createSignal<"send" | "mine" | "notifications">("send");
   createEffect(() => { if (props.open) setTab(props.initialTab ?? "send"); });
-  const unread = (category: "mine" | "inbox" | "notifications") => unreadNotifications(props.uid,props.notificationItems ?? [],category) + (category === "notifications" ? props.unreadMessages ?? 0 : 0);
+  const unread = (category: "mine" | "notifications") => unreadNotifications(props.uid,props.notificationItems ?? [],category) + (category === "notifications" ? props.unreadMessages ?? 0 : 0);
   createEffect(() => {
     const active=tab();const visible=props.open;const list=props.notificationItems;
     if(visible && active !== "send") untrack(()=>markNotificationsRead(props.uid,active));
   });
-  const badge = (category: "mine" | "inbox" | "notifications") => <Show when={unread(category)>0}><span class="feedback-unread" aria-label={`${unread(category)} unread notifications`}><i aria-hidden="true"/>{unread(category)>99 ? "99+" : unread(category)}</span></Show>;
+  const badge = (category: "mine" | "notifications") => <Show when={unread(category)>0}><span class="feedback-unread" aria-label={`${unread(category)} unread notifications`}><i aria-hidden="true"/>{unread(category)>99 ? "99+" : unread(category)}</span></Show>;
 
   return (
     <Modal title="Feedback" open={props.open} onClose={props.onClose}>
@@ -64,11 +64,6 @@ export function FeedbackDialog(props: {
             My feedback {badge("mine")}
           </button>
           <button type="button" role="tab" aria-pressed={tab() === "notifications"} onClick={() => setTab("notifications")}>Notifications {badge("notifications")}</button>
-          <Show when={props.staff}>
-            <button type="button" role="tab" aria-pressed={tab() === "inbox"} onClick={() => setTab("inbox")}>
-              Inbox {badge("inbox")}
-            </button>
-          </Show>
         </div>
         <Show when={tab() === "notifications"}>{props.notifications}</Show>
         <Show when={tab() === "send"}>
@@ -76,9 +71,6 @@ export function FeedbackDialog(props: {
         </Show>
         <Show when={tab() === "mine"}>
           <MyFeedback uid={props.uid} />
-        </Show>
-        <Show when={tab() === "inbox" && props.staff}>
-          <Inbox by={props.username || props.name} />
         </Show>
       </div>
     </Modal>
@@ -240,7 +232,7 @@ function MyFeedback(props: { uid: string }) {
   );
 }
 
-function Inbox(props: { by: string }) {
+export function Inbox(props: { by: string }) {
   const [list, setList] = createSignal<Feedback[] | null>(null);
   const [error, setError] = createSignal("");
   const [type, setType] = createSignal<FeedbackType | "all">("all");
