@@ -161,10 +161,21 @@ export function imageSrc(image?: string) {
  * CSS 3D room where everyone walks around as their webcam). The Operation
  * Room is not one of these: it opens the M2A bunker. Every other tile
  * opens only its videochat for now, Room greyed out.
+ *
+ * Each key here gets its own, independent Darkwood Room: room.js already
+ * scopes the LiveKit room to "dh-<server>-<tile>--room" (api/dh-token.ts),
+ * so a new one here never shares a room, or a theme, with gestr-living or
+ * any other. The value is the look room.html gives it (ROOM_THEMES below,
+ * in src/room/room.js); gestr-living keeps no entry, so it keeps the
+ * original Matrix rain with nothing new to opt into.
  */
-const DARKWOOD_ROOM_TILES = new Set(["gestr-living"]);
+const DARKWOOD_ROOM_TILES: Record<string, string> = {
+  "gestr-living": "matrix",
+  "darkwood-living-room": "living",
+  "darkwood-wall-street": "wallstreet",
+};
 
-export const hasDarkwoodRoom = (channel: Channel) => DARKWOOD_ROOM_TILES.has(channel.roomKey ?? "");
+export const hasDarkwoodRoom = (channel: Channel) => Object.hasOwn(DARKWOOD_ROOM_TILES, channel.roomKey ?? "");
 
 /**
  * Link tiles whose Room side is on: their link opens there. Other link tiles
@@ -227,7 +238,8 @@ export function roomUrlOf(channel: Channel, serverId: string) {
     return channel.url!;
   }
   if (!hasDarkwoodRoom(channel)) return "";
-  const q = new URLSearchParams({ s: serverId, c: channel.id });
+  const theme = DARKWOOD_ROOM_TILES[channel.roomKey ?? ""];
+  const q = new URLSearchParams({ s: serverId, c: channel.id, ...(theme && theme !== "matrix" ? { theme } : {}) });
   return `${import.meta.env.BASE_URL}room.html?${q}`;
 }
 
@@ -246,10 +258,29 @@ export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
   roomKey: "m2a-operation",
 };
 
+/** A second, separate sitting room - its own Darkwood Room, warm instead of
+ * Node Lounge's cold Matrix green, not the same space. */
+export const LIVING_ROOM_TILE: Omit<Channel, "id" | "position"> = {
+  name: "Living Room",
+  kind: "room",
+  image: "/livingroom-tile.svg",
+  roomKey: "darkwood-living-room",
+};
+
+/** A trading-floor Darkwood Room: a ticker instead of Matrix rain. */
+export const WALL_STREET_TILE: Omit<Channel, "id" | "position"> = {
+  name: "Wall Street",
+  kind: "room",
+  image: "/wallstreet-tile.svg",
+  roomKey: "darkwood-wall-street",
+};
+
 /** The home server's built-in tiles, top to bottom, each with its own chat. */
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: OPERATION_TILE, chat: "operation-room" },
   { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #nodelounge-chat
+  { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
+  { tile: WALL_STREET_TILE, chat: tileChatName(WALL_STREET_TILE.name) }, // #wallstreet-chat
 ];
 
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
@@ -673,9 +704,11 @@ export async function restoreHomeMembers(sid: string) {
 
 /**
  * The home server's built-in tiles, each with its chat, made once: the
- * M2A ACCESS Operation Room (#operation-room) and Node Lounge
- * (#nodelounge-chat), in that order above the other channels. Also renames
- * an older Living Room tile and its chat, and gives a tile without one its chat.
+ * M2A ACCESS Operation Room (#operation-room), Node Lounge
+ * (#nodelounge-chat), Living Room (#livingroom-chat) and Wall Street
+ * (#wallstreet-chat), in HOME_TILES order above the other channels. Also
+ * renames a tile whose name has drifted from its spec, and gives a tile
+ * without one its chat.
  */
 export async function ensureHomeTiles(sid: string, channels: Channel[]) {
   const channelsRef = collection(db, "servers", sid, "channels");
