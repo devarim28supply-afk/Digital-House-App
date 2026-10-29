@@ -338,6 +338,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setDmHome(true);
     const first = dmsByLatest()[0];
     if (first && !isDm(server())) setServerId(first.id);
+    // Landing on a real conversation is a destination, same as picking a
+    // channel (pickChannel) or a DM row (below) - on a phone, where the
+    // rail and channel list are a drawer over the chat, it has to close
+    // the same way those do, or the chat it just opened stays hidden
+    // behind the drawer with no button to dismiss it (nav is swipe-only).
+    if (isDm(server())) setNavOpen(false);
   }
 
   // Keep a valid server picked.
