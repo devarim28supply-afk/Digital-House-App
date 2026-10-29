@@ -55,7 +55,7 @@ import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
 import { RolesDialog } from "./Roles";
-import { DashboardDialog, type Tab as DashboardTab } from "./Dashboard";
+import { DashboardDialog, type Page as DashboardPage, type Section as DashboardSection } from "./Dashboard";
 import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
@@ -347,9 +347,11 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
   const [rolesOpen, setRolesOpen] = createSignal(false);
   const [dashboardOpen, setDashboardOpen] = createSignal(false);
-  const [dashboardTab, setDashboardTab] = createSignal<DashboardTab>("overview", { equals: false });
-  function openDashboard(tab: DashboardTab = "overview") {
-    setDashboardTab(tab);
+  const [dashboardPage, setDashboardPage] = createSignal<DashboardPage>("insights", { equals: false });
+  const [dashboardFocus, setDashboardFocus] = createSignal<DashboardSection | undefined>(undefined, { equals: false });
+  function openDashboard(page: DashboardPage = "insights", focus?: DashboardSection) {
+    setDashboardPage(page);
+    setDashboardFocus(focus);
     setDashboardOpen(true);
   }
   const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
@@ -1165,7 +1167,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         initialTab={feedbackTab()}
         notificationItems={notificationItems()}
         unreadMessages={unreadDms()}
-        notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => tab === "inbox" ? (setFeedbackOpen(false), openDashboard("feedback")) : setFeedbackTab(tab)} />}
+        notifications={<NotificationList items={notificationItems()} error={notificationError()} unreadInbox={unreadDms()} onInbox={() => {setFeedbackOpen(false);goDms();}} onFeedback={tab => tab === "inbox" ? (setFeedbackOpen(false), openDashboard("insights", "feedback")) : setFeedbackTab(tab)} />}
         onClose={() => setFeedbackOpen(false)}
         uid={props.uid}
         name={nameOf(props.uid)}
@@ -1185,7 +1187,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         uid={props.uid}
         name={nameOf(props.uid)}
         username={props.username}
-        initialTab={dashboardTab()}
+        initialPage={dashboardPage()}
+        focusSection={dashboardFocus()}
       />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">
