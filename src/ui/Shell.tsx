@@ -55,6 +55,7 @@ import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
+import { OversightDialog } from "./Oversight";
 import { RolesDialog } from "./Roles";
 import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
@@ -346,6 +347,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
   // only the owner account hands out roles
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
   const [rolesOpen, setRolesOpen] = createSignal(false);
+  const [oversightOpen, setOversightOpen] = createSignal(false);
   const runsServer = () => Boolean(server() && !isDm(server()) && (server()!.ownerUid === props.uid || props.admin));
   // the left column shows your DMs (the ✉ button, or a DM is open)
   const dmMode = () => dmHome() || isDm(server());
@@ -887,6 +889,12 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
           <Show when={props.admin || props.developer}>
             <ActivityButton uid={props.uid} />
           </Show>
+          {/* every server's channels and messages, read-only (admins only) */}
+          <Show when={props.admin}>
+            <button class="btn" type="button" title="Look into any server" onClick={() => setOversightOpen(true)}>
+              Oversight
+            </button>
+          </Show>
           <Show when={tileChat()}>
             {(chat) => (
               <button
@@ -1171,6 +1179,7 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
       />
       <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>
       <RolesDialog open={rolesOpen()} onClose={() => setRolesOpen(false)} uid={props.uid} profiles={profiles()} />
+      <OversightDialog open={oversightOpen()} onClose={() => setOversightOpen(false)} profiles={profiles()} />
       <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
         <p class="modal-text">
           Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).

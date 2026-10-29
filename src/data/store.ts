@@ -478,6 +478,28 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
   };
 }
 
+/**
+ * Every server, for the oversight dashboard (admins only; rules:
+ * M2A-Access-Control's firestore.rules, servers/{sid} isAdmin() read). DMs
+ * are excluded there too, so this never lists a private conversation.
+ */
+export function watchAllServers(cb: (servers: Server[]) => void, onError?: (err: Error) => void): Unsubscribe {
+  return onSnapshot(
+    collection(db, "servers"),
+    (snap) => {
+      const servers = snap.docs
+        .map((d) => {
+          const data = d.data() as Omit<Server, "id">;
+          return { id: d.id, ...data, memberUids: data.memberUids ?? [] };
+        })
+        .filter((s) => s.kind !== "dm");
+      servers.sort((a, b) => a.name.localeCompare(b.name));
+      cb(servers);
+    },
+    (err) => onError?.(err as unknown as Error),
+  );
+}
+
 /** A new server with a text and a voice channel to start. */
 export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
