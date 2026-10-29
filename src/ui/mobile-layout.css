@@ -20,6 +20,16 @@
   .main-head .dm-call-btn{grid-column:3;grid-row:1}
   .main-head .notifications{grid-column:1;grid-row:2;margin:0;min-width:0}
   .main-head .activity-btn{grid-column:2;grid-row:2}
+  /* In a call, the room name and Feedback button only crowd the dock and
+     video below them - the dock's own Leave button is how you get out, and
+     the call is already named on the tile you joined it from. Trim the bar
+     down to whatever's left (the chat toggle, mainly) instead. */
+  :root[data-layout-theme] .main-head.in-call{grid-template-rows:40px;height:48px;min-height:48px;flex:0 0 48px;padding:6px 10px}
+  .main-head.in-call .main-title,
+  .main-head.in-call .notifications{display:none}
+  .main-head.in-call .dm-call-btn,
+  .main-head.in-call .activity-btn,
+  .main-head.in-call .side-chat-btn{grid-row:1}
   .main-head .side-chat-btn{grid-column:3;grid-row:2;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   :root[data-layout-theme] .main-head :is(.feedback-btn,.activity-btn,.side-chat-btn,.dm-call-btn){
     box-sizing:border-box;
