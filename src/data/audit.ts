@@ -40,6 +40,7 @@ export type AuditAction =
   | "channel.delete"
   | "message.delete"
   | "call.remove"
+  | "call.watch"
   | "oversight.view"
   | "emoji.add"
   | "emoji.delete";
@@ -78,6 +79,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "channel.delete": "deleted a channel",
   "message.delete": "deleted a message",
   "call.remove": "removed someone from a call",
+  "call.watch": "watched a live call",
   "oversight.view": "looked into a server",
   "emoji.add": "added an emoji",
   "emoji.delete": "deleted an emoji",

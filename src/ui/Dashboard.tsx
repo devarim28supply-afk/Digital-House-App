@@ -6,6 +6,7 @@ import { watchAllFeedback } from "../data/feedback";
 import { type StaffMessage, sendStaffMessage, watchStaffChat } from "../data/staffchat";
 import { type Profile, type Server, ONLINE_WINDOW_MS, displayName, watchAllServers, watchPresence } from "../data/store";
 import { Inbox } from "./Feedback";
+import { LiveCallWatch } from "./LiveCallWatch";
 import { access, auth } from "../firebase";
 import { OversightBody } from "./Oversight";
 import { faceStyle, faceText } from "./Shell";
@@ -213,6 +214,7 @@ function DashboardBody(props: {
   const [liveRooms, setLiveRooms] = createSignal<LiveRoom[] | undefined>();
   const [roomsError, setRoomsError] = createSignal("");
   const [roomBusy, setRoomBusy] = createSignal(new Set<string>());
+  const [watchingRoom, setWatchingRoom] = createSignal<LiveRoom | undefined>();
   const [uploads, setUploads] = createSignal<UploadsSummary | undefined>();
   const [uploadsError, setUploadsError] = createSignal("");
   const [uploadsLoading, setUploadsLoading] = createSignal(false);
@@ -1063,10 +1065,21 @@ function DashboardBody(props: {
                         <small>{r.is3dRoom ? "3D room" : "videochat"}</small>
                       </span>
                       <span class="dashboard-pill">{r.numParticipants} in call</span>
+                      <button class="btn" type="button" onClick={() => setWatchingRoom(r)}>
+                        Watch
+                      </button>
                       <button class="btn" type="button" disabled={roomBusy().has(r.name)} onClick={() => void endCall(r.name)}>
                         End call
                       </button>
                     </div>
+                    <Show when={watchingRoom()?.name === r.name}>
+                      <LiveCallWatch
+                        room={r.name}
+                        serverName={servers()?.find((s) => s.id === r.serverId)?.name ?? r.serverId}
+                        profiles={props.profiles}
+                        onClose={() => setWatchingRoom(undefined)}
+                      />
+                    </Show>
                     <div class="people-list dashboard-people">
                       <For each={r.participants}>
                         {(p) => (
