@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180">
+  <defs>
+    <linearGradient id="lrBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a2416"/>
+      <stop offset="100%" stop-color="#1a0f08"/>
+    </linearGradient>
+    <radialGradient id="lrGlow" cx="50%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#ffb35980" />
+      <stop offset="100%" stop-color="#ffb35900" />
+    </radialGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#lrBg)"/>
+  <rect width="320" height="180" fill="url(#lrGlow)"/>
+  <!-- window -->
+  <rect x="226" y="24" width="70" height="92" rx="4" fill="#2a1a10" stroke="#ffb359" stroke-width="2"/>
+  <rect x="233" y="31" width="27" height="38" fill="#ffd79a" opacity="0.55"/>
+  <rect x="262" y="31" width="27" height="38" fill="#ffd79a" opacity="0.4"/>
+  <rect x="233" y="71" width="27" height="38" fill="#ffd79a" opacity="0.35"/>
+  <rect x="262" y="71" width="27" height="38" fill="#ffd79a" opacity="0.5"/>
+  <!-- floor -->
+  <rect x="0" y="128" width="320" height="52" fill="#120a06"/>
+  <!-- couch -->
+  <rect x="24" y="96" width="150" height="40" rx="10" fill="#7a4a2d"/>
+  <rect x="18" y="86" width="162" height="26" rx="12" fill="#8a5636"/>
+  <rect x="18" y="80" width="18" height="34" rx="8" fill="#8a5636"/>
+  <rect x="162" y="80" width="18" height="34" rx="8" fill="#8a5636"/>
+  <rect x="40" y="112" width="34" height="18" rx="6" fill="#c98a4b"/>
+  <rect x="120" y="112" width="34" height="18" rx="6" fill="#c98a4b"/>
+  <!-- lamp -->
+  <rect x="196" y="112" width="5" height="26" fill="#3a2415"/>
+  <circle cx="198.5" cy="130" r="10" fill="#3a2415"/>
+  <path d="M184 92 L213 92 L205 112 L192 112 Z" fill="#ffd79a" opacity="0.85"/>
+  <!-- rug -->
+  <ellipse cx="90" cy="154" rx="78" ry="14" fill="#5c3a22" opacity="0.6"/>
+  <text x="16" y="172" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#ffb359" opacity="0.8">Living Room</text>
+</svg>

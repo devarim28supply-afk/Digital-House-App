@@ -59,17 +59,32 @@ function setStatus(text, problem = false, link) {
   }
 }
 
+// ---- a different Darkwood Room look: ?theme=<id> (DARKWOOD_ROOM_TILES in
+// src/data/store.ts); no theme (Node Lounge / gestr-living) is the original
+// Matrix room exactly as it was. room.html carries the CSS for each; this
+// only has to pick the room's own rain (or none).
+const ROOM_THEME = new URLSearchParams(location.search).get("theme") || "matrix";
+document.documentElement.dataset.theme = ROOM_THEME;
+document.title = ROOM_THEME === "living" ? "Living Room" : ROOM_THEME === "wallstreet" ? "Wall Street" : "Darkwood Room";
+
 // ---- Matrix rain on every wall, made once; CSS animates it (room.html .drop)
 const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789Z:.=*+-<>¦";
+// Wall Street: the same falling columns, but ticker digits, not Matrix glyphs.
+const TICKER_GLYPHS = "0123456789.,+-%$";
 const COLUMN = 12; // px, one character wide
 function makeRain() {
-  const pick = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+  if (ROOM_THEME === "living") return; // the Living Room sits still: no rain
+  const glyphs = ROOM_THEME === "wallstreet" ? TICKER_GLYPHS : GLYPHS;
+  const pick = () => glyphs[Math.floor(Math.random() * glyphs.length)];
   for (const wall of document.querySelectorAll(".wall")) {
     const columns = Math.floor(wall.offsetWidth / COLUMN);
     for (let i = 0; i < columns; i++) {
       if (Math.random() < 0.25) continue; // a few gaps, like the film
       const drop = document.createElement("div");
       drop.className = "drop";
+      // a stock only ever goes up or down: half the columns each, so the
+      // ticker reads red and green together, not one uniform color
+      if (ROOM_THEME === "wallstreet") drop.classList.add(Math.random() < 0.5 ? "up" : "down");
       const length = 6 + Math.floor(Math.random() * 15); // at most 240 px: fits the 300 px wall
       drop.textContent = Array.from({ length }, pick).join("\n");
       const t = 4 + Math.random() * 8; // seconds to fall the wall
