@@ -24,6 +24,8 @@ export type AuditAction =
   | "member.add"
   | "member.remove"
   | "member.role"
+  | "member.approve"
+  | "member.deny"
   | "tile.create"
   | "tile.delete"
   | "tile.picture"
@@ -44,6 +46,32 @@ export type AuditEntry = {
   target?: string;
   detail?: string;
   at: number;
+};
+
+/** Plain-language label for each action, for the Activity page and the Dashboard. */
+export const ACTION_LABEL: Record<AuditAction, string> = {
+  "server.create": "made a server",
+  "server.delete": "deleted a server",
+  "server.settings": "changed server settings",
+  "server.rename": "renamed a server",
+  "server.open": "changed who a server is open to",
+  "server.invite": "made an invite code",
+  "member.add": "added a member",
+  "member.remove": "removed a member",
+  "member.role": "changed a role",
+  "member.approve": "approved a member",
+  "member.deny": "denied a member",
+  "tile.create": "made a tile",
+  "tile.delete": "deleted a tile",
+  "tile.picture": "changed a tile's picture",
+  "channel.create": "made a channel",
+  "channel.rename": "renamed a channel",
+  "channel.delete": "deleted a channel",
+  "message.delete": "deleted a message",
+  "call.remove": "removed someone from a call",
+  "oversight.view": "looked into a server",
+  "emoji.add": "added an emoji",
+  "emoji.delete": "deleted an emoji",
 };
 
 /** Note an action. Never in the way: a failed note is dropped quietly. */
