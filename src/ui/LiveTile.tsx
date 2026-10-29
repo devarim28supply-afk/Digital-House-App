@@ -1,11 +1,9 @@
-import { DeveloperBadge } from "./DeveloperBadge";
-import { For, Show, createEffect, createSignal, onCleanup, untrack } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, untrack } from "solid-js";
 
 import { type RemoteTrack, Room, RoomEvent, Track } from "livekit-client";
 
 import type { Profile } from "../data/store";
 import { auth } from "../firebase";
-import { faceStyle, faceText } from "./Shell";
 
 // A team's LIVE tile shows each member this long, then the next (Kaalob).
 const ROTATE_MS = 10_000;
@@ -29,8 +27,8 @@ function still(video: HTMLVideoElement | undefined, width: number) {
  * into that videochat with their stream big.
  *
  * A team (streamers who teamed up for the same game) shares one tile: it
- * shows each member's stream for 10 seconds, then the next, round and round,
- * with every member's profile picture in the corner (the one showing lit).
+ * shows each member's stream for 10 seconds, then the next, round and round -
+ * just the name and the stream itself, no avatar or developer badge here.
  *
  * In that same videochat already (frozen), the tile holds a still picture
  * instead: you see the stream in the call, so the sidebar downloads nothing.
@@ -176,27 +174,8 @@ export function LiveTile(props: {
       <Show when={!playing() && !snapshot()}>
         <span class="live-tile-wait" />
       </Show>
-      {/* a team: every member's picture, the one showing lit */}
-      <Show when={props.uids.length > 1}>
-        <span class="live-team" aria-label={`Team: ${names()}`}>
-          <For each={props.uids}>
-            {(uid) => (
-              <span
-                class="avatar live-team-face"
-                classList={{ on: uid === current() }}
-                style={faceStyle(props.profileOf?.(uid))}
-                title={props.nameOf(uid)}
-              >
-                {faceText(props.profileOf?.(uid), props.nameOf(uid))}
-              </span>
-            )}
-          </For>
-        </span>
-      </Show>
       <span class="live-badge">LIVE</span>
-      <span class="room-tile-name">
-        {props.nameOf(current())}<DeveloperBadge username={props.usernameOf?.(current())} />
-      </span>
+      <span class="room-tile-name">{props.nameOf(current())}</span>
     </button>
   );
 }

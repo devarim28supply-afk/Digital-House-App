@@ -653,26 +653,40 @@
   min-height: 0;
 }
 
+/* lives in the main-head row now (the title, Feedback and Dashboard's own
+   row), not its old spot above the room - Shell.tsx renders it, driven by
+   the RoomPaneToggle RoomPane hands up. */
 .pane-switch {
   display: flex;
-  justify-content: center;
   flex: none;
-  padding: 10px 0 2px;
 }
 
-.pane-switch-track {
+/*
+ * #root here, not !important: layout-themes.css has a deliberate
+ * "borderless, sliding pill" design for .pane-switch-track (border:0,
+ * outline:none, box-shadow:none, repeated under several rules, on :root -
+ * every theme, not just one), written for when this toggle lived inside
+ * the room pane. It still matches now that the toggle lives in the header,
+ * at equal selector specificity, and (loaded after app.css) wins on source
+ * order - which is why adding a border here kept silently doing nothing.
+ * #root outranks any class/attribute selector chain regardless of load
+ * order, without reaching for !important.
+ */
+#root .pane-switch-track {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  width: 280px;
-  height: 38px;
+  height: 32px;
   padding: 3px;
-  border: 1px solid var(--line-2);
+  gap: 3px;
+  border: 2px solid var(--green);
   border-radius: 999px;
   background: var(--panel-2);
+  box-shadow: 0 0 10px -1px var(--green);
 }
 
-.pane-switch-track button {
-  border: 0;
+#root .pane-switch-track button {
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
@@ -680,14 +694,16 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.pane-switch-track button[aria-pressed="true"] {
+#root .pane-switch-track button[aria-pressed="true"] {
+  border-color: var(--green);
   background: #fafafa;
   color: #000;
 }
 
-.pane-switch-track button:disabled {
+#root .pane-switch-track button:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -2394,6 +2410,125 @@ img.msg-sticker {
   position: absolute;
 }
 
+/* Wall Street's permanent big panel: a TradingView chart (everyone's own,
+   fully interactive) or whoever's Stream is on, picked with two small tabs. */
+.broadcast-big {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  /* no overflow:hidden here - verified in isolation that Chrome renders a
+     clipped iframe (TradingView's chart) solid black when an ancestor
+     clips it, even though the iframe itself is sized correctly. Nothing
+     here actually overflows (the flex children fit exactly), so clipping
+     was never doing anything except triggering that bug. */
+  border-radius: 12px;
+  background: #000;
+}
+.broadcast-tabs {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 4px;
+  background: #0b0b0d;
+  border-bottom: 1px solid var(--line);
+}
+.broadcast-tabs button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.broadcast-tabs button[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.broadcast-timeframes {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.broadcast-timeframes button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.broadcast-timeframes button[aria-pressed="true"] {
+  background: var(--purple, #a78bfa);
+  color: #000;
+}
+.broadcast-big video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #000;
+}
+/* three charts: two stacked on the left, the third on the right standing as
+   tall as those two together, not just the top row's height */
+.tradingview-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+  padding: 6px;
+  background: #000;
+}
+.tradingview-grid > :nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+.tradingview-grid > :nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+.tradingview-grid > :nth-child(3) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.tradingview-chart {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #000;
+}
+/* TradingView's embed script doesn't render into the
+   tradingview-widget-container__widget div itself - it appends a second,
+   separate div alongside it to hold the real iframe. Both ask for
+   height:100%, so in normal flow they stack (the real chart ends up pushed
+   below, outside the panel, which is what "placed down, overlapping the
+   webcam" was). Every direct child fills the cell on top of the others
+   instead, so it doesn't matter how many divs TradingView's script adds. */
+.tradingview-chart > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.broadcast-big-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 16px;
+}
+
 .tiles.spotlight {
   position: relative;
   display: block;
@@ -2686,29 +2821,6 @@ img.live-tile-still {
 :root[data-layout-theme="smoky"] .dock-menu button:focus-visible {
   background: #ffffff30;
   color: #000;
-}
-
-/* a team's LIVE tile: every member's picture top left; the one showing is lit */
-.live-team {
-  position: absolute;
-  top: 7px;
-  left: 7px;
-  display: flex;
-  gap: 4px;
-}
-
-.live-team .live-team-face {
-  width: 24px;
-  height: 24px;
-  font-size: 10px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  opacity: 0.6;
-  transition: opacity 0.3s, border-color 0.3s;
-}
-
-.live-team .live-team-face.on {
-  border-color: #f87171;
-  opacity: 1;
 }
 
 /* ---- phones and tablets (touch) --------------------------------------------- */

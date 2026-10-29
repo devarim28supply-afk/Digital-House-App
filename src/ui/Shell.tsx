@@ -45,14 +45,13 @@ import {
   watchServers,
   hasDarkwoodRoom,
   LIVING_ROOM_TILE,
-  WALL_STREET_TILE,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
-import { RoomPane } from "./RoomPane";
+import { RoomPane, type RoomPaneToggle } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
@@ -81,10 +80,10 @@ const TILE_ALIASES: Record<string, string[]> = {
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
 const RIGHT_LINGER_MS = 5_000;
-// Living Room and Wall Street: tiles that exist but aren't ready yet -
-// neither side (videochat or Room) opens; a plain message instead. Remove a
-// roomKey here once that room is ready for real use.
-const UNDER_CONSTRUCTION = new Set([LIVING_ROOM_TILE.roomKey, WALL_STREET_TILE.roomKey]);
+// Living Room: exists but isn't ready yet - neither side (videochat or
+// Room) opens, a plain message instead. Wall Street is being tested now, off
+// this list. Remove a roomKey here once that room is ready for real use.
+const UNDER_CONSTRUCTION = new Set([LIVING_ROOM_TILE.roomKey]);
 
 function remember(key: string, value: string) {
   try {
@@ -224,6 +223,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // channel joins it, and it stays connected while you read other channels
   // (or servers) until Disconnect. Joining another one moves you there.
   const [call, setCall] = createSignal<{ serverId: string; channel: Channel } | undefined>();
+  // The Videochat/Room toggle lives here, in the header, but the actual pane
+  // state (and everything switching it touches) stays owned by RoomPane.
+  const [roomToggle, setRoomToggle] = createSignal<RoomPaneToggle | undefined>();
   function joinCall(serverId: string, ch: Channel) {
     // the same channel id can be in two places (every DM's call is "call")
     if (call()?.serverId === serverId && call()?.channel.id === ch.id) return;
@@ -914,6 +916,20 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               </>
             )}
           </Show>
+          <Show when={inThisCall() && roomToggle()}>
+            {(toggle) => (
+              <div class="pane-switch" role="group" aria-label={`${channel()?.name ?? ""} view`}>
+                <div class="pane-switch-track" classList={{ "room-selected": toggle().pane() === "room" }}>
+                  <button type="button" aria-pressed={toggle().pane() === "video"} onClick={() => toggle().show("video")}>
+                    {toggle().labels.video}
+                  </button>
+                  <button type="button" aria-pressed={toggle().pane() === "room"} onClick={() => toggle().show("room")} disabled={!toggle().canRoom()}>
+                    {toggle().labels.room}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Show>
           <Notifications uid={props.uid} staff={props.staff} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
           {/* stats, approvals, who's online, servers, oversight, feedback, activity and the audit log in one place (staff only) */}
           <Show when={props.staff}>
@@ -992,6 +1008,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                   profiles={profiles()}
                   teams={teamsIn(c.serverId, c.channel.id)}
                   onLeave={() => setCall(undefined)}
+                  onToggle={setRoomToggle}
                 />
               ) : (
                 <VoiceRoom

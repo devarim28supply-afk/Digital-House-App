@@ -7,6 +7,21 @@ import { CallStrip, CamRow } from "./CallStrip";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
+/**
+ * The Videochat/Room toggle itself lives in Shell.tsx's header now (same row
+ * as the title, Feedback and Dashboard) - this is how it reaches in to drive
+ * the actual pane, since that state (and everything switching it touches:
+ * the operation bunker's camera, localStorage, the room page loading) stays
+ * owned here, not duplicated in Shell.
+ */
+export type RoomPaneToggle = {
+  pane: () => Pane;
+  show: (next: Pane) => void;
+  /** Room is reachable at all: a url exists (or, the Operation Room, not on a phone) */
+  canRoom: () => boolean;
+  /** "Videochat"/"Room" normally, "Window"/"Room" for the Operation Room */
+  labels: { video: string; room: string };
+};
 const paneKey = (cid: string) => `dh_pane_${cid}`;
 
 function recallPane(cid: string): Pane {
@@ -34,6 +49,8 @@ export function RoomPane(props: {
   teams?: string[][];
   /** Disconnect pressed: the app ends this call (and with it the room) */
   onLeave: () => void;
+  /** Shell's header renders the actual Videochat/Room buttons from this */
+  onToggle?: (t: RoomPaneToggle | undefined) => void;
 }) {
   const phoneQuery = window.matchMedia("(max-width:600px)");
   const [phone, setPhone] = createSignal(phoneQuery.matches);
@@ -158,6 +175,16 @@ export function RoomPane(props: {
   }
 
   const url = () => roomUrlOf(props.channel, props.serverId);
+  const canRoom = () => (operation() ? !phone() : Boolean(url()));
+  createEffect(() => {
+    props.onToggle?.({
+      pane,
+      show,
+      canRoom,
+      labels: operation() ? { video: "Window", room: "Room" } : { video: "Videochat", room: "Room" },
+    });
+  });
+  onCleanup(() => props.onToggle?.(undefined));
   // A Darkwood Room is loaded for everyone in the tile, even on the videochat
   // side (hidden, and idle: it draws, tracks and plays nothing while hidden).
   // Then the room's TV keeps running for whoever is still in the tile when
@@ -207,17 +234,6 @@ export function RoomPane(props: {
       when={operation()}
       fallback={
     <div class="room-pane">
-      <div class="pane-switch" role="group" aria-label={`${props.channel.name} view`}>
-        <div class="pane-switch-track" classList={{ "room-selected": pane() === "room" }}>
-          <button type="button" aria-pressed={pane() === "video"} onClick={() => show("video")}>
-            Videochat
-          </button>
-          <button type="button" aria-pressed={pane() === "room"} onClick={() => show("room")} disabled={!url()}>
-            Room
-          </button>
-        </div>
-      </div>
-
       <div class="pane-layer" classList={{ hidden: pane() !== "video" }}>
         <VoiceRoom
           serverId={props.serverId}
@@ -265,16 +281,6 @@ export function RoomPane(props: {
       }
     >
       <div class="room-pane operation" classList={{ "in-room": pane() === "room" }}>
-        <div class="pane-switch" role="group" aria-label={`${props.channel.name} view`}>
-          <div class="pane-switch-track" classList={{ "room-selected": pane() === "room" }}>
-            <button type="button" aria-pressed={pane() === "video"} onClick={() => show("video")}>
-              Window
-            </button>
-            <button type="button" aria-pressed={pane() === "room"} onClick={() => show("room")} disabled={phone()}>
-              Room
-            </button>
-          </div>
-        </div>
         <div class="operation-stage">
           <div class="operation-view">
             <iframe
