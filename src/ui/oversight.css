@@ -1,12 +1,21 @@
-.modal:has(.oversight) { max-width: 820px; }
-.oversight-panes{display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px;height:min(56vh,460px)}
-.oversight-pane{display:flex;flex-direction:column;gap:2px;overflow-y:auto;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
-.oversight-row{width:100%;padding:7px 8px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.oversight-row:hover{background:var(--panel-2)}
-.oversight-row[aria-pressed="true"]{background:var(--panel-3);color:var(--green)}
+.oversight-step{margin-top:16px}
+.oversight-step:first-of-type{margin-top:10px}
+.oversight-step-label{margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+
+.oversight-list{display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;padding-right:2px}
+.oversight-list-row{flex-direction:row;flex-wrap:wrap;max-height:none}
+
+.oversight-pill{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);color:var(--text);font:inherit;font-size:13px;text-align:left;cursor:pointer;white-space:nowrap}
+.oversight-list .oversight-pill{width:100%}
+.oversight-list-row .oversight-pill{width:auto}
+.oversight-pill:hover{border-color:var(--purple,#a78bfa)}
+.oversight-pill[aria-pressed="true"]{background:var(--panel-3);border-color:var(--purple,#a78bfa);color:var(--purple,#a78bfa)}
+.oversight-pill-meta{margin-left:auto;color:var(--muted);font-family:var(--mono);font-size:11px}
+.oversight-pill[aria-pressed="true"] .oversight-pill-meta{color:var(--purple,#a78bfa);opacity:.8}
+
+.oversight-messages{display:flex;flex-direction:column;gap:2px;max-height:min(44vh,420px);overflow-y:auto;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .oversight-message{display:flex;gap:8px;padding:6px 4px;align-items:flex-start}
 .oversight-message-body{display:flex;flex-direction:column;gap:2px;min-width:0}
 .oversight-message-head{display:flex;gap:8px;align-items:baseline}
 .oversight-message-head time{font-size:10px;color:var(--muted);font-family:var(--mono)}
 .oversight-message-text{font-size:13px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
-@media(max-width:700px){.oversight-panes{grid-template-columns:1fr;grid-auto-rows:140px;height:min(70vh,520px);overflow-y:auto}}
