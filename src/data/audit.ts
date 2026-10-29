@@ -30,6 +30,7 @@ export type AuditAction =
   | "channel.rename"
   | "channel.delete"
   | "message.delete"
+  | "call.remove"
   | "emoji.add"
   | "emoji.delete";
 

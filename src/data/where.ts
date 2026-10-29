@@ -18,6 +18,10 @@ export { setStreamingIn, streamingIn };
 const [watchRequest, setWatchRequest] = createSignal<string | undefined>();
 export { setWatchRequest, watchRequest };
 
+/** You own the open call's server, or you are an admin: the call shows its Remove button. */
+const [canRemoveFromCall, setCanRemoveFromCall] = createSignal(false);
+export { canRemoveFromCall, setCanRemoveFromCall };
+
 export function whereNow() {
   const room = inRoom();
   if (room) return `In ${room}`;

@@ -19,7 +19,8 @@ import {
 import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
-import { setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
+import { audit } from "../data/audit";
+import { canRemoveFromCall, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
@@ -37,6 +38,21 @@ export async function fetchPass(serverId: string, channelId: string, wall = fals
   const body = (await res.json().catch(() => ({}))) as { url?: string; token?: string; error?: string };
   if (!res.ok || !body.url || !body.token) throw new Error(body.error || "Could not join the call.");
   return { url: body.url, token: body.token };
+}
+
+/** Disconnect one person from this channel's call (the server's owner and admins; the server checks). */
+export async function removeFromCall(serverId: string, channelId: string, identity: string) {
+  const idToken = await auth.currentUser?.getIdToken();
+  if (!idToken) throw new Error("Log in first.");
+  const res = await fetch("/api/dh-remove", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ serverId, channelId, identity }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || "Could not remove them.");
+  }
 }
 
 /** How long a camera start or stop may take before the button stops waiting. */
@@ -802,6 +818,33 @@ export function VoiceRoom(props: {
       });
     } catch {
       setError("Could not send that. Check your connection.");
+    }
+  }
+
+  // ---- remove someone from the call (the server's owner and admins) -----------
+  const [removeMenu, setRemoveMenu] = createSignal(false);
+  const [removeAsk, setRemoveAsk] = createSignal<{ uid: string; name: string } | undefined>();
+  const [removing, setRemoving] = createSignal(false);
+  createEffect(() => {
+    if (!removeMenu()) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".remove-wrap")) setRemoveMenu(false);
+    };
+    window.addEventListener("pointerdown", close);
+    onCleanup(() => window.removeEventListener("pointerdown", close));
+  });
+  async function confirmRemove() {
+    const who = removeAsk();
+    if (!who || removing()) return;
+    setRemoving(true);
+    try {
+      await removeFromCall(props.serverId, props.channel.id, who.uid);
+      audit("call.remove", { serverId: props.serverId, target: who.name, detail: props.channel.name });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove them.");
+    } finally {
+      setRemoving(false);
+      setRemoveAsk(undefined);
     }
   }
 
@@ -2160,6 +2203,46 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
+          <Show when={canRemoveFromCall() && !props.viewOnly && others().length > 0}>
+            <div
+              class="share-wrap remove-wrap"
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && removeMenu()) {
+                  setRemoveMenu(false);
+                  e.preventDefault();
+                }
+              }}
+            >
+              <button
+                type="button"
+                class="dock-btn"
+                title="Remove someone from this call"
+                aria-haspopup="menu"
+                aria-expanded={removeMenu()}
+                onClick={() => setRemoveMenu(!removeMenu())}
+              >
+                <DockFace kind="remove" word="Remove" full="Remove ▴" />
+              </button>
+              <Show when={removeMenu()}>
+                <div class="dock-menu" role="menu" aria-label="Remove from call">
+                  <For each={others()}>
+                    {(p) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setRemoveMenu(false);
+                          setRemoveAsk({ uid: p.identity, name: nameOf(p) });
+                        }}
+                      >
+                        <span>{nameOf(p)}</span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+          </Show>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile && !layout().phone}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
@@ -2169,6 +2252,17 @@ export function VoiceRoom(props: {
             <DockFace kind="leave" word="Leave" full="Disconnect" />
           </button>
         </div>
+        <Modal title="Remove from call" open={Boolean(removeAsk())} onClose={() => setRemoveAsk(undefined)}>
+          <p class="modal-text">Remove {removeAsk()?.name} from this call? They are only disconnected, and can join again.</p>
+          <div class="modal-actions">
+            <button type="button" class="dock-btn" disabled={removing()} onClick={() => void confirmRemove()}>
+              {removing() ? "Removing…" : "Yes, remove"}
+            </button>
+            <button type="button" class="dock-btn" onClick={() => setRemoveAsk(undefined)}>
+              No
+            </button>
+          </div>
+        </Modal>
         <Modal title="Team up" open={teamOffer()} onClose={() => setTeamOffer(false)}>
           <p class="modal-text">Team up with someone who is live? They have to say yes. Your face cameras stay on.</p>
           <div class="team-picks">
@@ -2231,7 +2325,7 @@ function doubleTap(handler: () => void) {
 // Phone browsers cannot share a screen: hide Share screen and stream mode there.
 const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
-function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "leave"; word: string; full: string }) {
+function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "remove" | "leave"; word: string; full: string }) {
   return (
     <>
       <span class="dock-glyph" aria-hidden="true">
@@ -2243,7 +2337,7 @@ function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream
   );
 }
 
-function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "leave") {
+function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "remove" | "leave") {
   const pen = {
     viewBox: "0 0 24 24",
     fill: "none" as const,
@@ -2292,6 +2386,15 @@ function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "shar
     return (
       <svg {...pen}>
         <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      </svg>
+    );
+  }
+  if (kind === "remove") {
+    return (
+      <svg {...pen}>
+        <circle cx="9" cy="8" r="3.2" />
+        <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+        <path d="M17 9h5" />
       </svg>
     );
   }

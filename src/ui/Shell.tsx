@@ -53,7 +53,7 @@ import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
 import { RoomPane } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
-import { setWatchRequest, streamingIn, whereNow } from "../data/where";
+import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
 
@@ -239,6 +239,13 @@ export function Shell(props: { uid: string; admin: boolean; developer?: boolean;
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     createEffect(() => me.setWhere(whereNow()));
+    // the open call shows its Remove button to the server's owner and to admins
+    createEffect(() => {
+      const c = call();
+      const s = c && servers().find((x) => x.id === c.serverId);
+      setCanRemoveFromCall(Boolean(s && s.kind !== "dm" && (props.admin || s.ownerUid === props.uid)));
+    });
+    onCleanup(() => setCanRemoveFromCall(false));
     // stream mode on: everyone in that server gets a LIVE tile
     createEffect(() => me.setStreaming(streamingIn() ?? null));
     const stops = [
