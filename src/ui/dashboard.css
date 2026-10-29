@@ -64,7 +64,7 @@
 .dashboard-overview-bars{flex:1;min-width:0}
 .dashboard-overview-bars .dashboard-subhead:first-child{margin-top:0}
 
-.dashboard-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 6px}
+.dashboard-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 6px}
 .dashboard-tile{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--line-2);border-radius:9px;background:var(--panel);transition:transform .12s ease,border-color .12s ease}
 .dashboard-tile:hover{transform:translateY(-1px);border-color:var(--line-2)}
 .dashboard-tile.accent-green{border-left-color:var(--green)}
