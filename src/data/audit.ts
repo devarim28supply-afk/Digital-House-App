@@ -23,6 +23,7 @@ export type AuditAction =
   | "server.invite"
   | "member.add"
   | "member.remove"
+  | "member.role"
   | "tile.create"
   | "tile.delete"
   | "tile.picture"
