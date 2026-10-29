@@ -29,7 +29,8 @@
   .main-head.in-call .notifications{display:none}
   .main-head.in-call .dm-call-btn,
   .main-head.in-call .activity-btn,
-  .main-head.in-call .side-chat-btn{grid-row:1}
+  .main-head.in-call .side-chat-btn,
+  .main-head.in-call .pane-switch{grid-row:1}
   .main-head .side-chat-btn{grid-column:3;grid-row:2;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   :root[data-layout-theme] .main-head :is(.feedback-btn,.activity-btn,.side-chat-btn,.dm-call-btn){
     box-sizing:border-box;

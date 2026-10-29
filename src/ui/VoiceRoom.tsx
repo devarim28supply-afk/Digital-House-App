@@ -24,7 +24,7 @@ import { canRemoveFromCall, setInCall, setStreamingIn, setWatchRequest, watchReq
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
-import { type PipSpot, type ShareView, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
+import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 export async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -258,6 +258,11 @@ const GAP = 10;
 // A phone's short side. Desktop windows are not phones, even when narrow.
 const PHONE_SHORT = 540;
 const COARSE_POINTER = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+// Wall Street (store.ts's WALL_STREET_TILE.roomKey): one fixed host - whoever
+// joined the call first - permanently big, everyone else a small column,
+// never the adaptive grid. Read off props.channel directly rather than a new
+// prop, so this stays entirely inside VoiceRoom/phoneCallLayout.ts.
+const WALL_STREET_ROOMKEY = "darkwood-wall-street";
 const SMALL_ROOM_VIEW = 0.4;
 // double-click layout: this many small screens in the row under the big one
 const SPOT_ROW_MAX = 4;
@@ -417,6 +422,10 @@ export function VoiceRoom(props: {
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
+  // Wall Street's layout is fixed (broadcastPlan, below) - a screen share
+  // would have nowhere defined to go in it, so it's off there the same way
+  // it's off for webcamOnly (the Operation Room).
+  const noShare = () => props.webcamOnly || props.channel.roomKey === WALL_STREET_ROOMKEY;
   // Hide / show the Room view, remembered per tile.
   const hiddenKey = () => `dh_roomview_hidden_${props.channel.id}`;
   const readHidden = () => {
@@ -953,6 +962,35 @@ export function VoiceRoom(props: {
     }
     return undefined;
   };
+  // Wall Street's big panel: whoever's Stream (screen or webcam) is on right
+  // now - a real webcam, or an OBS virtual camera through Stream's picker,
+  // same as everywhere else Stream already works. Nobody streaming: empty.
+  const broadcastTrack = createMemo(() => {
+    if (props.channel.roomKey !== WALL_STREET_ROOMKEY) return undefined;
+    void version();
+    const current = room();
+    if (!current) return undefined;
+    for (const p of [current.localParticipant, ...current.remoteParticipants.values()]) {
+      const t = streamOf(p) ?? streamCamOf(p);
+      if (t) return t;
+    }
+    return undefined;
+  });
+  // Wall Street's big panel has two tabs: a live TradingView chart (your own
+  // session in your own browser - everyone gets their own, fully
+  // interactive, not shared) or whoever's Stream is on (so everyone can
+  // watch one specific person's own TradingView tab, drawings and all).
+  const [bigView, setBigView] = createSignal<"chart" | "stream">("chart");
+  // The charts' timeframe, remembered across visits (TIMEFRAME_PICKER below).
+  const [chartInterval, setChartInterval] = createSignal(recallInterval());
+  function pickInterval(value: string) {
+    setChartInterval(value);
+    try {
+      localStorage.setItem(WALL_STREET_INTERVAL_KEY, value);
+    } catch {
+      /* private mode */
+    }
+  }
   // Whose tile shows the stream big and the webcam small: your own choice,
   // only on your screen (double-click the small picture).
   const [swapped, setSwapped] = createSignal(new Set<string>());
@@ -1295,7 +1333,7 @@ export function VoiceRoom(props: {
     setError("");
     try {
       if (kind === "mic") await toggleMicrophone();
-      if (kind === "screen" && !props.webcamOnly) await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
+      if (kind === "screen" && !noShare()) await me.setScreenShareEnabled(!me.isScreenShareEnabled, { audio: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "That device could not be turned on.");
     }
@@ -1487,6 +1525,16 @@ export function VoiceRoom(props: {
   const [openShare, setOpenShare] = createSignal<string | undefined>();
   const [shareDragX, setShareDragX] = createSignal(0);
   const [shareDragging, setShareDragging] = createSignal(false);
+  const wallStreetBig = createMemo<JSX.CSSProperties | undefined>(() => {
+    if (props.channel.roomKey !== WALL_STREET_ROOMKEY) return undefined;
+    const { w, h } = box();
+    if (w <= 0 || h <= 0) return undefined;
+    const keys = tiles()
+      .filter((t) => !t.screen)
+      .map((t) => t.key)
+      .concat(loneRoomFaces().map(([name]) => `face:${name}`), teamScreens().map(teamKey));
+    return broadcastPlan({ keys, width: w, height: h }).big as JSX.CSSProperties;
+  });
   const layout = createMemo(() => {
     const n = people();
     const rv = showingRoomView();
@@ -1540,6 +1588,32 @@ export function VoiceRoom(props: {
         places: { ...plan.places, ...sharePlaces } as Record<string, JSX.CSSProperties>,
         small: false,
         grid: plan.grid as JSX.CSSProperties,
+        cols: 1,
+        tileH: 0,
+        smallSize: { width: "0px", height: "0px" },
+      };
+    }
+    // Wall Street: a permanent big panel (the Webcam/OBS screen - whoever's
+    // Stream is on, below) plus a webcam-only row, on its own layout
+    // entirely - never the narrow/grid/deskPlan branches below, any size.
+    if (props.channel.roomKey === WALL_STREET_ROOMKEY && boxW > 0 && boxH > 0) {
+      // webcams only here - a screen share has nowhere to go in this layout
+      const cams = tiles().filter((t) => !t.screen);
+      const keys = [
+        ...cams.map((t) => t.key),
+        ...loneRoomFaces().map(([name]) => `face:${name}`),
+        ...teamScreens().map(teamKey),
+      ];
+      const { places } = broadcastPlan({ keys, width: boxW, height: boxH });
+      return {
+        n: keys.length,
+        narrow: false,
+        phone: false,
+        scroll: false,
+        pipKey: undefined as string | undefined,
+        places: places as Record<string, JSX.CSSProperties>,
+        small: false,
+        grid: {} as JSX.CSSProperties,
         cols: 1,
         tileH: 0,
         smallSize: { width: "0px", height: "0px" },
@@ -1935,7 +2009,11 @@ export function VoiceRoom(props: {
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
-                stream={tile.screen || inTeam().has(tile.participant.identity) ? undefined : streamOf(tile.participant) ?? streamCamOf(tile.participant)}
+                stream={
+                  tile.screen || inTeam().has(tile.participant.identity) || props.channel.roomKey === WALL_STREET_ROOMKEY
+                    ? undefined
+                    : (streamOf(tile.participant) ?? streamCamOf(tile.participant))
+                }
                 swapped={swapped().has(tile.participant.identity)}
                 onSwap={() => swap(tile.participant.identity)}
                 corner={corners().get(tile.participant.identity) ?? "tl"}
@@ -2072,6 +2150,42 @@ export function VoiceRoom(props: {
           ref={watchBox}
           style={spot() || layout().phone ? {} : layout().grid}
         >
+          <Show when={wallStreetBig()}>
+            {(style) => (
+              <div class="broadcast-big" style={style()}>
+                <div class="broadcast-tabs" role="tablist">
+                  <button type="button" role="tab" aria-pressed={bigView() === "chart"} onClick={() => setBigView("chart")}>
+                    Chart
+                  </button>
+                  <button type="button" role="tab" aria-pressed={bigView() === "stream"} onClick={() => setBigView("stream")}>
+                    Stream
+                  </button>
+                  <Show when={bigView() === "chart"}>
+                    <div class="broadcast-timeframes" role="group" aria-label="Timeframe">
+                      <For each={TIMEFRAME_PICKER}>
+                        {(t) => (
+                          <button type="button" aria-pressed={chartInterval() === t.value} onClick={() => pickInterval(t.value)}>
+                            {t.label}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+                <Show when={bigView() === "chart"} fallback={
+                  <Show when={broadcastTrack()} fallback={<div class="broadcast-big-empty">Nobody's Stream is on. Press Stream to show it here.</div>}>
+                    {(track) => <BroadcastVideo track={track()} />}
+                  </Show>
+                }>
+                  <div class="tradingview-grid">
+                    <TradingViewChart interval={chartInterval()} />
+                    <TradingViewChart interval={chartInterval()} />
+                    <TradingViewChart interval={chartInterval()} />
+                  </div>
+                </Show>
+              </div>
+            )}
+          </Show>
           <Show
             when={layout().phone}
             fallback={<CallTiles />}
@@ -2139,7 +2253,7 @@ export function VoiceRoom(props: {
             )}
           </Show>
           {/* one Share screen button; its menu shares (or stops) screen 1 and 2 */}
-          <Show when={!props.webcamOnly}>
+          <Show when={!noShare()}>
           <div
             class="share-wrap"
             classList={{ hidden: !CAN_SHARE }}
@@ -2608,6 +2722,86 @@ function RoomViewTile(props: {
       </span>
     </article>
   );
+}
+
+/**
+ * A live TradingView chart: the "Advanced Chart" widget, embedded exactly
+ * the way TradingView's own docs do it (a script tag holding a JSON config,
+ * which TradingView's script turns into the real chart) - full toolbar,
+ * symbol search, every timeframe, and the drawing-tools sidebar
+ * (hide_side_toolbar: false). Each viewer's browser loads its own, fresh:
+ * nobody's personal TradingView login or saved layout carries over, by
+ * design - see BroadcastVideo/the Stream tab for watching one specific
+ * person's own, already-logged-in chart instead.
+ *
+ * TradingView's free embed has no way to tell this page when you change
+ * the timeframe with its own toolbar - no event, no callback, nothing this
+ * page can listen for (confirmed: not documented anywhere). So "remember
+ * the timeframe I set" is TIMEFRAME_PICKER below, not the widget's own
+ * toolbar: a small picker this page fully controls, saved to localStorage,
+ * passed in here as the chart's starting interval on every load.
+ */
+function TradingViewChart(props: { symbol?: string; interval: string }) {
+  let container: HTMLDivElement | undefined;
+  createEffect(() => {
+    const el = container;
+    const interval = props.interval; // tracked: rebuilds the widget when it changes
+    if (!el) return;
+    el.innerHTML = "";
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.async = true;
+    // set before appending: the external script reads this text as soon as
+    // it loads, so it has to already be there, not filled in afterward
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol: props.symbol || "FX:EURUSD",
+      interval,
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "1",
+      locale: "en",
+      allow_symbol_change: true,
+      hide_side_toolbar: false,
+      hide_top_toolbar: false,
+      calendar: false,
+      support_host: "https://www.tradingview.com",
+    });
+    el.append(widget, script);
+  });
+  return <div class="tradingview-chart" ref={container} />;
+}
+
+const WALL_STREET_INTERVAL_KEY = "dh_wallstreet_interval";
+const TIMEFRAME_PICKER: { value: string; label: string }[] = [
+  { value: "1", label: "1m" },
+  { value: "5", label: "5m" },
+  { value: "15", label: "15m" },
+  { value: "60", label: "1h" },
+  { value: "240", label: "4h" },
+  { value: "D", label: "1D" },
+];
+function recallInterval(): string {
+  try {
+    const saved = localStorage.getItem(WALL_STREET_INTERVAL_KEY);
+    return saved && TIMEFRAME_PICKER.some((t) => t.value === saved) ? saved : "60";
+  } catch {
+    return "60";
+  }
+}
+
+/** Wall Street's big panel: just an attached track, no mirror/pip/tile semantics. */
+function BroadcastVideo(props: { track: Track }) {
+  let video: HTMLVideoElement | undefined;
+  createEffect(() => {
+    const el = video;
+    if (!el) return;
+    props.track.attach(el);
+    onCleanup(() => props.track.detach(el));
+  });
+  return <video ref={video} autoplay playsinline muted />;
 }
 
 function Tile(props: {

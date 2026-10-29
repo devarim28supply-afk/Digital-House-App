@@ -162,6 +162,43 @@ export function deskPlan(args: {
   return places;
 }
 
+/**
+ * Broadcast layout (Wall Street): a permanent full-width panel on top (its
+ * content - someone's Stream, if anyone has one on - is rendered separately,
+ * not a tile), everyone's webcam a small row along the bottom - never the
+ * adaptive grid, and never rearranged by who is talking.
+ */
+export function broadcastPlan(args: { keys: string[]; width: number; height: number }): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
+  const keys = args.keys.filter(Boolean);
+  const places: Record<string, PhoneStyle> = {};
+  const gap = 10;
+  const pad = 10;
+  const innerW = Math.max(1, args.width - pad * 2);
+  const innerH = Math.max(1, args.height - pad * 2);
+
+  // The webcam strip stays small on purpose - the chart (or three, stacked)
+  // above it needs the real height; a cramped TradingView widget can render
+  // blank instead of just small.
+  const stripH = keys.length ? Math.min(96, Math.max(64, innerH * 0.14)) : 0;
+  const bigAreaH = Math.max(1, innerH - (keys.length ? stripH + gap : 0));
+  const big = box(pad, pad, innerW, bigAreaH);
+
+  const n = keys.length;
+  if (n > 0) {
+    const gapsX = gap * (n - 1);
+    let cellW = Math.min((innerW - gapsX) / n, (stripH * 16) / 9);
+    cellW = Math.max(0, cellW);
+    const rowW = cellW * n + gapsX;
+    let x = pad + Math.max(0, (innerW - rowW) / 2);
+    const y = pad + bigAreaH + gap;
+    for (const key of keys) {
+      places[key] = box(x, y, cellW, stripH);
+      x += cellW + gap;
+    }
+  }
+  return { places, big };
+}
+
 function box(x: number, y: number, width: number, height: number): PhoneStyle {
   return {
     position: "absolute",

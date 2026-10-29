@@ -717,16 +717,35 @@ export async function ensureHomeTiles(sid: string, channels: Channel[]) {
   const top = others.reduce((min, c) => Math.min(min, c.position), 0) - HOME_TILES.length;
   for (const [i, { tile: spec, chat }] of HOME_TILES.entries()) {
     const position = top + i;
-    let tile = channels.find((c) => c.kind === "room" && c.roomKey === spec.roomKey);
+    // Two tabs loading the server at once can both see no tile yet and both
+    // try to make one - keep whichever sorts first (lowest position, then
+    // id) and delete the rest, plus any chat channel left pointing at a
+    // deleted duplicate's now-gone id.
+    const tileMatches = channels
+      .filter((c) => c.kind === "room" && c.roomKey === spec.roomKey)
+      .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+    let tile = tileMatches[0];
+    for (const dupe of tileMatches.slice(1)) {
+      await deleteDoc(doc(channelsRef, dupe.id)).catch(() => {});
+      for (const orphan of channels.filter((c) => c.parentId === dupe.id)) {
+        await deleteDoc(doc(channelsRef, orphan.id)).catch(() => {});
+      }
+    }
     if (!tile) {
-      const ref = await addDoc(channelsRef, { ...spec, position });
-      tile = { id: ref.id, ...spec, position };
+      // its own roomKey as the id, not addDoc's random one: two tabs racing
+      // to create it both write the same document, never two.
+      await setDoc(doc(channelsRef, spec.roomKey!), { ...spec, position });
+      tile = { id: spec.roomKey!, ...spec, position };
     } else if (tile.name !== spec.name || tile.position !== position) {
       await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position });
     }
-    const text = channels.find((c) => c.kind === "text" && c.parentId === tile.id);
+    const textMatches = channels
+      .filter((c) => c.kind === "text" && c.parentId === tile.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    let text = textMatches[0];
+    for (const dupe of textMatches.slice(1)) await deleteDoc(doc(channelsRef, dupe.id)).catch(() => {});
     if (!text) {
-      await addDoc(channelsRef, { name: chat, kind: "text", position, parentId: tile.id });
+      await setDoc(doc(channelsRef, `${tile.id}-chat`), { name: chat, kind: "text", position, parentId: tile.id });
     } else if (text.name !== chat) {
       await updateDoc(doc(channelsRef, text.id), { name: chat });
     }
