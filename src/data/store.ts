@@ -318,10 +318,14 @@ export function watchProfiles(cb: (profiles: Map<string, Profile>) => void): Uns
 
 // ---- presence ---------------------------------------------------------------
 
-const HEARTBEAT_MS = 45_000;
-export const ONLINE_WINDOW_MS = 2 * 60_000;
+// Every heartbeat is read again by every open app, so reads grow with
+// (people online)² / beat. 75 s keeps the window at 2.4 beats.
+const HEARTBEAT_MS = 75_000;
+// Coming back to the tab beats at once, but never more than this often.
+const MIN_BEAT_GAP_MS = 20_000;
+export const ONLINE_WINDOW_MS = 3 * 60_000;
 
-/** Write a heartbeat now and every 45 s while the page is open. */
+/** Write a heartbeat now and every 75 s while the page is open. */
 /**
  * Who is online and where. presence/{uid}: lastSeen (heartbeat), and where
  * ("In Living Room", "Videochat · Living Room") with whereAt; the 3D rooms
@@ -343,13 +347,16 @@ export function startPresence(uid: string) {
   const ref = doc(db, "presence", uid);
   // With a place, say where; without one, only the heartbeat (merge), so a
   // 3D room tab of yours can still report that you stand in it.
-  const beat = () =>
-    setDoc(ref, where ? { lastSeen: serverTimestamp(), where, whereAt: serverTimestamp() } : { lastSeen: serverTimestamp() }, {
+  let lastBeat = 0;
+  const beat = () => {
+    lastBeat = Date.now();
+    return setDoc(ref, where ? { lastSeen: serverTimestamp(), where, whereAt: serverTimestamp() } : { lastSeen: serverTimestamp() }, {
       merge: true,
     }).catch(() => {});
+  };
   beat();
   const timer = window.setInterval(beat, HEARTBEAT_MS);
-  const onVisible = () => document.visibilityState === "visible" && beat();
+  const onVisible = () => document.visibilityState === "visible" && Date.now() - lastBeat > MIN_BEAT_GAP_MS && beat();
   document.addEventListener("visibilitychange", onVisible);
   return {
     setWhere(next: string) {
