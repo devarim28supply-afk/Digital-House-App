@@ -75,6 +75,15 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "feedback", label: "Feedback" },
   { id: "audit", label: "Audit log" },
 ];
+const INSIGHTS_CAPTION = "Everything to read: stats, members, staff, chat, servers, storage, feedback, the audit log";
+
+type ToolSection = "oversight" | "activity" | "livecalls";
+const TOOL_SECTIONS: { id: ToolSection; label: string }[] = [
+  { id: "oversight", label: "Oversight" },
+  { id: "activity", label: "Activity" },
+  { id: "livecalls", label: "Live calls" },
+];
+const TOOLS_CAPTION = "Everything live: look into a server, see commits and deploys, manage calls";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -353,7 +362,7 @@ function DashboardBody(props: {
     setPage(id);
     if (id === "tools") markActivitySeen();
   }
-  const jump = (id: Section) =>
+  const jump = (id: Section | ToolSection) =>
     document.getElementById(`dashboard-section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const matches = (row: MemberRow, term: string) =>
@@ -518,13 +527,17 @@ function DashboardBody(props: {
       <div class="dashboard-toolbar">
         <div class="dashboard-pages" role="tablist">
           <button type="button" class="dashboard-page-btn" classList={{ active: page() === "insights" }} onClick={() => selectPage("insights")}>
-            Insights
+            <span class="dashboard-page-label">Insights</span>
+            <span class="dashboard-page-caption">{INSIGHTS_CAPTION}</span>
           </button>
           <button type="button" class="dashboard-page-btn" classList={{ active: page() === "tools" }} onClick={() => selectPage("tools")}>
-            Tools
-            <Show when={activityUnseen() > 0}>
-              <span class="dashboard-badge">{activityUnseen() > 99 ? "99+" : activityUnseen()}</span>
-            </Show>
+            <span class="dashboard-page-label">
+              Tools
+              <Show when={activityUnseen() > 0}>
+                <span class="dashboard-badge">{activityUnseen() > 99 ? "99+" : activityUnseen()}</span>
+              </Show>
+            </span>
+            <span class="dashboard-page-caption">{TOOLS_CAPTION}</span>
           </button>
         </div>
         <Show when={page() === "insights"}>
@@ -536,6 +549,18 @@ function DashboardBody(props: {
                   <Show when={s.id === "members" && pendingTotal() > 0}> ({pendingTotal()})</Show>
                   <Show when={s.id === "online" && online().length > 0}> ({online().length})</Show>
                   <Show when={s.id === "feedback" && feedbackNew() > 0}> ({feedbackNew()})</Show>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={page() === "tools"}>
+          <div class="dashboard-jumps">
+            <For each={TOOL_SECTIONS}>
+              {(s) => (
+                <button type="button" class="dashboard-jump" onClick={() => jump(s.id)}>
+                  {s.label}
+                  <Show when={s.id === "livecalls" && (liveRooms()?.length ?? 0) > 0}> ({liveRooms()?.length})</Show>
                 </button>
               )}
             </For>
@@ -1003,12 +1028,12 @@ function DashboardBody(props: {
 
         <Show when={page() === "tools"}>
           <div class="dashboard-tools-row">
-            <section class="dashboard-section dashboard-tools-col">
+            <section id="dashboard-section-oversight" class="dashboard-section dashboard-tools-col">
               <h1 class="dashboard-title">Oversight</h1>
               <OversightBody profiles={props.profiles} />
             </section>
 
-            <section class="dashboard-section dashboard-tools-col">
+            <section id="dashboard-section-activity" class="dashboard-section dashboard-tools-col">
               <h2 class="dashboard-title">Activity</h2>
               <div class="dashboard-activity-head">
                 <p class="modal-text">Who committed, pushed and deployed what.</p>
@@ -1020,7 +1045,7 @@ function DashboardBody(props: {
             </section>
           </div>
 
-          <section class="dashboard-section">
+          <section id="dashboard-section-livecalls" class="dashboard-section">
             <h2 class="dashboard-title">Live calls</h2>
             <p class="modal-text">Every videochat and 3D room running right now, across every server.</p>
             <Show when={roomsError()}>

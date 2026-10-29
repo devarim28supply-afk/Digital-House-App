@@ -7,10 +7,14 @@
 
 /* ---- toolbar: the two-page switcher + in-page jump pills ---- */
 .dashboard-toolbar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:10px 24px;border-bottom:1px solid var(--line);background:var(--panel)}
-.dashboard-pages{display:flex;gap:4px}
-.dashboard-page-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--line-2);border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
-.dashboard-page-btn:hover{color:var(--text)}
+.dashboard-pages{display:flex;gap:8px}
+.dashboard-page-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 16px;border:1px solid var(--line-2);border-radius:12px;background:transparent;color:var(--muted);font:inherit;text-align:left;cursor:pointer;max-width:260px}
+.dashboard-page-btn:hover{color:var(--text);border-color:var(--line-2)}
 .dashboard-page-btn.active{background:var(--panel-3);color:var(--text);border-color:var(--green)}
+.dashboard-page-label{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600}
+.dashboard-page-btn.active .dashboard-page-label{color:var(--green)}
+.dashboard-page-caption{font-size:11px;color:var(--dim);line-height:1.3;white-space:normal}
+.dashboard-page-btn.active .dashboard-page-caption{color:var(--muted)}
 .dashboard-jumps{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
 .dashboard-jump{padding:5px 10px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
 .dashboard-jump:hover{background:var(--panel-2);color:var(--text);border-color:var(--line-2)}
