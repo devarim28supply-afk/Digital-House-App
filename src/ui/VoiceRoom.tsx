@@ -20,7 +20,7 @@ import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
 import { audit } from "../data/audit";
-import { canRemoveFromCall, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
+import { canRemoveFromCall, livingRoomTvBottom, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
@@ -1548,9 +1548,9 @@ export function VoiceRoom(props: {
       keys,
       width: w,
       height: h,
-      overlap: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 40 : 0,
       stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
       rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+      tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
     }).big as JSX.CSSProperties;
   });
   const layout = createMemo(() => {
@@ -1627,9 +1627,9 @@ export function VoiceRoom(props: {
         keys,
         width: boxW,
         height: boxH,
-        overlap: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 40 : 0,
         stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
         rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+        tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
       });
       return {
         n: keys.length,
