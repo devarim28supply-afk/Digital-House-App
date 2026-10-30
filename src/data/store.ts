@@ -103,7 +103,17 @@ export type Channel = {
   roomKey?: string;
   url?: string;
   parentId?: string;
+  /** Living Room's TV remote (backlight/room light) - shared live across
+   * everyone in the call, written straight onto the channel doc so it
+   * rides the same real-time listener (watchChannels) every client
+   * already has open, no new collection or Firestore rule needed. */
+  lrLights?: { backlightOn: boolean; roomLightsOn: boolean; blColor: string; blOpacity: number };
 };
+
+/** Living Room's TV remote: one shared state for everyone in the call. */
+export async function setLivingRoomLights(serverId: string, channelId: string, lights: Channel["lrLights"]) {
+  await updateDoc(doc(db, "servers", serverId, "channels", channelId), { lrLights: lights });
+}
 
 /** The chat channel name for a tile: "Living Room" -> "livingroom-chat". */
 export const tileChatName = (tileName: string) =>
