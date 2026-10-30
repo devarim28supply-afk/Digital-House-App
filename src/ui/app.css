@@ -2528,6 +2528,20 @@ img.msg-sticker {
   text-align: center;
   padding: 0 16px;
 }
+/* Living Room's 3D panel (LivingRoomBroadcast.tsx) - the canvas is sized
+   to this div's bounds via a ResizeObserver, not CSS, but the div itself
+   still needs to actually fill the flex column like every other big-panel
+   content does. */
+.living-room-3d {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #050505;
+}
+.living-room-3d canvas {
+  display: block;
+}
 
 .tiles.spotlight {
   position: relative;

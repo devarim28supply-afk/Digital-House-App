@@ -25,6 +25,7 @@ import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
+import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 export async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -2186,8 +2187,15 @@ export function VoiceRoom(props: {
                   </div>
                 </Show>
                 <Show when={effectiveBigView() === "chart"} fallback={
-                  <Show when={broadcastTrack()} fallback={<div class="broadcast-big-empty">Nobody's Stream is on. Press Stream to show it here.</div>}>
-                    {(track) => <BroadcastVideo track={track()} />}
+                  <Show
+                    when={props.channel.roomKey === LIVING_ROOM_ROOMKEY}
+                    fallback={
+                      <Show when={broadcastTrack()} fallback={<div class="broadcast-big-empty">Nobody's Stream is on. Press Stream to show it here.</div>}>
+                        {(track) => <BroadcastVideo track={track()} />}
+                      </Show>
+                    }
+                  >
+                    <LivingRoomBroadcast track={broadcastTrack} />
                   </Show>
                 }>
                   <div class="tradingview-grid">
