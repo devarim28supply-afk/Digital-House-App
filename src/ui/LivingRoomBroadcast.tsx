@@ -386,10 +386,21 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined; ser
     })();
 
     // ---- the Stream track, as a video texture on the TV's screen --------
+    // The call's Room runs with adaptiveStream on (VoiceRoom.tsx) - for
+    // everyone else's own benefit, it pauses/throttles a remote track
+    // whose attached <video> element isn't actually on screen, to save
+    // bandwidth. A video element created but never inserted into the
+    // document reads as "not visible" to that check, so a friend's TV
+    // screen would silently stay dark no matter what this streamed - it
+    // never asked the network for real video. Keeping it a real (if
+    // invisible) part of the page, instead of fully detached, is what
+    // keeps that same adaptiveStream check seeing it as being watched.
     const video = document.createElement("video");
     video.autoplay = true;
     video.muted = true;
     video.playsInline = true;
+    video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;";
+    document.body.appendChild(video);
     let videoTexture: THREE.VideoTexture | undefined;
     let attachedTrack: Track | undefined;
 
@@ -417,6 +428,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined; ser
       resizeObserver.disconnect();
       cancelAnimationFrame(raf);
       attachedTrack?.detach(video);
+      video.remove();
       videoTexture?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
