@@ -231,11 +231,13 @@ export function broadcastPlan(args: {
     cellW = Math.max(0, cellW);
     const rowW = cellW * n + gapsX;
     let x = pad + Math.max(0, (innerW - rowW) / 2);
-    // tvBottomRatio pins the row to the TV's real on-screen bottom edge -
-    // clamped so it can never climb back above that edge (covering the
-    // screen) and never run past the panel's own bottom either.
+    // tvBottomRatio pins the row to the TV's real on-screen bottom edge,
+    // plus a small gap so the tiles read as sitting apart from the TV
+    // (on the floor) instead of touching its frame - clamped so it can
+    // never climb back above that edge (covering the screen) and never
+    // run past the panel's own bottom either.
     const y = usingTvBottom
-      ? pad + Math.min(Math.max(0, args.tvBottomRatio!) * innerH, Math.max(0, innerH - stripH))
+      ? pad + Math.min(Math.max(0, args.tvBottomRatio!) * innerH + gap, Math.max(0, innerH - stripH))
       : pad + reservedH + gap - (args.overlap ?? 0);
     for (const key of keys) {
       places[key] = box(x, y, cellW, stripH);

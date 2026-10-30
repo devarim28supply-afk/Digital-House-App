@@ -1548,7 +1548,7 @@ export function VoiceRoom(props: {
       keys,
       width: w,
       height: h,
-      stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
+      stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
       rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
       tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
     }).big as JSX.CSSProperties;
@@ -1627,7 +1627,7 @@ export function VoiceRoom(props: {
         keys,
         width: boxW,
         height: boxH,
-        stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
+        stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
         rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
         tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
       });
