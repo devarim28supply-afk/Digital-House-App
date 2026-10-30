@@ -424,9 +424,57 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined; ser
       screenMat.needsUpdate = true;
     });
 
+    // ---- screen-cast light (Ambilight-style content bounce) -------------
+    // Real raytracing would bounce actual light off whatever's on screen;
+    // this is the cheap stand-in - a tiny offscreen canvas samples the
+    // Stream video's own average color every ~160ms (not every frame, to
+    // avoid a GPU readback on each render) and feeds that color/brightness
+    // into a point light sitting just in front of the TV, so the room
+    // actually glows the color of whatever's playing.
+    const screenLight = new THREE.PointLight(0xffffff, 0, 7, 1.4);
+    screenLight.position.set(0, TV_Y + TV_Y_OFFSET, -HALF + TV_STANDOFF + 0.6);
+    scene.add(screenLight);
+
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = 8;
+    sampleCanvas.height = 8;
+    const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+    const sampleColor = new THREE.Color();
+    const sampleHsl = { h: 0, s: 0, l: 0 };
+    function sampleScreenColor() {
+      if (!sampleCtx || !attachedTrack || video.readyState < 2 || video.videoWidth === 0) {
+        screenLight.intensity = 0;
+        return;
+      }
+      sampleCtx.drawImage(video, 0, 0, 8, 8);
+      const data = sampleCtx.getImageData(0, 0, 8, 8).data;
+      let r = 0, g = 0, b = 0;
+      const n = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+      }
+      r /= n;
+      g /= n;
+      b /= n;
+      // Averaging a whole frame washes color toward gray (reds and blues
+      // cancel out across a busy picture) - pushing saturation back up
+      // after the average keeps the cast light reading like a color, not
+      // a dim white smear, the way a real colored light bounce would.
+      sampleColor.setRGB(r / 255, g / 255, b / 255);
+      sampleColor.getHSL(sampleHsl);
+      sampleColor.setHSL(sampleHsl.h, Math.min(1, sampleHsl.s * 2.2), sampleHsl.l);
+      screenLight.color.copy(sampleColor);
+      const brightness = (r + g + b) / 3 / 255;
+      screenLight.intensity = brightness * 16;
+    }
+    const sampleTimer = window.setInterval(sampleScreenColor, 160);
+
     onCleanup(() => {
       resizeObserver.disconnect();
       cancelAnimationFrame(raf);
+      window.clearInterval(sampleTimer);
       attachedTrack?.detach(video);
       video.remove();
       videoTexture?.dispose();
