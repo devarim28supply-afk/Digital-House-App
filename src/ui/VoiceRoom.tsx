@@ -263,6 +263,12 @@ const COARSE_POINTER = typeof window !== "undefined" && window.matchMedia("(poin
 // never the adaptive grid. Read off props.channel directly rather than a new
 // prop, so this stays entirely inside VoiceRoom/phoneCallLayout.ts.
 const WALL_STREET_ROOMKEY = "darkwood-wall-street";
+// Living Room (store.ts's LIVING_ROOM_TILE.roomKey): the same fixed big
+// panel + webcam row as Wall Street, but its panel is Stream only - no
+// TradingView, so no Chart tab (see showChartTab() below).
+const LIVING_ROOM_ROOMKEY = "darkwood-living-room";
+const BROADCAST_ROOMKEYS = new Set([WALL_STREET_ROOMKEY, LIVING_ROOM_ROOMKEY]);
+const isBroadcastRoom = (roomKey?: string) => Boolean(roomKey && BROADCAST_ROOMKEYS.has(roomKey));
 const SMALL_ROOM_VIEW = 0.4;
 // double-click layout: this many small screens in the row under the big one
 const SPOT_ROW_MAX = 4;
@@ -425,7 +431,7 @@ export function VoiceRoom(props: {
   // Wall Street's layout is fixed (broadcastPlan, below) - a screen share
   // would have nowhere defined to go in it, so it's off there the same way
   // it's off for webcamOnly (the Operation Room).
-  const noShare = () => props.webcamOnly || props.channel.roomKey === WALL_STREET_ROOMKEY;
+  const noShare = () => props.webcamOnly || isBroadcastRoom(props.channel.roomKey);
   // Hide / show the Room view, remembered per tile.
   const hiddenKey = () => `dh_roomview_hidden_${props.channel.id}`;
   const readHidden = () => {
@@ -966,7 +972,7 @@ export function VoiceRoom(props: {
   // now - a real webcam, or an OBS virtual camera through Stream's picker,
   // same as everywhere else Stream already works. Nobody streaming: empty.
   const broadcastTrack = createMemo(() => {
-    if (props.channel.roomKey !== WALL_STREET_ROOMKEY) return undefined;
+    if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
     void version();
     const current = room();
     if (!current) return undefined;
@@ -980,7 +986,11 @@ export function VoiceRoom(props: {
   // session in your own browser - everyone gets their own, fully
   // interactive, not shared) or whoever's Stream is on (so everyone can
   // watch one specific person's own TradingView tab, drawings and all).
+  // Living Room shares the same big panel, but has no Chart tab at all -
+  // its screen is always whoever's Stream (webcam or OBS) is on.
+  const showChartTab = () => props.channel.roomKey === WALL_STREET_ROOMKEY;
   const [bigView, setBigView] = createSignal<"chart" | "stream">("chart");
+  const effectiveBigView = () => (showChartTab() ? bigView() : "stream");
   // The charts' timeframe, remembered across visits (TIMEFRAME_PICKER below).
   const [chartInterval, setChartInterval] = createSignal(recallInterval());
   function pickInterval(value: string) {
@@ -1526,7 +1536,7 @@ export function VoiceRoom(props: {
   const [shareDragX, setShareDragX] = createSignal(0);
   const [shareDragging, setShareDragging] = createSignal(false);
   const wallStreetBig = createMemo<JSX.CSSProperties | undefined>(() => {
-    if (props.channel.roomKey !== WALL_STREET_ROOMKEY) return undefined;
+    if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
     const { w, h } = box();
     if (w <= 0 || h <= 0) return undefined;
     const keys = tiles()
@@ -1593,10 +1603,11 @@ export function VoiceRoom(props: {
         smallSize: { width: "0px", height: "0px" },
       };
     }
-    // Wall Street: a permanent big panel (the Webcam/OBS screen - whoever's
-    // Stream is on, below) plus a webcam-only row, on its own layout
-    // entirely - never the narrow/grid/deskPlan branches below, any size.
-    if (props.channel.roomKey === WALL_STREET_ROOMKEY && boxW > 0 && boxH > 0) {
+    // Wall Street and Living Room: a permanent big panel (the Webcam/OBS
+    // screen - whoever's Stream is on, below) plus a webcam-only row, on
+    // its own layout entirely - never the narrow/grid/deskPlan branches
+    // below, any size.
+    if (isBroadcastRoom(props.channel.roomKey) && boxW > 0 && boxH > 0) {
       // webcams only here - a screen share has nowhere to go in this layout
       const cams = tiles().filter((t) => !t.screen);
       const keys = [
@@ -2010,7 +2021,7 @@ export function VoiceRoom(props: {
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
                 stream={
-                  tile.screen || inTeam().has(tile.participant.identity) || props.channel.roomKey === WALL_STREET_ROOMKEY
+                  tile.screen || inTeam().has(tile.participant.identity) || isBroadcastRoom(props.channel.roomKey)
                     ? undefined
                     : (streamOf(tile.participant) ?? streamCamOf(tile.participant))
                 }
@@ -2153,26 +2164,28 @@ export function VoiceRoom(props: {
           <Show when={wallStreetBig()}>
             {(style) => (
               <div class="broadcast-big" style={style()}>
-                <div class="broadcast-tabs" role="tablist">
-                  <button type="button" role="tab" aria-pressed={bigView() === "chart"} onClick={() => setBigView("chart")}>
-                    Chart
-                  </button>
-                  <button type="button" role="tab" aria-pressed={bigView() === "stream"} onClick={() => setBigView("stream")}>
-                    Stream
-                  </button>
-                  <Show when={bigView() === "chart"}>
-                    <div class="broadcast-timeframes" role="group" aria-label="Timeframe">
-                      <For each={TIMEFRAME_PICKER}>
-                        {(t) => (
-                          <button type="button" aria-pressed={chartInterval() === t.value} onClick={() => pickInterval(t.value)}>
-                            {t.label}
-                          </button>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
-                <Show when={bigView() === "chart"} fallback={
+                <Show when={showChartTab()}>
+                  <div class="broadcast-tabs" role="tablist">
+                    <button type="button" role="tab" aria-pressed={bigView() === "chart"} onClick={() => setBigView("chart")}>
+                      Chart
+                    </button>
+                    <button type="button" role="tab" aria-pressed={bigView() === "stream"} onClick={() => setBigView("stream")}>
+                      Stream
+                    </button>
+                    <Show when={bigView() === "chart"}>
+                      <div class="broadcast-timeframes" role="group" aria-label="Timeframe">
+                        <For each={TIMEFRAME_PICKER}>
+                          {(t) => (
+                            <button type="button" aria-pressed={chartInterval() === t.value} onClick={() => pickInterval(t.value)}>
+                              {t.label}
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+                <Show when={effectiveBigView() === "chart"} fallback={
                   <Show when={broadcastTrack()} fallback={<div class="broadcast-big-empty">Nobody's Stream is on. Press Stream to show it here.</div>}>
                     {(track) => <BroadcastVideo track={track()} />}
                   </Show>

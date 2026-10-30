@@ -44,7 +44,6 @@ import {
   watchProfiles,
   watchServers,
   hasDarkwoodRoom,
-  LIVING_ROOM_TILE,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { Chat } from "./Chat";
@@ -80,10 +79,10 @@ const TILE_ALIASES: Record<string, string[]> = {
 const RIGHT_HOLD_MS = 30_000;
 // how long it stays after the mouse leaves it
 const RIGHT_LINGER_MS = 5_000;
-// Living Room: exists but isn't ready yet - neither side (videochat or
-// Room) opens, a plain message instead. Wall Street is being tested now, off
-// this list. Remove a roomKey here once that room is ready for real use.
-const UNDER_CONSTRUCTION = new Set([LIVING_ROOM_TILE.roomKey]);
+// Both Living Room and Wall Street are ready for real use now - neither
+// is on this list. Add a roomKey back here if a room needs to come down
+// for rework (a plain "under construction" message instead of opening).
+const UNDER_CONSTRUCTION = new Set<string>([]);
 
 function remember(key: string, value: string) {
   try {
