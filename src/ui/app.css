@@ -703,6 +703,11 @@
   color: #000;
 }
 
+.tv-remote-btn[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+
 #root .pane-switch-track button:disabled {
   opacity: 0.4;
   cursor: default;
@@ -2541,6 +2546,89 @@ img.msg-sticker {
 }
 .living-room-3d canvas {
   display: block;
+}
+/* The TV remote panel (LivingRoomBroadcast.tsx), opened from the header's
+   "TV remote" button - same iPad-styled design as the design sandbox
+   (design/living-room-3d/index.html's #ipad), ported class-for-class. */
+.lr-remote {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 2;
+  width: 230px;
+  padding: 14px 14px 16px;
+  border-radius: 26px;
+  background: linear-gradient(155deg, #3a3a3e, #121214 60%);
+  box-shadow: 0 10px 30px #0008, inset 0 1px 0 #ffffff22;
+}
+.lr-remote-screen {
+  border-radius: 16px;
+  background: linear-gradient(165deg, #171a22, #0a0c11 70%);
+  padding: 14px 12px;
+  box-shadow: inset 0 0 0 1px #ffffff14;
+}
+.lr-remote-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffffff80;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.lr-remote-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lr-remote-app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border: none;
+  border-radius: 12px;
+  background: #ffffff14;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.lr-remote-app .ico {
+  font-size: 18px;
+}
+.lr-remote-app[aria-pressed="true"] {
+  background: #5fa8ff;
+  color: #fff;
+}
+.lr-remote-section {
+  margin-top: 10px;
+}
+.lr-remote-section label {
+  display: block;
+  font-size: 10px;
+  color: #ffffff80;
+  margin-bottom: 6px;
+}
+.lr-remote-section-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lr-remote-section-row input[type="color"] {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+}
+.lr-remote-section-row input[type="range"] {
+  flex: 1;
+  cursor: pointer;
 }
 
 .tiles.spotlight {

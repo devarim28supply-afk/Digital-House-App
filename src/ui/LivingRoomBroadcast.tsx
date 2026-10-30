@@ -1,7 +1,8 @@
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import type { Track } from "livekit-client";
+import { setTvRemoteAvailable, tvRemoteOpen } from "../data/where";
 
 /**
  * Living Room's big panel: a real 3D room (not a flat video tile) — the
@@ -34,7 +35,6 @@ const LOCKED_HEIGHT = -0.13;
 const LOCKED_SIGHT = -0.01;
 
 const BACKLIGHT_COLOR = 0x66aaff;
-const BACKLIGHT_INTENSITY = 10;
 const FLOOR_GLOW_LOCKED = { x: 0.01, y: 0.62, z: 0.1, size: 1.47, strength: 0.2 };
 const FLOOR_GLOW_RATIO = FLOOR_GLOW_LOCKED.strength / 10;
 const FLOOR_GLOW_W = TV_W * 0.7 * FLOOR_GLOW_LOCKED.size;
@@ -124,6 +124,20 @@ function makeWallTextures(renderer: THREE.WebGLRenderer) {
 export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
   let host: HTMLDivElement | undefined;
 
+  // The TV remote (header button, Shell.tsx) - backlight color/opacity,
+  // room lights. Same iPad-styled panel as the design sandbox
+  // (design/living-room-3d), minus its "Connect TV" entry - the real app
+  // already has a working webcam/OBS picker (the Stream button), so a
+  // second one here would just be a confusing duplicate.
+  setTvRemoteAvailable(true);
+  onCleanup(() => {
+    setTvRemoteAvailable(false);
+  });
+  const [backlightOn, setBacklightOn] = createSignal(false);
+  const [roomLightsOn, setRoomLightsOn] = createSignal(true);
+  const [blColor, setBlColor] = createSignal("#66aaff");
+  const [blOpacity, setBlOpacity] = createSignal(10);
+
   onMount(() => {
     const el = host;
     if (!el) return;
@@ -170,7 +184,14 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
     const floorTexLoader = new THREE.TextureLoader();
     floorTexLoader.load(`${import.meta.env.BASE_URL}textures/floor-gray-cement.jpg`, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      // The source photo had a visible lighter border framing its edges
+      // (public/textures/floor-gray-cement.jpg is now a cropped copy with
+      // that border removed) - every tile boundary showed it as a seam
+      // line no matter the repeat count or wrap mode, since the border
+      // itself was the mismatch, not the tiling technique. Mirrored
+      // wrapping (not a plain repeat) on top of the cropped image for
+      // genuinely seamless pixel-for-pixel edges.
+      tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
       tex.repeat.set(4, 4);
       tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
       floorMat.map = tex;
@@ -207,17 +228,15 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
     tvGroup.add(screen);
 
     // ---- backlight (CamDisplay technique) --------------------------------
-    const tvBacklight = new THREE.RectAreaLight(BACKLIGHT_COLOR, BACKLIGHT_INTENSITY, TV_W, TV_H);
+    // Intensity starts at 0 (off, matching backlightOn's default) - the
+    // createEffect below drives it live from the remote panel instead of
+    // a fixed constant.
+    const tvBacklight = new THREE.RectAreaLight(BACKLIGHT_COLOR, 0, TV_W, TV_H);
     tvBacklight.position.set(0, TV_Y + TV_Y_OFFSET, -HALF + TV_STANDOFF * 0.4);
     tvBacklight.lookAt(0, TV_Y + TV_Y_OFFSET, -HALF);
     scene.add(tvBacklight);
 
-    const tvFloorGlow = new THREE.RectAreaLight(
-      BACKLIGHT_COLOR,
-      BACKLIGHT_INTENSITY * FLOOR_GLOW_RATIO,
-      FLOOR_GLOW_W,
-      FLOOR_GLOW_H,
-    );
+    const tvFloorGlow = new THREE.RectAreaLight(BACKLIGHT_COLOR, 0, FLOOR_GLOW_W, FLOOR_GLOW_H);
     tvFloorGlow.position.set(FLOOR_GLOW_LOCKED.x, FLOOR_GLOW_LOCKED.y, -HALF + FLOOR_GLOW_LOCKED.z);
     tvFloorGlow.rotation.x = -Math.PI / 2; // lookAt() straight down is a degenerate case; a direct rotation isn't
     scene.add(tvFloorGlow);
@@ -241,10 +260,34 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
     key.shadow.camera.far = 15;
     key.shadow.camera.updateProjectionMatrix();
     scene.add(key);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+    const fill = new THREE.AmbientLight(0xffffff, 0.08);
+    scene.add(fill);
+
+    // Backlight color/opacity and Room light on/off, driven live by the
+    // TV remote panel - same technique as the design sandbox's
+    // applyLights(), just as a Solid effect instead of raw DOM listeners.
+    createEffect(() => {
+      const on = roomLightsOn();
+      hemi.intensity = on ? 0.55 : 0.02;
+      key.intensity = on ? 0.55 : 0.0;
+      fill.intensity = on ? 0.08 : 0.01;
+      const bg = on ? 0.02 : 0.004;
+      scene.background = new THREE.Color(bg, bg, bg);
+    });
+    createEffect(() => {
+      const color = blColor();
+      tvBacklight.color.set(color);
+      tvFloorGlow.color.set(color);
+    });
+    createEffect(() => {
+      const on = backlightOn();
+      const opacity = blOpacity();
+      tvBacklight.intensity = on ? opacity : 0;
+      tvFloorGlow.intensity = on ? opacity * FLOOR_GLOW_RATIO : 0;
+    });
 
     // ---- locked camera -----------------------------------------------
-    camera.position.set(0, TV_Y + LOCKED_HEIGHT, 1.7);
+    camera.position.set(0, TV_Y + LOCKED_HEIGHT, 1.1);
     camera.lookAt(0, TV_Y + LOCKED_HEIGHT + LOCKED_SIGHT, -HALF + TV_STANDOFF);
 
     // ---- resize to the host element, not the window ----------------------
@@ -311,5 +354,53 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
     });
   });
 
-  return <div class="living-room-3d" ref={host} />;
+  return (
+    <div class="living-room-3d" ref={host}>
+      <Show when={tvRemoteOpen()}>
+        <div class="lr-remote">
+          <div class="lr-remote-screen">
+            <div class="lr-remote-title">Remote</div>
+            <div class="lr-remote-row">
+              <button
+                type="button"
+                class="lr-remote-app"
+                aria-pressed={backlightOn()}
+                onClick={() => setBacklightOn((v) => !v)}
+              >
+                <span class="ico">💡</span>
+                <span>{backlightOn() ? "Backlight on" : "Backlight"}</span>
+              </button>
+              <button
+                type="button"
+                class="lr-remote-app"
+                aria-pressed={roomLightsOn()}
+                onClick={() => setRoomLightsOn((v) => !v)}
+              >
+                <span class="ico">🏠</span>
+                <span>{roomLightsOn() ? "Room light" : "Lights off"}</span>
+              </button>
+            </div>
+            <div class="lr-remote-section">
+              <label>Backlight color &amp; opacity</label>
+              <div class="lr-remote-section-row">
+                <input
+                  type="color"
+                  value={blColor()}
+                  onInput={(e) => setBlColor(e.currentTarget.value)}
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  step="0.1"
+                  value={blOpacity()}
+                  onInput={(e) => setBlOpacity(Number(e.currentTarget.value))}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </div>
+  );
 }

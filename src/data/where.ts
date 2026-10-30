@@ -22,6 +22,18 @@ export { setWatchRequest, watchRequest };
 const [canRemoveFromCall, setCanRemoveFromCall] = createSignal(false);
 export { canRemoveFromCall, setCanRemoveFromCall };
 
+/**
+ * Living Room's 3D TV has its own remote (backlight color/opacity, room
+ * light on/off) - LivingRoomBroadcast.tsx sets `tvRemoteAvailable` while
+ * it's mounted, and owns `tvRemoteOpen`'s actual panel. A plain shared
+ * signal (same pattern as inCall/streamingIn above) instead of prop-
+ * drilling through RoomPane.tsx, which this needs to reach through
+ * without touching.
+ */
+const [tvRemoteAvailable, setTvRemoteAvailable] = createSignal(false);
+const [tvRemoteOpen, setTvRemoteOpen] = createSignal(false);
+export { tvRemoteAvailable, setTvRemoteAvailable, tvRemoteOpen, setTvRemoteOpen };
+
 export function whereNow() {
   const room = inRoom();
   if (room) return `In ${room}`;

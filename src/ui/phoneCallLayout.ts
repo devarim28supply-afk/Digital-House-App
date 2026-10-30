@@ -17,7 +17,7 @@ export type PhonePlan = {
   places: Record<string, PhoneStyle>;
 };
 
-const full: PhoneStyle = { left: "0", top: "0", width: "100%", height: "100%", zIndex: "1" };
+const full: PhoneStyle = { left: "0", top: "0", width: "100%", height: "100%", "z-index": "1" };
 
 /** Where a dragged self-view lands: the stage edge closest to the pointer. */
 export function pipSpotAt(x: number, y: number, width: number, height: number): PipSpot {
@@ -168,7 +168,24 @@ export function deskPlan(args: {
  * not a tile), everyone's webcam a small row along the bottom - never the
  * adaptive grid, and never rearranged by who is talking.
  */
-export function broadcastPlan(args: { keys: string[]; width: number; height: number }): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
+export function broadcastPlan(args: {
+  keys: string[];
+  width: number;
+  height: number;
+  /** the tile row sits this many px INTO the big panel's bottom edge
+   * instead of right at it - Living Room's 3D floor, so the webcam zone
+   * reads as part of the room instead of a strip stuck on below it. */
+  overlap?: number;
+  /** overrides the webcam row's default (64-96px) height clamp - Wall
+   * Street's TradingView chart needs that height kept small, but Living
+   * Room's tiles can be bigger since there's no chart competing for space. */
+  stripHeight?: number;
+  /** caps the row's total width to this fraction of the panel's width -
+   * Living Room's TV doesn't span the whole panel (there's wall on both
+   * sides, unlike Wall Street's edge-to-edge chart/video), so the webcam
+   * row should stay within the TV's own width instead of the full panel. */
+  rowWidthRatio?: number;
+}): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
   const keys = args.keys.filter(Boolean);
   const places: Record<string, PhoneStyle> = {};
   const gap = 10;
@@ -179,18 +196,33 @@ export function broadcastPlan(args: { keys: string[]; width: number; height: num
   // The webcam strip stays small on purpose - the chart (or three, stacked)
   // above it needs the real height; a cramped TradingView widget can render
   // blank instead of just small.
-  const stripH = keys.length ? Math.min(96, Math.max(64, innerH * 0.14)) : 0;
-  const bigAreaH = Math.max(1, innerH - (keys.length ? stripH + gap : 0));
+  const stripH = keys.length ? (args.stripHeight ?? Math.min(96, Math.max(64, innerH * 0.14))) : 0;
+  // The row's POSITION is still worked out as if space were reserved for
+  // it below the panel (reservedH) - that's what keeps the row itself
+  // exactly where and how big it already was. The panel's own RENDERED
+  // height is separate: with overlap, the row floats on top of the panel
+  // instead of sitting in reserved space below it, so the panel can use
+  // the full height underneath - no black void left where that reserved
+  // space used to be.
+  const reservedH = Math.max(1, innerH - (keys.length ? stripH + gap : 0));
+  const bigAreaH = args.overlap ? innerH : reservedH;
   const big = box(pad, pad, innerW, bigAreaH);
+  // When the tile row overlaps UP into the big panel's own rectangle, DOM
+  // order alone isn't a reliable way to keep it on top - a WebGL canvas
+  // (Living Room's 3D scene) can end up compositited above sibling DOM
+  // content despite coming earlier in the markup. An explicit, lower
+  // z-index on the big panel removes the ambiguity outright.
+  if (args.overlap) big["z-index"] = "0";
 
   const n = keys.length;
   if (n > 0) {
+    const rowMaxW = args.rowWidthRatio ? innerW * args.rowWidthRatio : innerW;
     const gapsX = gap * (n - 1);
-    let cellW = Math.min((innerW - gapsX) / n, (stripH * 16) / 9);
+    let cellW = Math.min((rowMaxW - gapsX) / n, (stripH * 16) / 9);
     cellW = Math.max(0, cellW);
     const rowW = cellW * n + gapsX;
     let x = pad + Math.max(0, (innerW - rowW) / 2);
-    const y = pad + bigAreaH + gap;
+    const y = pad + reservedH + gap - (args.overlap ?? 0);
     for (const key of keys) {
       places[key] = box(x, y, cellW, stripH);
       x += cellW + gap;
@@ -206,7 +238,7 @@ function box(x: number, y: number, width: number, height: number): PhoneStyle {
     top: px(y),
     width: px(width),
     height: px(height),
-    zIndex: "1",
+    "z-index": "1",
   };
 }
 
@@ -226,7 +258,7 @@ function shareBox(x: number, y: number, width: number, height: number): PhoneSty
     top: px(y),
     width: px(width),
     height: px(height),
-    zIndex: "1",
+    "z-index": "1",
   };
 }
 

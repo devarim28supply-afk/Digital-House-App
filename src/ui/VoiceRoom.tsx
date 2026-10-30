@@ -1544,7 +1544,14 @@ export function VoiceRoom(props: {
       .filter((t) => !t.screen)
       .map((t) => t.key)
       .concat(loneRoomFaces().map(([name]) => `face:${name}`), teamScreens().map(teamKey));
-    return broadcastPlan({ keys, width: w, height: h }).big as JSX.CSSProperties;
+    return broadcastPlan({
+      keys,
+      width: w,
+      height: h,
+      overlap: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 40 : 0,
+      stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
+      rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+    }).big as JSX.CSSProperties;
   });
   const layout = createMemo(() => {
     const n = people();
@@ -1616,7 +1623,14 @@ export function VoiceRoom(props: {
         ...loneRoomFaces().map(([name]) => `face:${name}`),
         ...teamScreens().map(teamKey),
       ];
-      const { places } = broadcastPlan({ keys, width: boxW, height: boxH });
+      const { places } = broadcastPlan({
+        keys,
+        width: boxW,
+        height: boxH,
+        overlap: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 40 : 0,
+        stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 220 : undefined,
+        rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+      });
       return {
         n: keys.length,
         narrow: false,
@@ -1676,7 +1690,7 @@ export function VoiceRoom(props: {
           top: "0px",
           width: `${smallW}px`,
           height: `${Math.floor((smallW * 9) / 16)}px`,
-          zIndex: "1",
+          "z-index": "1",
         };
       }
       return {

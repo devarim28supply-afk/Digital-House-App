@@ -56,7 +56,7 @@ import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
 import { RolesDialog } from "./Roles";
 import { DashboardDialog, type Page as DashboardPage, type Section as DashboardSection } from "./Dashboard";
-import { setCanRemoveFromCall, setWatchRequest, streamingIn, whereNow } from "../data/where";
+import { setCanRemoveFromCall, setTvRemoteOpen, setWatchRequest, streamingIn, tvRemoteAvailable, tvRemoteOpen, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
 
@@ -928,6 +928,16 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                 </div>
               </div>
             )}
+          </Show>
+          <Show when={inThisCall() && tvRemoteAvailable()}>
+            <button
+              class="btn tv-remote-btn"
+              type="button"
+              aria-pressed={tvRemoteOpen()}
+              onClick={() => setTvRemoteOpen((v) => !v)}
+            >
+              TV remote
+            </button>
           </Show>
           <Notifications uid={props.uid} staff={props.staff} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
           {/* stats, approvals, who's online, servers, oversight, feedback, activity and the audit log in one place (staff only) */}
