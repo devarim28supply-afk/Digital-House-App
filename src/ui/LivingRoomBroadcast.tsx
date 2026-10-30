@@ -2,7 +2,7 @@ import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import type { Track } from "livekit-client";
-import { setTvRemoteAvailable, tvRemoteOpen } from "../data/where";
+import { setLivingRoomTvBottom, setTvRemoteAvailable, tvRemoteOpen } from "../data/where";
 import { type Channel, setLivingRoomLights } from "../data/store";
 
 const DEFAULT_LIGHTS: NonNullable<Channel["lrLights"]> = {
@@ -352,14 +352,28 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined; ser
     camera.position.set(0, TV_Y + LOCKED_HEIGHT, 1.1);
     camera.lookAt(0, TV_Y + LOCKED_HEIGHT + LOCKED_SIGHT, -HALF + TV_STANDOFF);
 
+    // Where the TV's own bottom edge actually lands on screen, so the
+    // webcam row (positioned from VoiceRoom.tsx/phoneCallLayout.ts) can
+    // park itself right below it instead of a fixed pixel guess - the
+    // projected position moves with the container's aspect ratio, a fixed
+    // offset doesn't, and drifted into covering the screen on a window
+    // size it wasn't tuned against.
+    const tvBottomWorld = new THREE.Vector3(0, TV_Y + TV_Y_OFFSET - TV_H / 2, -HALF + TV_STANDOFF);
+    function updateTvBottomFraction() {
+      const ndc = tvBottomWorld.clone().project(camera);
+      setLivingRoomTvBottom(Math.min(1, Math.max(0, (1 - ndc.y) / 2)));
+    }
+
     // ---- resize to the host element, not the window ----------------------
     function resize() {
       const w = el!.clientWidth || 1;
       const h = el!.clientHeight || 1;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
       renderer.setSize(w, h);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+      updateTvBottomFraction();
     }
     resize();
     const resizeObserver = new ResizeObserver(resize);

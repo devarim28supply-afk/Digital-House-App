@@ -185,6 +185,14 @@ export function broadcastPlan(args: {
    * sides, unlike Wall Street's edge-to-edge chart/video), so the webcam
    * row should stay within the TV's own width instead of the full panel. */
   rowWidthRatio?: number;
+  /** the tile row's TOP edge, as a fraction (0 top, 1 bottom) of the
+   * panel's own height - Living Room's actual TV bottom edge on screen,
+   * projected live from the 3D camera (LivingRoomBroadcast.tsx). The TV's
+   * rendered position moves with the container's aspect ratio, so a fixed
+   * pixel `overlap` can drift the row up into the screen on a window size
+   * it wasn't tuned against; this tracks the real edge instead and takes
+   * priority over `overlap` when given. */
+  tvBottomRatio?: number;
 }): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
   const keys = args.keys.filter(Boolean);
   const places: Record<string, PhoneStyle> = {};
@@ -205,14 +213,15 @@ export function broadcastPlan(args: {
   // the full height underneath - no black void left where that reserved
   // space used to be.
   const reservedH = Math.max(1, innerH - (keys.length ? stripH + gap : 0));
-  const bigAreaH = args.overlap ? innerH : reservedH;
+  const usingTvBottom = args.tvBottomRatio !== undefined;
+  const bigAreaH = args.overlap || usingTvBottom ? innerH : reservedH;
   const big = box(pad, pad, innerW, bigAreaH);
   // When the tile row overlaps UP into the big panel's own rectangle, DOM
   // order alone isn't a reliable way to keep it on top - a WebGL canvas
   // (Living Room's 3D scene) can end up compositited above sibling DOM
   // content despite coming earlier in the markup. An explicit, lower
   // z-index on the big panel removes the ambiguity outright.
-  if (args.overlap) big["z-index"] = "0";
+  if (args.overlap || usingTvBottom) big["z-index"] = "0";
 
   const n = keys.length;
   if (n > 0) {
@@ -222,7 +231,14 @@ export function broadcastPlan(args: {
     cellW = Math.max(0, cellW);
     const rowW = cellW * n + gapsX;
     let x = pad + Math.max(0, (innerW - rowW) / 2);
-    const y = pad + reservedH + gap - (args.overlap ?? 0);
+    // tvBottomRatio pins the row to the TV's real on-screen bottom edge,
+    // plus a small gap so the tiles read as sitting apart from the TV
+    // (on the floor) instead of touching its frame - clamped so it can
+    // never climb back above that edge (covering the screen) and never
+    // run past the panel's own bottom either.
+    const y = usingTvBottom
+      ? pad + Math.min(Math.max(0, args.tvBottomRatio!) * innerH + gap, Math.max(0, innerH - stripH))
+      : pad + reservedH + gap - (args.overlap ?? 0);
     for (const key of keys) {
       places[key] = box(x, y, cellW, stripH);
       x += cellW + gap;

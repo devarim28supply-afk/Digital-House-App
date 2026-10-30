@@ -34,6 +34,17 @@ const [tvRemoteAvailable, setTvRemoteAvailable] = createSignal(false);
 const [tvRemoteOpen, setTvRemoteOpen] = createSignal(false);
 export { tvRemoteAvailable, setTvRemoteAvailable, tvRemoteOpen, setTvRemoteOpen };
 
+/**
+ * Where the TV's bottom edge actually lands on screen, as a fraction (0
+ * top, 1 bottom) of the 3D panel's own height - projected live from the
+ * locked camera in LivingRoomBroadcast.tsx, recomputed on every resize.
+ * VoiceRoom.tsx's broadcastPlan() reads this to park the webcam row right
+ * below that edge instead of a fixed pixel offset tuned for one window
+ * size, which could drift the row up into the screen on another.
+ */
+const [livingRoomTvBottom, setLivingRoomTvBottom] = createSignal(0.62);
+export { livingRoomTvBottom, setLivingRoomTvBottom };
+
 export function whereNow() {
   const room = inRoom();
   if (room) return `In ${room}`;
