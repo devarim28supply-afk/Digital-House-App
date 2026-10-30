@@ -3,6 +3,14 @@ import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import type { Track } from "livekit-client";
 import { setTvRemoteAvailable, tvRemoteOpen } from "../data/where";
+import { type Channel, setLivingRoomLights } from "../data/store";
+
+const DEFAULT_LIGHTS: NonNullable<Channel["lrLights"]> = {
+  backlightOn: false,
+  roomLightsOn: true,
+  blColor: "#66aaff",
+  blOpacity: 10,
+};
 
 /**
  * Living Room's big panel: a real 3D room (not a flat video tile) — the
@@ -121,25 +129,79 @@ function makeWallTextures(renderer: THREE.WebGLRenderer) {
   return { normalMap, roughnessMap };
 }
 
-export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
+export function LivingRoomBroadcast(props: { track: () => Track | undefined; serverId: string; channel: Channel }) {
   let host: HTMLDivElement | undefined;
+  // The renderer's canvas is appended imperatively (outside Solid's own
+  // reconciliation) into its own dedicated child div, kept separate from
+  // the <Show> below - sharing one parent with a reactively toggled
+  // sibling let Solid's own insert/remove bookkeeping for the Show
+  // occasionally carry off the canvas along with it (the TV remote
+  // button closing the panel was silently wiping the 3D scene from the
+  // page, with no thrown error, because it shared `host` with the panel).
+  let canvasHost: HTMLDivElement | undefined;
 
   // The TV remote (header button, Shell.tsx) - backlight color/opacity,
   // room lights. Same iPad-styled panel as the design sandbox
   // (design/living-room-3d), minus its "Connect TV" entry - the real app
   // already has a working webcam/OBS picker (the Stream button), so a
   // second one here would just be a confusing duplicate.
+  //
+  // Shared live across everyone in the call: the state lives on the
+  // channel doc (lrLights, store.ts's setLivingRoomLights), which every
+  // client already watches in real time (watchChannels). Local signals
+  // mirror it for instant feedback on your own click/drag instead of
+  // waiting a round trip, then reconcile the moment Firestore's own
+  // update comes back (from you or anyone else) - closing the remote
+  // never touches this state, so it's exactly where the room left it.
   setTvRemoteAvailable(true);
   onCleanup(() => {
     setTvRemoteAvailable(false);
   });
-  const [backlightOn, setBacklightOn] = createSignal(false);
-  const [roomLightsOn, setRoomLightsOn] = createSignal(true);
-  const [blColor, setBlColor] = createSignal("#66aaff");
-  const [blOpacity, setBlOpacity] = createSignal(10);
+  const remote = () => props.channel.lrLights ?? DEFAULT_LIGHTS;
+  const [backlightOn, setBacklightOnLocal] = createSignal(remote().backlightOn);
+  const [roomLightsOn, setRoomLightsOnLocal] = createSignal(remote().roomLightsOn);
+  const [blColor, setBlColorLocal] = createSignal(remote().blColor);
+  const [blOpacity, setBlOpacityLocal] = createSignal(remote().blOpacity);
+  createEffect(() => {
+    const r = remote();
+    setBacklightOnLocal(r.backlightOn);
+    setRoomLightsOnLocal(r.roomLightsOn);
+    setBlColorLocal(r.blColor);
+    setBlOpacityLocal(r.blOpacity);
+  });
+  function pushLights(patch: Partial<NonNullable<Channel["lrLights"]>>) {
+    const current = {
+      backlightOn: backlightOn(),
+      roomLightsOn: roomLightsOn(),
+      blColor: blColor(),
+      blOpacity: blOpacity(),
+    };
+    void setLivingRoomLights(props.serverId, props.channel.id, { ...current, ...patch });
+  }
+  function setBacklightOn(v: boolean) {
+    setBacklightOnLocal(v);
+    pushLights({ backlightOn: v });
+  }
+  function setRoomLightsOn(v: boolean) {
+    setRoomLightsOnLocal(v);
+    pushLights({ roomLightsOn: v });
+  }
+  function setBlColor(v: string) {
+    setBlColorLocal(v);
+    pushLights({ blColor: v });
+  }
+  // The opacity slider fires on every drag tick - optimistic locally,
+  // but debounced to Firestore so dragging doesn't spam writes.
+  let opacityWrite = 0;
+  function setBlOpacity(v: number) {
+    setBlOpacityLocal(v);
+    window.clearTimeout(opacityWrite);
+    opacityWrite = window.setTimeout(() => pushLights({ blOpacity: v }), 150);
+  }
+  onCleanup(() => window.clearTimeout(opacityWrite));
 
   onMount(() => {
-    const el = host;
+    const el = canvasHost;
     if (!el) return;
 
     RectAreaLightUniformsLib.init();
@@ -249,7 +311,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
     key.target.position.set(0, TV_Y, -HALF);
     scene.add(key.target);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1024, 1024);
     key.shadow.radius = 4;
     key.shadow.bias = -0.0005;
     key.shadow.camera.left = -4;
@@ -297,7 +359,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     }
     resize();
     const resizeObserver = new ResizeObserver(resize);
@@ -356,6 +418,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
 
   return (
     <div class="living-room-3d" ref={host}>
+      <div class="living-room-3d-canvas" ref={canvasHost} />
       <Show when={tvRemoteOpen()}>
         <div class="lr-remote">
           <div class="lr-remote-screen">
@@ -365,7 +428,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
                 type="button"
                 class="lr-remote-app"
                 aria-pressed={backlightOn()}
-                onClick={() => setBacklightOn((v) => !v)}
+                onClick={() => setBacklightOn(!backlightOn())}
               >
                 <span class="ico">💡</span>
                 <span>{backlightOn() ? "Backlight on" : "Backlight"}</span>
@@ -374,7 +437,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined }) {
                 type="button"
                 class="lr-remote-app"
                 aria-pressed={roomLightsOn()}
-                onClick={() => setRoomLightsOn((v) => !v)}
+                onClick={() => setRoomLightsOn(!roomLightsOn())}
               >
                 <span class="ico">🏠</span>
                 <span>{roomLightsOn() ? "Room light" : "Lights off"}</span>

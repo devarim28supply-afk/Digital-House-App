@@ -2544,6 +2544,10 @@ img.msg-sticker {
   overflow: hidden;
   background: #050505;
 }
+.living-room-3d-canvas {
+  position: absolute;
+  inset: 0;
+}
 .living-room-3d canvas {
   display: block;
 }
@@ -2552,8 +2556,9 @@ img.msg-sticker {
    (design/living-room-3d/index.html's #ipad), ported class-for-class. */
 .lr-remote {
   position: absolute;
-  right: 16px;
-  top: 16px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 2;
   width: 230px;
   padding: 14px 14px 16px;

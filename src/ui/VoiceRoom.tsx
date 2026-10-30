@@ -2209,7 +2209,7 @@ export function VoiceRoom(props: {
                       </Show>
                     }
                   >
-                    <LivingRoomBroadcast track={broadcastTrack} />
+                    <LivingRoomBroadcast track={broadcastTrack} serverId={props.serverId} channel={props.channel} />
                   </Show>
                 }>
                   <div class="tradingview-grid">
