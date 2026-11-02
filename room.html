@@ -197,7 +197,7 @@
     outline: 1px solid #23ff9a66;
     border-radius: 4px;
     background: #000;
-    box-shadow: 0 0 30px var(--glow, #23ff9a40);
+    box-shadow: 0 0 30px #23ff9a40;
     display: grid;
     place-items: center;
   }
@@ -207,10 +207,6 @@
     height: 300px;
     margin: -150px 0 0 -266.5px;
     border-width: 4px;
-    /* a bigger, softer wash than a desk screen's border glow - the room's
-       own ambience, like the Living Room TV's screen-cast light */
-    box-shadow: 0 0 160px 30px var(--glow, #23ff9a40);
-    transition: box-shadow .4s ease;
   }
   .monitor.big .idle { font-size: 16px; }
   .monitor.big .label { font-size: 9px; }
