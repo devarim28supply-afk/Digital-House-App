@@ -1,20 +1,24 @@
 import { type LocalParticipant, type Participant, type Room, RoomEvent, Track } from "livekit-client";
 
 /*
- * The Darkwood Room's four desks, handed out by the tile's videochat
- * (Kaalob): whoever joins the call gets the first free desk, first come
- * first served. The fifth and later wait in the middle of the room, and the
- * one waiting longest gets the next desk that frees up.
+ * The Darkwood Room's eight seats, handed out by the tile's videochat
+ * (Kaalob): whoever joins the call gets the first free seat, first come
+ * first served. Seats 0-3 are the four desks (one screen each); 4-5 are the
+ * left sofa and 6-7 the right sofa, both halves of a sofa sharing that
+ * sofa's own big wall screen (room.js's SOFA_SEAT_OFFSET/SEAT_SCREEN - this
+ * count must match room.js's CHAIRS.length). The ninth and later wait in
+ * the middle of the room, and the one waiting longest gets the next seat
+ * that frees up.
  *
- * Standing up keeps your desk only while you share your screen (or stream);
+ * Standing up keeps your seat only while you share your screen (or stream);
  * otherwise it frees. Leaving the call frees it too.
  *
  * Each person says where they are in their own LiveKit attributes, so
  * everyone (and the room page, watching the call) sees the same seats. Two
- * people grabbing one desk at once: the one who joined first keeps it.
+ * people grabbing one seat at once: the one who joined first keeps it.
  */
 
-export const SEATS = 4;
+export const SEATS = 8;
 export const SEAT_ATTR = "dw-seat"; // "0".."3", or "" with no desk
 export const WAIT_ATTR = "dw-wait"; // "1": in the middle, waiting for a desk
 export const STAND_ATTR = "dw-stand"; // "1": up from the desk, keeping it (sharing)
