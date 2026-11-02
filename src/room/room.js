@@ -18,7 +18,7 @@ import { autoCaptions } from "./livecaptions";
 import { SOURCES, failedChannels, loadChannels, playChannel } from "./tv";
 
 // ---- room size, matching room.html (px, 100 px = 1 m)
-const W = 600, D = 600, H = 300;
+const W = 1500, D = 600, H = 300;
 const EYE = 160;    // eye height above the floor, standing...
 const SIT_EYE = 110; // ...and sitting on a chair
 const MARGIN = 30;  // how close you can get to a wall
@@ -123,8 +123,8 @@ function chairFace(chair, w, h, transform, cls = "", clip = "") {
   if (clip) f.style.clipPath = clip;
   chair.append(f);
 }
-function makeChair(x, z, turn = 0) {
-  const { w, d, seat, tall, backTop, backBase } = CHAIR;
+function makeChair(x, z, turn = 0, size = CHAIR) {
+  const { w, d, seat, tall, backTop, backBase } = size;
   const chair = document.createElement("div");
   chair.className = "chair";
   chair.style.transform = `translate3d(${x}px, ${H / 2}px, ${z}px) rotateY(${turn}deg)`;
@@ -158,18 +158,20 @@ function makeChair(x, z, turn = 0) {
     chair.lastChild.style.backgroundImage = panel;
   }
   world.append(chair);
-  const c = { x, z, el: chair, turn: 0, turnAt: 0, half: 0, halfZ: 0 };
+  const c = { x, z, el: chair, turn: 0, turnAt: 0, half: 0, halfZ: 0, size };
   turnChair(c, turn);
   return c;
 }
 /** Turns a chair to face `turn` degrees (0 = the front wall), a quarter at a time. */
 function turnChair(c, turn) {
   c.turn = ((turn % 360) + 360) % 360;
-  c.el.style.transform = `translate3d(${c.x}px, ${H / 2}px, ${c.z}px) rotateY(${c.turn}deg)`;
+  // a sofa's own half-seats have no chair of their own to turn (the bench
+  // already drew it, fixed, in makeSofa) - only move a real chair's el
+  if (c.el) c.el.style.transform = `translate3d(${c.x}px, ${H / 2}px, ${c.z}px) rotateY(${c.turn}deg)`;
   // what blocks walking: its width and depth swap when it is side-on
   const sideOn = c.turn % 180 !== 0;
-  c.half = (sideOn ? CHAIR.d : CHAIR.w) / 2;
-  c.halfZ = (sideOn ? CHAIR.w : CHAIR.d) / 2;
+  c.half = (sideOn ? c.size.d : c.size.w) / 2;
+  c.halfZ = (sideOn ? c.size.w : c.size.d) / 2;
 }
 // one chair per screen, 1.5 m in front of it and facing it: screens 1 and 2
 // on the front wall, 3 and 4 on the back wall (turned around)
@@ -214,6 +216,43 @@ const DESKS = [-SCREEN_X, SCREEN_X].flatMap((x) => [
   makeDesk(x, D / 2 - DESK.d / 2),
 ]);
 
+// ---- two sofas, one facing each big side-wall screen (5 and 6), each
+// seating two side by side: the exact same build as a desk chair
+// (makeChair/CHAIR), just twice as wide. The bench itself is drawn once
+// and never turns on its own; each half of it is its own seat, pushed
+// into CHAIRS the same as a desk chair, so two people can sit there
+// independently and each gets a turn sharing/streaming to the screen
+// their half faces (data/seats.ts's SEATS must match CHAIRS.length).
+const SOFA = { ...CHAIR, w: CHAIR.w * 2 };
+const SOFA_X = W / 2 - 2 - 300; // 3 m out from its screen's wall
+const SOFA_SEAT_OFFSET = SOFA.w / 4; // each seat sits a quarter of the bench's width from its middle
+function makeSofa(x, z, turn) {
+  makeChair(x, z, turn, SOFA); // the bench's own visual - not a seat itself
+  const t = (turn * Math.PI) / 180;
+  const sideOn = ((turn % 180) + 180) % 180 !== 0; // same test turnChair uses
+  const half = (sideOn ? SOFA.d : SOFA.w) / 2; // the bench's full world-X half-extent
+  const halfZ = (sideOn ? SOFA.w : SOFA.d) / 2; // ...and its full world-Z half-extent
+  for (const side of [-1, 1]) {
+    CHAIRS.push({
+      // the same local-x-offset rotation chairPoint uses for local-z
+      x: x + side * SOFA_SEAT_OFFSET * Math.cos(t),
+      z: z - side * SOFA_SEAT_OFFSET * Math.sin(t),
+      el: null, // no chair of its own to turn - the bench already drew it
+      turn: ((turn % 360) + 360) % 360,
+      turnAt: 0,
+      half: sideOn ? half : half / 2, // each half only blocks its own share of the bench
+      halfZ: sideOn ? halfZ / 2 : halfZ,
+      size: SOFA,
+    });
+  }
+}
+makeSofa(-SOFA_X, 0, 90); // seats 4 and 5, facing screen 5
+makeSofa(SOFA_X, 0, -90); // seats 6 and 7, facing screen 6
+// seat index -> the screen it shares/streams to: 0-3 are the four desks,
+// one screen each; 4-5 are the left sofa and 6-7 the right sofa (both
+// halves of a sofa share that sofa's own big screen).
+const SEAT_SCREEN = [1, 2, 3, 4, 5, 5, 6, 6];
+
 const CHAIR_GAP = 18; // how close you can walk to a chair (or a desk)
 const inChair = (x, z) =>
   [...CHAIRS, ...DESKS].some((c) => Math.abs(x - c.x) < c.half + CHAIR_GAP && Math.abs(z - c.z) < c.halfZ + CHAIR_GAP);
@@ -234,8 +273,8 @@ const SCREENS = [
   { id: 3, x: SCREEN_X, z: D / 2 - 2, place: `translate3d(${SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
   { id: 4, x: -SCREEN_X, z: D / 2 - 2, place: `translate3d(${-SCREEN_X}px, 0, ${D / 2 - 2}px) rotateY(180deg)` },
   // Screens 5 and 6: one whole wall each, the two side walls between the TV
-  // walls, floor to ceiling in 16:9 (5.3 x 3 m). Nothing shows on them for
-  // now: shares go to the desks' own screens.
+  // walls, floor to ceiling in 16:9 (5.3 x 3 m). Full screens like 1 to 4:
+  // TV, a share, or a stream, from whoever is sitting on that wall's sofa.
   { id: 5, big: true, x: -W / 2 + 2, z: 0, place: `translate3d(${-W / 2 + 2}px, 0, 0) rotateY(90deg)` },
   { id: 6, big: true, x: W / 2 - 2, z: 0, place: `translate3d(${W / 2 - 2}px, 0, 0) rotateY(-90deg)` },
 ].map((s) => {
@@ -247,7 +286,7 @@ const SCREENS = [
   video.playsInline = true;
   const idle = document.createElement("div");
   idle.className = "idle";
-  idle.textContent = s.big ? `SCREEN ${s.id}` : `SCREEN ${s.id}\nT TV`;
+  idle.textContent = `SCREEN ${s.id}\nT TV`;
   const label = document.createElement("div");
   label.className = "label";
   // TV plays in its own <video> (hls.js feeds it), so a share never fights it
@@ -290,6 +329,48 @@ function clearScreen(screen) {
 function tellCall(msg) {
   if (parent !== window) parent.postMessage(msg, location.origin);
 }
+
+// ---- ambience: the big screens (5, 6) cast their own content's color as a
+// glow around themselves - the CSS-room version of the Living Room's TV
+// screen-cast light (LivingRoomBroadcast.tsx), which samples its video and
+// drives a three.js light. Here an offscreen canvas samples whichever video
+// is actually showing (a share/stream, or a TV channel) every ~200ms (not
+// every frame - a GPU readback every render is needless cost) and sets a
+// --glow CSS variable the .monitor.big box-shadow reads.
+const ambienceCanvas = document.createElement("canvas");
+ambienceCanvas.width = 8;
+ambienceCanvas.height = 8;
+const ambienceCtx = ambienceCanvas.getContext("2d", { willReadFrequently: true });
+function sampleAmbience(screen) {
+  const video = screen.owner ? screen.video : screen.tvPlaying ? screen.tvVideo : null;
+  if (!ambienceCtx || !video || video.readyState < 2 || !video.videoWidth) {
+    screen.el.style.removeProperty("--glow");
+    return;
+  }
+  ambienceCtx.drawImage(video, 0, 0, 8, 8);
+  const data = ambienceCtx.getImageData(0, 0, 8, 8).data;
+  let r = 0, g = 0, b = 0;
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+  r /= n;
+  g /= n;
+  b /= n;
+  // averaging a whole frame washes color toward gray - push saturation
+  // back up around the average so the glow reads as a color, not a smear
+  const avg = (r + g + b) / 3;
+  const BOOST = 2.2;
+  r = clamp(avg + (r - avg) * BOOST, 0, 255);
+  g = clamp(avg + (g - avg) * BOOST, 0, 255);
+  b = clamp(avg + (b - avg) * BOOST, 0, 255);
+  screen.el.style.setProperty("--glow", `rgb(${r | 0} ${g | 0} ${b | 0} / .55)`);
+}
+setInterval(() => {
+  for (const s of SCREENS) if (s.big) sampleAmbience(s);
+}, 200);
 
 // ---- big view: F opens the screen you face full size, F or Esc closes
 const big = document.getElementById("bigscreen");
@@ -549,8 +630,7 @@ const pickerList = picker.querySelector(".list");
 let pickerScreen = null;
 let pickerSource = "free";
 // T: whichever screen you look at most directly, showing or not
-// (the whole-wall screens are for screen sharing only, never TV)
-const facingScreen = () => nearestInView(SCREENS.filter((x) => !x.big));
+const facingScreen = () => nearestInView(SCREENS);
 function openPicker(screen) {
   pickerScreen = screen;
   pickerTitle.textContent = `TV on Screen ${screen.id}${screen.tv ? " · now: " + screen.tv.name : ""}`;
@@ -657,6 +737,11 @@ function chairInView() {
   const near = CHAIRS.filter((c) => Math.hypot(c.x - me.x, c.z - me.z) < CHAIR_REACH);
   return near.length ? nearestInView(near) : null;
 }
+/** Same, but only a chair with a real one to turn - a sofa's half-seats share one fixed bench. */
+function turnableChairInView() {
+  const near = CHAIRS.filter((c) => c.el && Math.hypot(c.x - me.x, c.z - me.z) < CHAIR_REACH);
+  return near.length ? nearestInView(near) : null;
+}
 function turnChairBy(c) {
   turnChair(c, c.turn + 90);
   c.turnAt = Date.now();
@@ -741,7 +826,7 @@ function standUp(fromCall = false) {
   if (!fromCall) tellCall({ type: "dh-seat-stand" });
   me.eye = EYE;
   // step out in front of the chair
-  const p = chairPoint(c, -CHAIR.d / 2 - 30);
+  const p = chairPoint(c, -c.size.d / 2 - 30);
   me.x = clamp(p.x, -W / 2 + MARGIN, W / 2 - MARGIN);
   me.z = clamp(p.z, -D / 2 + MARGIN, D / 2 - MARGIN);
   draw();
@@ -783,13 +868,13 @@ chairBtn.type = "button";
 chairBtn.textContent = "Turn chair (R)";
 chairBtn.title = "Turn the chair you look at by 90 degrees";
 chairBtn.addEventListener("click", () => {
-  const c = chairInView();
+  const c = turnableChairInView();
   if (c) turnChairBy(c);
 });
 document.getElementById("bar").append(chairBtn, feedbackBtn);
 addEventListener("keydown", (e) => {
   if (e.repeat || !picker.hidden || !big.hidden || e.code !== "KeyR") return;
-  const c = chairInView();
+  const c = turnableChairInView();
   if (c) turnChairBy(c);
 });
 
@@ -804,8 +889,8 @@ function updateShareButton() {
   const c = callers.get(myUid);
   shareBtn.hidden = !c || c.seat < 0;
   if (shareBtn.hidden) return;
-  shareBtn.textContent = c.sharing ? "Stop sharing (P)" : `Share to screen ${c.seat + 1} (P)`;
-  shareBtn.title = "Your screen share in the videochat, shown on your desk's screen";
+  shareBtn.textContent = c.sharing ? "Stop sharing (P)" : `Share to screen ${SEAT_SCREEN[c.seat]} (P)`;
+  shareBtn.title = "Your screen share in the videochat, shown on your desk's (or sofa's) screen";
   shareBtn.setAttribute("aria-pressed", String(c.sharing));
 }
 addEventListener("keydown", (e) => {
@@ -1617,10 +1702,9 @@ function syncCall() {
     if ((person.video.srcObject?.getVideoTracks()[0] ?? null) !== cam) person.video.srcObject = cam ? new MediaStream([cam]) : null;
     person.el.classList.toggle("live", Boolean(cam));
   }
-  // each desk's screen: what its person shares
+  // each screen: what its seat (or either half of its sofa) shares
   for (const s of SCREENS) {
-    if (s.big) continue;
-    const owner = [...callers.entries()].find(([, c]) => c.seat === s.id - 1 && c.share);
+    const owner = [...callers.entries()].find(([, c]) => SEAT_SCREEN[c.seat] === s.id && c.share);
     if (owner) showOnScreen(s, owner[1].share, owner[0], owner[1].name);
     else clearScreen(s);
   }
