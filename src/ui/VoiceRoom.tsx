@@ -20,7 +20,7 @@ import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
 import { audit } from "../data/audit";
-import { canRemoveFromCall, livingRoomTvBottom, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
+import { canRemoveFromCall, livingRoomTvBottom, setGoToRoom, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
@@ -674,6 +674,12 @@ export function VoiceRoom(props: {
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
+      // Kaalob: always start the camera on joining - never leave it off the
+      // way mic/camera used to both just "start off until you switch them
+      // on". The wall (viewOnly) has no camera or dock at all, so it's
+      // skipped; the Operation Room (webcamOnly) is camera-first, so it's
+      // included.
+      if (!props.viewOnly && !camShown()) void toggleCam();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not join the call.");
       if (gen === joinGen && joinTries < 6) {
@@ -701,6 +707,7 @@ export function VoiceRoom(props: {
       if (type === "dh-seat-stand") seatControl?.stand();
       if (type === "dh-camera") void toggleCam();
       if (type === "dh-share") void toggle("screen");
+      if (type === "dh-go-to-room") setGoToRoom(String((e.data as { roomKey?: unknown }).roomKey ?? ""));
     };
     window.addEventListener("message", fromRoom);
     onCleanup(() => window.removeEventListener("message", fromRoom));

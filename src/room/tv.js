@@ -103,18 +103,28 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
     onFail?.(why);
   };
   video.addEventListener("playing", () => markFailed(url, false), { once: true });
-  // closed captions: show the first captions/subtitles track that appears,
-  // and say so the first time one of its lines shows (live captions stand down)
+  // Closed captions: on by default; a caller can turn them off/on by hand
+  // via setCaptions() below. Some channels carry BOTH embedded CEA-608
+  // captions and a second, separate WebVTT subtitle track listed in their
+  // own playlist for the same line, so only the first one to appear
+  // (captionSource) is ever wired up as "the" caption track - without
+  // that, both would render on top of each other regardless of setCaptions.
   let captioned = false;
+  let captionSource = false;
+  let activeTrack = null;
+  let ccOn = true;
   const cueSeen = (e) => {
     if (captioned || !e.target.activeCues?.length) return;
     captioned = true;
     onCaptions?.();
   };
   const showCaptions = () => {
+    if (captionSource) return;
     for (const track of video.textTracks) {
       if (track.kind === "captions" || track.kind === "subtitles") {
-        track.mode = "showing";
+        captionSource = true;
+        activeTrack = track;
+        track.mode = ccOn ? "showing" : "hidden";
         track.addEventListener("cuechange", cueSeen);
         return;
       }
@@ -129,11 +139,13 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (data.fatal) fail(data.details || data.type);
     });
-    // subtitles listed in the channel's playlist (not inside the video): on too
+    // subtitles listed in the channel's playlist (not inside the video): on
+    // too, but only if nothing has claimed captionSource yet (see above).
     hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
-      if (hls.subtitleTracks.length && hls.subtitleTrack < 0) {
+      if (!captionSource && hls.subtitleTracks.length && hls.subtitleTrack < 0) {
+        captionSource = true;
         hls.subtitleTrack = 0;
-        hls.subtitleDisplay = true;
+        hls.subtitleDisplay = ccOn;
       }
     });
     hls.loadSource(url);
@@ -150,6 +162,19 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
     url,
     startedAt: Date.now(),
     hasCaptions: () => captioned,
+    ccEnabled: () => ccOn,
+    setCaptions(on) {
+      ccOn = Boolean(on);
+      if (activeTrack) activeTrack.mode = ccOn ? "showing" : "hidden";
+      if (hls && hls.subtitleTrack >= 0) hls.subtitleDisplay = ccOn;
+    },
+    /** The line on screen right now, or "". */
+    getCaptionText() {
+      if (!ccOn || !activeTrack) return "";
+      const cues = activeTrack.activeCues;
+      if (!cues || !cues.length) return "";
+      return [...cues].map((c) => c.text ?? "").join("\n");
+    },
     destroy() {
       video.textTracks.removeEventListener("addtrack", showCaptions);
       for (const track of video.textTracks) track.removeEventListener("cuechange", cueSeen);
