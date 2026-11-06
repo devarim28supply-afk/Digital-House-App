@@ -1422,13 +1422,19 @@ export function ProfileCard(props: {
   let panel: HTMLElement | undefined;
   const [viewport, setViewport] = createSignal({ width: window.innerWidth, height: window.innerHeight });
   const [height, setHeight] = createSignal(365);
-  const width = () => Math.min(340, viewport().width - 24);
-  const opensLeft = () => props.x >= width() + 24;
+  // the app shell is CSS-zoomed on desktop (.shell { zoom: 1.15 }): every pixel value
+  // given to this card is scaled by it, so work in zoomed units
+  const [zoom, setZoom] = createSignal(1);
+  const vw = () => viewport().width / zoom();
+  const vh = () => viewport().height / zoom();
+  const width = () => Math.min(340, vw() - 24);
+  const px = () => props.x / zoom();
+  const opensLeft = () => px() >= width() + 24;
   const left = () => {
-    const preferred = opensLeft() ? props.x - width() - 12 : (props.anchorRight ?? props.x) + 12;
-    return Math.max(12, Math.min(preferred, viewport().width - width() - 12));
+    const preferred = opensLeft() ? px() - width() - 12 : (props.anchorRight ?? props.x) / zoom() + 12;
+    return Math.max(12, Math.min(preferred, vw() - width() - 12));
   };
-  const top = () => Math.max(12, Math.min(props.y, viewport().height - height() - 12));
+  const top = () => Math.max(12, Math.min(props.y / zoom(), vh() - height() - 12));
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel?.focus();
@@ -1437,7 +1443,13 @@ export function ProfileCard(props: {
       height: Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight, document.documentElement.clientHeight || window.innerHeight),
     });
     resize();
-    const measure = () => { if (panel) setHeight(panel.offsetHeight); };
+    const zoomOf = () => {
+      const shell = panel?.closest(".shell");
+      const z = shell ? parseFloat(getComputedStyle(shell).zoom) : 1;
+      return Number.isFinite(z) && z > 0 ? z : 1;
+    };
+    setZoom(zoomOf());
+    const measure = () => { if (panel) { setZoom(zoomOf()); setHeight(panel.offsetHeight); } };
     const observer = new ResizeObserver(measure);
     if (panel) {
       observer.observe(panel);
@@ -1471,7 +1483,7 @@ export function ProfileCard(props: {
         style={{
           "--profile-enter-x": opensLeft() ? "28px" : "-28px",
           width: `${width()}px`,
-          "max-height": `${viewport().height - 24}px`,
+          "max-height": `${vh() - 24}px`,
           left: `${left()}px`,
           top: `${top()}px`,
           ...(props.profile?.background
