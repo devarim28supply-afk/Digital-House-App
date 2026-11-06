@@ -383,58 +383,26 @@ function makeEye() {
   return group;
 }
 
-// The eye's own black eyelid mask: a flat plate, cut transparent in the
-// shape of a human eyelid opening (not a circle), that always faces
-// exactly where the eye itself looks - so the iris stays centered in the
-// opening no matter which way it gazes, the same way real eyelids frame
-// the pupil. A canvas texture (solid black, with the eyelid shape cut out)
-// on a simple plane is far simpler than cutting that shape into 3D geometry.
-const SHELL_RADIUS = EYE_RADIUS * 1.15; // a little bigger than the eyeball it encloses
-let shellTex = null;
+// The eye's own black shell: a socket it rotates inside, open only on the
+// side facing you, so the iris only shows through that window - like a real
+// eye socket limiting how far round you can see it look. It always faces
+// the camera (the same way the webcam plate always does), independent of
+// which way the eye itself gazes.
+const SHELL_RADIUS = EYE_RADIUS * 1.15;
+const SHELL_OPEN_DEG = 35; // half-angle of the front opening
 let shellGeo = null;
 let shellMat = null;
 const shells = [];
-function eyelidTexture() {
-  if (shellTex) return shellTex;
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, size, size);
-  // the opening: two curves (upper lid, lower lid) meeting at pointed
-  // inner/outer corners, cut transparent out of the solid black sphere.
-  // Centered (u 0.5, v 0.5), which shellGeometry() rotates to local +Z.
-  const cx = size / 2, cy = size / 2;
-  const rx = size * 0.22, ryTop = size * 0.15, ryBottom = size * 0.12;
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.beginPath();
-  ctx.moveTo(cx - rx, cy);
-  ctx.quadraticCurveTo(cx, cy - ryTop, cx + rx, cy);
-  ctx.quadraticCurveTo(cx, cy + ryBottom, cx - rx, cy);
-  ctx.closePath();
-  ctx.fill();
-  shellTex = new THREE.CanvasTexture(canvas);
-  shellTex.colorSpace = THREE.SRGBColorSpace;
-  return shellTex;
-}
 function shellGeometry() {
   if (shellGeo) return shellGeo;
-  shellGeo = new THREE.SphereGeometry(SHELL_RADIUS, 32, 24);
-  // the sphere's default UV center (u .5, v .5) sits on its +X point -
-  // turn the sphere so that point lands on local +Z instead, matching the
-  // eye's own forward direction
-  shellGeo.rotateY(-Math.PI / 2);
+  const open = SHELL_OPEN_DEG * RAD;
+  shellGeo = new THREE.SphereGeometry(SHELL_RADIUS, 20, 14, 0, Math.PI * 2, open, Math.PI - open);
+  shellGeo.rotateX(-Math.PI / 2); // the opening points at local +Z, not the sphere's own +Y pole
   return shellGeo;
 }
 function makeShell() {
   if (!shellMat) {
-    shellMat = new THREE.MeshBasicMaterial({
-      map: eyelidTexture(),
-      transparent: true,
-      alphaTest: 0.5,
-      side: THREE.DoubleSide,
-    });
+    shellMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide });
   }
   const mesh = new THREE.Mesh(shellGeometry(), shellMat);
   mesh.renderOrder = 2;
@@ -541,13 +509,10 @@ export function renderEyes(entries, plates, cam, parent, solids) {
       lookDir(entry.gaze, entry.pitch, _look);
       eye.lookAt(_target.copy(eye.position).add(_look));
       paintHue(eye, entry.hue);
-      // the eyelid mask always matches the eye's own orientation - same
-      // position, same look direction - so its opening stays centered on
-      // the iris no matter which way the eye looks
       const shell = shells[i];
       shell.visible = true;
       shell.position.copy(eye.position);
-      shell.quaternion.copy(eye.quaternion);
+      shell.lookAt(camera.position); // the socket always faces you; the eye inside still gazes freely
     }
     for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
     for (let i = entries.length; i < shells.length; i++) shells[i].visible = false;
