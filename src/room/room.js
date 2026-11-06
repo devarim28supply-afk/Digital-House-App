@@ -330,6 +330,48 @@ function tellCall(msg) {
   if (parent !== window) parent.postMessage(msg, location.origin);
 }
 
+// ---- ambience: the big screens (5, 6) cast their own content's color as a
+// glow around themselves - the CSS-room version of the Living Room's TV
+// screen-cast light (LivingRoomBroadcast.tsx), which samples its video and
+// drives a three.js light. Here an offscreen canvas samples whichever video
+// is actually showing (a share/stream, or a TV channel) every ~200ms (not
+// every frame - a GPU readback every render is needless cost) and sets a
+// --glow CSS variable the .monitor.big box-shadow reads.
+const ambienceCanvas = document.createElement("canvas");
+ambienceCanvas.width = 8;
+ambienceCanvas.height = 8;
+const ambienceCtx = ambienceCanvas.getContext("2d", { willReadFrequently: true });
+function sampleAmbience(screen) {
+  const video = screen.owner ? screen.video : screen.tvPlaying ? screen.tvVideo : null;
+  if (!ambienceCtx || !video || video.readyState < 2 || !video.videoWidth) {
+    screen.el.style.removeProperty("--glow");
+    return;
+  }
+  ambienceCtx.drawImage(video, 0, 0, 8, 8);
+  const data = ambienceCtx.getImageData(0, 0, 8, 8).data;
+  let r = 0, g = 0, b = 0;
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+  r /= n;
+  g /= n;
+  b /= n;
+  // averaging a whole frame washes color toward gray - push saturation
+  // back up around the average so the glow reads as a color, not a smear
+  const avg = (r + g + b) / 3;
+  const BOOST = 2.2;
+  r = clamp(avg + (r - avg) * BOOST, 0, 255);
+  g = clamp(avg + (g - avg) * BOOST, 0, 255);
+  b = clamp(avg + (b - avg) * BOOST, 0, 255);
+  screen.el.style.setProperty("--glow", `rgb(${r | 0} ${g | 0} ${b | 0} / .55)`);
+}
+setInterval(() => {
+  for (const s of SCREENS) if (s.big) sampleAmbience(s);
+}, 200);
+
 // ---- big view: F opens the screen you face full size, F or Esc closes
 const big = document.getElementById("bigscreen");
 const bigStage = document.getElementById("bigstage");

@@ -383,33 +383,6 @@ function makeEye() {
   return group;
 }
 
-// The eye's own black shell: a socket it rotates inside, open only on the
-// side facing you, so the iris only shows through that window - like a real
-// eye socket limiting how far round you can see it look. It always faces
-// the camera (the same way the webcam plate always does), independent of
-// which way the eye itself gazes.
-const SHELL_RADIUS = EYE_RADIUS * 1.15;
-const SHELL_OPEN_DEG = 35; // half-angle of the front opening
-let shellGeo = null;
-let shellMat = null;
-const shells = [];
-function shellGeometry() {
-  if (shellGeo) return shellGeo;
-  const open = SHELL_OPEN_DEG * RAD;
-  shellGeo = new THREE.SphereGeometry(SHELL_RADIUS, 20, 14, 0, Math.PI * 2, open, Math.PI - open);
-  shellGeo.rotateX(-Math.PI / 2); // the opening points at local +Z, not the sphere's own +Y pole
-  return shellGeo;
-}
-function makeShell() {
-  if (!shellMat) {
-    shellMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide });
-  }
-  const mesh = new THREE.Mesh(shellGeometry(), shellMat);
-  mesh.renderOrder = 2;
-  scene.add(mesh);
-  return mesh;
-}
-
 // The hexagon the CSS webcam is clipped to, in the plate's own pixels
 // (origin at the plate center, y down). One shared shape.
 function hexagonGeometry() {
@@ -500,7 +473,6 @@ export function renderEyes(entries, plates, cam, parent, solids) {
     }
     for (let i = plates.length; i < blockers.length; i++) blockers[i].visible = false;
     while (eyes.length < entries.length) eyes.push(makeEye());
-    while (shells.length < entries.length) shells.push(makeShell());
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const eye = eyes[i];
@@ -509,13 +481,8 @@ export function renderEyes(entries, plates, cam, parent, solids) {
       lookDir(entry.gaze, entry.pitch, _look);
       eye.lookAt(_target.copy(eye.position).add(_look));
       paintHue(eye, entry.hue);
-      const shell = shells[i];
-      shell.visible = true;
-      shell.position.copy(eye.position);
-      shell.lookAt(camera.position); // the socket always faces you; the eye inside still gazes freely
     }
     for (let i = entries.length; i < eyes.length; i++) eyes[i].visible = false;
-    for (let i = entries.length; i < shells.length; i++) shells[i].visible = false;
   }
   if (!entries.length) {
     renderer.clear();
