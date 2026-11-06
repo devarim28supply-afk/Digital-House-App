@@ -26,7 +26,8 @@ const paneKey = (cid: string) => `dh_pane_${cid}`;
 
 function recallPane(cid: string): Pane {
   try {
-    return localStorage.getItem(paneKey(cid)) === "room" ? "room" : "video";
+    void localStorage.getItem(paneKey(cid));
+    return "video";
   } catch {
     return "video";
   }
@@ -176,22 +177,10 @@ export function RoomPane(props: {
 
   const url = () => roomUrlOf(props.channel, props.serverId);
   const canRoom = () => (operation() ? !phone() : Boolean(url()));
-  createEffect(() => {
-    props.onToggle?.({
-      pane,
-      show,
-      canRoom,
-      labels: operation() ? { video: "Window", room: "Room" } : { video: "Videochat", room: "Room" },
-    });
-  });
-  onCleanup(() => props.onToggle?.(undefined));
   // A Darkwood Room is loaded for everyone in the tile, even on the videochat
   // side (hidden, and idle: it draws, tracks and plays nothing while hidden).
   // Then the room's TV keeps running for whoever is still in the tile when
   // the person who turned it on leaves: the loaded rooms carry it.
-  createEffect(() => {
-    if (url() && hasDarkwoodRoom(props.channel)) setRoomLoaded(true);
-  });
   // A tile linking to someone else's site: some sites refuse to be shown
   // inside another page. The server reads the site's rules; a refusing site
   // gets an "Open it in its own tab" button instead. Our own pages (the
