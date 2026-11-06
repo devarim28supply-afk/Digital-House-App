@@ -21,9 +21,11 @@ export type Customization = {
   nameplate: typeof NAMEPLATES[number];
   effect: typeof EFFECTS[number];
   bannerColor: string;
+  /** solid color behind your avatar when your camera is off; empty = the default gray */
+  cameraOffColor: string;
 };
 export const DEFAULT_CUSTOMIZATION: Customization = {
-  decoration: "none", nameplate: "none", effect: "none", bannerColor: "#171717",
+  decoration: "none", nameplate: "none", effect: "none", bannerColor: "#171717", cameraOffColor: "",
 };
 /** Only known catalog entries can become CSS class names or decoration URLs. */
 export function customization(value?: Partial<Customization>): Customization {
@@ -32,5 +34,6 @@ export function customization(value?: Partial<Customization>): Customization {
     nameplate: NAMEPLATES.includes(value?.nameplate as Customization["nameplate"]) ? value!.nameplate! : "none",
     effect: EFFECTS.includes(value?.effect as Customization["effect"]) ? value!.effect! : "none",
     bannerColor: /^#[\da-f]{6}$/i.test(value?.bannerColor ?? "") ? value!.bannerColor! : DEFAULT_CUSTOMIZATION.bannerColor,
+    cameraOffColor: /^#[\da-f]{6}$/i.test(value?.cameraOffColor ?? "") ? value!.cameraOffColor! : "",
   };
 }

@@ -82,7 +82,7 @@ export async function uploadPicture(
   if (!/^image\/(png|gif|webp|jpeg)$/.test(file.type)) throw new Error("Use a PNG, GIF, WebP or JPG picture");
   if (file.size > MAX_PICTURE_BYTES) throw new Error("A picture can be up to 10 MB");
   const gif = file.type === "image/gif";
-  const body = gif ? file : await shrinkStill(file, where.kind === "banner" ? 960 : 512);
+  const body = gif ? file : await shrinkStill(file, where.kind === "banner" || where.name === "cameraoff" ? 960 : 512);
   if (body.size > MAX_PICTURE_BYTES) throw new Error("That picture is too big");
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error("Log in first.");

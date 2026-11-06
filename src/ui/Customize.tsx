@@ -3,15 +3,15 @@ import { DeveloperBadge } from "./DeveloperBadge";
 import { For, Show, createSignal, onCleanup } from "solid-js";
 import { uploadPicture } from "../data/files";
 import { Modal } from "./Modal";
-import { faceStyle, faceText } from "./Shell";
+import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { displayName, saveCustomization, type Profile } from "../data/store";
 import { customization, NAMEPLATE_OPTIONS, nameplateClass, PATRICK_GIF, type Customization } from "../data/customization";
 import "./customize.css";
 import "./customize-profile.css";
 import "./nameplates.css";
 
-type Category = "Avatar & Decoration" | "Nameplate" | "Banner" | "Profile Effect & Frame" | "Layout Themes";
-const categories: Category[] = ["Avatar & Decoration", "Nameplate", "Banner", "Profile Effect & Frame", "Layout Themes"];
+type Category = "Avatar & Decoration" | "Nameplate" | "Banner" | "Camera-off Background" | "Profile Effect & Frame" | "Layout Themes";
+const categories: Category[] = ["Avatar & Decoration", "Nameplate", "Banner", "Camera-off Background", "Profile Effect & Frame", "Layout Themes"];
 
 export function Customize(props: { uid: string; profile?: Profile; name: string; onClose: () => void }) {
   const initialLayout = layoutTheme();
@@ -28,6 +28,26 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
   const [bannerFile, setBannerFile] = createSignal<File>();
   const [photoFile, setPhotoFile] = createSignal<File>();
   const [photoMenu, setPhotoMenu] = createSignal(false);
+  const [camOff, setCamOff] = createSignal(props.profile?.cameraOffImage ?? "");
+  const [camOffFile, setCamOffFile] = createSignal<File>();
+  let camOffPreviewUrl: string | undefined;
+  let camOffPicker: HTMLInputElement | undefined;
+  const releaseCamOffPreview = () => {
+    if (camOffPreviewUrl) URL.revokeObjectURL(camOffPreviewUrl);
+    camOffPreviewUrl = undefined;
+  };
+  onCleanup(releaseCamOffPreview);
+  function clearCamOff() {
+    releaseCamOffPreview(); setCamOffFile(undefined); setCamOff("");
+  }
+  function chooseCamOff(file?: File) {
+    if (!file) return;
+    if (!/^image\/(png|gif|webp|jpeg)$/.test(file.type)) { setError("Choose a PNG, JPG, WebP photo or animated GIF."); return; }
+    if (file.size > 10 * 1024 * 1024) { setError("A background can be up to 10 MB."); return; }
+    setError(""); releaseCamOffPreview();
+    camOffPreviewUrl = URL.createObjectURL(file);
+    setCamOffFile(file); setCamOff(camOffPreviewUrl);
+  }
   let bannerPreviewUrl: string | undefined;
   let photoPreviewUrl: string | undefined;
   let bannerPicker: HTMLInputElement | undefined;
@@ -79,8 +99,8 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
   }
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
-  const initial = { customization: JSON.stringify(draft()), photo: photo(), banner: banner(), publicName: publicName() };
-  const profileDirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || publicName().trim() !== initial.publicName || Boolean(bannerFile()) || Boolean(photoFile());
+  const initial = { customization: JSON.stringify(draft()), photo: photo(), banner: banner(), publicName: publicName(), camOff: camOff() };
+  const profileDirty = () => JSON.stringify(draft()) !== initial.customization || photo() !== initial.photo || banner() !== initial.banner || publicName().trim() !== initial.publicName || camOff() !== initial.camOff || Boolean(bannerFile()) || Boolean(photoFile()) || Boolean(camOffFile());
   const dirty = () => profileDirty() || themeDraft() !== initialLayout;
   const [warnUnsaved, setWarnUnsaved] = createSignal(false);
   let warningTimer: ReturnType<typeof setTimeout> | undefined;
@@ -109,9 +129,13 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
       const selectedBanner = banner();
       const selectedName = publicName().trim();
       const savedBanner = selectedFile ? await uploadPicture(selectedFile, { kind: "profile", name: "banner" }) : selectedBanner;
+      const selectedCamOffFile = camOffFile();
+      const selectedCamOff = camOff();
+      const savedCamOff = selectedCamOffFile ? await uploadPicture(selectedCamOffFile, { kind: "profile", name: "cameraoff" }) : selectedCamOff;
+      const camOffChanged = selectedCamOff !== (props.profile?.cameraOffImage ?? "") || Boolean(selectedCamOffFile);
       const savedPhoto = selectedPhotoFile ? await uploadPicture(selectedPhotoFile, { kind: "profile", name: "photo" }) : selectedPhoto;
       const photoChanged = selectedPhoto !== (props.profile?.photo ?? "") || Boolean(selectedPhotoFile);
-      if (selectedProfileDirty) await saveCustomization(props.uid, selectedDraft, photoChanged ? savedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined, selectedName !== (props.profile?.callName ?? props.name) ? selectedName : undefined);
+      if (selectedProfileDirty) await saveCustomization(props.uid, selectedDraft, photoChanged ? savedPhoto : undefined, selectedFile || savedBanner !== (props.profile?.banner ?? "") ? savedBanner : undefined, selectedName !== (props.profile?.callName ?? props.name) ? selectedName : undefined, camOffChanged ? savedCamOff : undefined);
       saveLayoutTheme(selectedTheme);
       themeSaved = true;
       props.onClose();
@@ -169,6 +193,16 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
           <label class="banner-color-input">Choose a color<input type="color" disabled={saving()} value={draft().bannerColor} onInput={e => { patch({ bannerColor: e.currentTarget.value }); clearBanner(); }} /></label>
           <p>Choosing a color switches your banner to a solid color. Your changes apply after saving.</p>
           <button class="btn" type="button" disabled={saving()} onClick={clearBanner}>Use color instead of image</button>
+        </section></Show>
+        <Show when={category() === "Camera-off Background"}><section><h3>Camera-off Background</h3>
+          <p>What everyone sees behind your profile picture when your camera is off. Add a photo or GIF, or pick a color.</p>
+          <div class="camoff-preview" style={cameraOffStyle({ ...preview(), cameraOffImage: camOff() })}><span class="avatar big" style={faceStyle(preview())}>{faceText(preview(), props.name)}</span></div>
+          <input ref={camOffPicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden disabled={saving()} onChange={e => { chooseCamOff(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
+          <div class="cosmetic-actions"><button class="btn" type="button" disabled={saving()} onClick={() => camOffPicker?.click()}>{camOff() ? "Change photo / GIF" : "Add photo / GIF"}</button><Show when={camOff()}><button class="btn" type="button" disabled={saving()} onClick={clearCamOff}>Remove image</button></Show></div>
+          <p>{camOffFile() ? `${camOffFile()!.name} · ready to save` : "PNG, JPG, WebP or GIF · up to 10 MB. GIFs keep their animation."}</p>
+          <label class="banner-color-input">Choose a color<input type="color" disabled={saving()} value={draft().cameraOffColor || "#1c1c1c"} onInput={e => { patch({ cameraOffColor: e.currentTarget.value }); clearCamOff(); }} /></label>
+          <button class="btn" type="button" disabled={saving()} onClick={() => { patch({ cameraOffColor: "" }); clearCamOff(); }}>Back to default gray</button>
+          <p>Your changes apply after saving.</p>
         </section></Show>
         <Show when={category() === "Layout Themes"}><section><h3>Layout Themes</h3><p>Choose how Digital House feels. Preview a theme now; save to keep it in this browser.</p>
           <div class="layout-theme-choices">

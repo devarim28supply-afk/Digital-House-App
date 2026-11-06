@@ -23,7 +23,7 @@ import { audit } from "../data/audit";
 import { canRemoveFromCall, livingRoomTvBottom, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
-import { faceStyle, faceText } from "./Shell";
+import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 
@@ -3090,7 +3090,7 @@ function Tile(props: {
         </button>
       </Show>
       <Show when={!big()}>
-        <div class="tile-empty">
+        <div class="tile-empty" style={cameraOffStyle(props.profile)}>
           <span class="avatar big" style={faceStyle(props.profile)}>
             {faceText(props.profile, props.name)}
           </span>

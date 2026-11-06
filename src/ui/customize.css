@@ -14,3 +14,5 @@
    Shared geometry keeps Classic Dark and Smoky Glass identical at every size. */
 .avatar{isolation:isolate}
 .avatar::before{content:"";display:var(--avatar-inner-display,none);position:absolute;inset:4%;border-radius:50%;background-color:var(--avatar-inner-color,transparent);background-image:var(--avatar-inner-image,none);background-size:cover;background-position:center;pointer-events:none;z-index:-1}
+
+.camoff-preview { display: grid; place-items: center; height: 160px; border-radius: 12px; background: var(--panel-2, #1c1c1c); margin: 8px 0; }

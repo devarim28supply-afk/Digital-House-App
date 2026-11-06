@@ -61,6 +61,8 @@ export type Profile = {
   photo?: string;
   banner?: string;
   background?: string;
+  /** picture or GIF behind your avatar when your camera is off (everyone in the call sees it) */
+  cameraOffImage?: string;
 }
 /** Resolve the public name from the live profile, keeping account identity unchanged. */
 export function displayName(profile: Pick<Profile, "callName" | "name" | "username"> | undefined, fallback = "Member"): string {
@@ -68,7 +70,7 @@ export function displayName(profile: Pick<Profile, "callName" | "name" | "userna
 }
 
 /** Which picture on the profile card: the round face, the top strip, the card itself. */
-export type ProfilePicture = "photo" | "banner" | "background";
+export type ProfilePicture = "photo" | "banner" | "background" | "cameraoff";
 
 export type Server = {
   id: string;
@@ -343,13 +345,14 @@ export async function saveCallName(uid: string, callName: string) {
 }
 
 /** Save profile appearance and the optional public display name; account identity is unchanged. */
-export async function saveCustomization(uid: string, value: Customization, photo?: string, banner?: string, displayName?: string) {
+export async function saveCustomization(uid: string, value: Customization, photo?: string, banner?: string, displayName?: string, cameraOffImage?: string) {
   const cleanName = displayName?.trim().slice(0, 24);
   await setDoc(doc(db, "profiles", uid), {
     customization: customization(value),
     ...(photo !== undefined ? { photo: photo || deleteField() } : {}),
     ...(banner !== undefined ? { banner: banner || deleteField() } : {}),
     ...(cleanName !== undefined ? { callName: cleanName || deleteField() } : {}),
+    ...(cameraOffImage !== undefined ? { cameraOffImage: cameraOffImage || deleteField() } : {}),
   }, { merge: true });
 }
 

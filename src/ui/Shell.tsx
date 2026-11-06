@@ -105,6 +105,16 @@ export function initials(name: string) {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
+/** What fills a tile behind the avatar while their camera is off: their picture or GIF, else their color, else the default. */
+export function cameraOffStyle(profile: Profile | undefined): JSX.CSSProperties {
+  const color = customization(profile?.customization).cameraOffColor;
+  const image = profile?.cameraOffImage;
+  const usable = image && (/^https:\/\//.test(image) || image.startsWith("blob:"));
+  return {
+    ...(color ? { "background-color": color } : {}),
+    ...(usable ? { "background-image": `url(${JSON.stringify(image)})`, "background-size": "cover", "background-position": "center" } : {}),
+  };
+}
 /** A round picture: their profile picture if they have one, else their colour. */
 export function faceStyle(profile: Profile | undefined, fallback = "#404040"): JSX.CSSProperties {
   const color = profile?.color ?? fallback;
