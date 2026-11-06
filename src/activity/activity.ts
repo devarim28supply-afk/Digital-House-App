@@ -115,6 +115,7 @@ const ACTION_TEXT: Record<string, (e: AuditEntry) => string> = {
   "server.delete": () => "deleted a server",
   "server.settings": (e) => `changed server settings (${e.detail ?? ""})`,
   "server.rename": (e) => `renamed the server to ${e.target ?? ""}`,
+  "server.announce": (e) => `posted an announcement: ${e.target ?? ""}`,
   "server.open": (e) => `set the server ${e.detail ?? ""}`,
   "member.add": (e) => `added ${(e.target ?? "").split(",").map(profileName).join(", ")} to the server`,
   "member.remove": (e) => `removed ${profileName(e.target ?? "")} from the server`,

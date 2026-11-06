@@ -4007,3 +4007,31 @@ img.live-tile-still {
 /* A short single-line prompt; typed messages can still grow and wrap. */
 .composer textarea{min-width:0;min-height:38px;padding:9px 11px;font-size:13px;line-height:18px}
 .composer textarea:placeholder-shown{height:38px;overflow-y:hidden;white-space:nowrap}
+
+/* ---- announcement (between the server name and the tiles) ---- */
+.announcement {
+  position: relative;
+  margin: 8px 10px 4px;
+  padding: 9px 30px 9px 11px;
+  border: 1px solid #1f8f5f;
+  border-radius: 8px;
+  background: #0a1a12;
+  color: #cfeede;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.announcement-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.announcement-edit {
+  position: absolute; top: 4px; right: 4px;
+  border: 0; background: none; color: #7fd9ac; cursor: pointer; font-size: 14px; padding: 2px 5px;
+}
+.announcement-add {
+  border: 0; background: none; color: #7fd9ac; cursor: pointer; font: inherit; padding: 0;
+}
+.announcement:has(.announcement-add) { padding-right: 11px; border-style: dashed; }
+.announcement-input {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  background: #07110c; color: inherit; border: 1px solid #1f8f5f; border-radius: 6px;
+  padding: 6px 8px; font: inherit;
+}
+.announcement-actions { display: flex; gap: 6px; margin-top: 6px; }

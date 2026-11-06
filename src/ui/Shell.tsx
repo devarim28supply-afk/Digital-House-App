@@ -32,6 +32,7 @@ import {
   isBuiltInTile,
   removeServerMember,
   saveServerSettings,
+  setAnnouncement,
   deleteServer,
   saveProfile,
   shrinkImage,
@@ -371,6 +372,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // only the owner account hands out roles
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
   const [rolesOpen, setRolesOpen] = createSignal(false);
+  const [editingAnnouncement, setEditingAnnouncement] = createSignal(false);
+  const [announcementDraft, setAnnouncementDraft] = createSignal("");
   const [dashboardOpen, setDashboardOpen] = createSignal(false);
   const [dashboardPage, setDashboardPage] = createSignal<DashboardPage>("insights", { equals: false });
   const [dashboardFocus, setDashboardFocus] = createSignal<DashboardSection | undefined>(undefined, { equals: false });
@@ -710,6 +713,75 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             </button>
           </Show>
         </header>
+
+        <Show when={!dmMode() && server() && (server()!.announcement || runsServer())}>
+          <section class="announcement" aria-label="Announcement">
+            <Show
+              when={editingAnnouncement()}
+              fallback={
+                <>
+                  <Show
+                    when={server()!.announcement}
+                    fallback={
+                      <button class="announcement-add" type="button" onClick={() => { setAnnouncementDraft(""); setEditingAnnouncement(true); }}>
+                        + Add announcement
+                      </button>
+                    }
+                  >
+                    <p class="announcement-text">{server()!.announcement}</p>
+                    <Show when={runsServer()}>
+                      <button
+                        class="announcement-edit"
+                        type="button"
+                        title="Edit announcement"
+                        aria-label="Edit announcement"
+                        onClick={() => { setAnnouncementDraft(server()!.announcement ?? ""); setEditingAnnouncement(true); }}
+                      >
+                        ✎
+                      </button>
+                    </Show>
+                  </Show>
+                </>
+              }
+            >
+              <textarea
+                class="announcement-input"
+                rows="4"
+                maxLength={1000}
+                placeholder="Write an announcement for everyone in this server"
+                value={announcementDraft()}
+                onInput={(e) => setAnnouncementDraft(e.currentTarget.value)}
+              />
+              <div class="announcement-actions">
+                <button
+                  class="btn primary"
+                  type="button"
+                  onClick={async () => {
+                    await setAnnouncement(server()!.id, announcementDraft()).catch(() => {});
+                    setEditingAnnouncement(false);
+                  }}
+                >
+                  Post
+                </button>
+                <Show when={server()!.announcement}>
+                  <button
+                    class="btn"
+                    type="button"
+                    onClick={async () => {
+                      await setAnnouncement(server()!.id, "").catch(() => {});
+                      setEditingAnnouncement(false);
+                    }}
+                  >
+                    Clear
+                  </button>
+                </Show>
+                <button class="btn" type="button" onClick={() => setEditingAnnouncement(false)}>
+                  Cancel
+                </button>
+              </div>
+            </Show>
+          </section>
+        </Show>
 
         <div class="side-scroll">
           <Show when={dmMode()}>

@@ -76,6 +76,8 @@ export type Server = {
   ownerUid: string;
   memberUids: string[];
   banner?: string;
+  /** the one current announcement, shown under the server name (owner/admins edit it) */
+  announcement?: string;
   /** everyone who gets in through M2A-access joins it on their own */
   open?: boolean;
   /** 8-character code an approved member can enter to join this server */
@@ -876,6 +878,13 @@ export function shrinkImage(file: File, maxWidth = 480): Promise<string> {
 /** A room tile's picture (a JPEG data URL, as when the tile was made). */
 export const setTileImage = (sid: string, cid: string, image: string, tileName = "") =>
   logged(updateDoc(doc(db, "servers", sid, "channels", cid), { image }), "tile.picture", { serverId: sid, target: tileName || cid });
+/** The server's one current announcement; empty clears it. */
+export const setAnnouncement = (sid: string, text: string) =>
+  logged(
+    updateDoc(doc(db, "servers", sid), { announcement: text.trim() ? text.trim().slice(0, 1000) : deleteField() }),
+    "server.announce",
+    { serverId: sid, target: text.trim().slice(0, 80) },
+  );
 export const renameChannel = (sid: string, cid: string, name: string) =>
   logged(updateDoc(doc(db, "servers", sid, "channels", cid), { name }), "channel.rename", { serverId: sid, target: name });
 /**

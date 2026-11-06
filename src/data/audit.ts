@@ -22,6 +22,7 @@ export type AuditAction =
   | "server.delete"
   | "server.settings"
   | "server.rename"
+  | "server.announce"
   | "server.open"
   | "server.invite"
   | "member.add"
@@ -61,6 +62,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "server.delete": "deleted a server",
   "server.settings": "changed server settings",
   "server.rename": "renamed a server",
+  "server.announce": "posted a server announcement",
   "server.open": "changed who a server is open to",
   "server.invite": "made an invite code",
   "member.add": "added a member",
