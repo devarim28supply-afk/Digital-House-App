@@ -127,6 +127,23 @@ export function faceStyle(profile: Profile | undefined, fallback = "#404040"): J
 /** The initials inside it, only when there is no picture. */
 export const faceText = (profile: Profile | undefined, name: string) => (profile?.photo ? "" : initials(name));
 /** The card's top strip or its background: the chosen picture over your colour. */
+const LINK_RE = /((?:https?:\/\/)?(?:[a-z0-9-]+\.)+(?:com|net|org|app|dev|io|co|gg|tv|me|us|ai)(?:\/[^\s]*)?)/gi;
+/** Text with its web addresses turned into links (https:// is assumed when missing). */
+function linkify(text: string): JSX.Element[] {
+  return text.split(LINK_RE).map((part, i) => {
+    if (i % 2 === 0) return <>{part}</>;
+    const trail = part.match(/[.,!?;:)]+$/)?.[0] ?? "";
+    const url = trail ? part.slice(0, -trail.length) : part;
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    return (
+      <>
+        <a href={href} target="_blank" rel="noopener noreferrer">{url}</a>
+        {trail}
+      </>
+    );
+  });
+}
+
 function pictureStyle(profile: Profile | undefined, field: "banner" | "background"): JSX.CSSProperties {
   const url = profile?.[field];
   const color = field === "banner" ? customization(profile?.customization).bannerColor : profile?.color ?? "#404040";
@@ -728,7 +745,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                       </button>
                     }
                   >
-                    <p class="announcement-text">{server()!.announcement}</p>
+                    <p class="announcement-text">{linkify(server()!.announcement ?? "")}</p>
                     <Show when={runsServer()}>
                       <button
                         class="announcement-edit"

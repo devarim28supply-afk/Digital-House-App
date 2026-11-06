@@ -4035,3 +4035,6 @@ img.live-tile-still {
   padding: 6px 8px; font: inherit;
 }
 .announcement-actions { display: flex; gap: 6px; margin-top: 6px; }
+
+.announcement-text a { color: #7fd9ac; text-decoration: underline; }
+.announcement-text a:hover { color: #b6f3d3; }
