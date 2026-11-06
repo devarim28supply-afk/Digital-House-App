@@ -279,7 +279,7 @@ export const LIVING_ROOM_TILE: Omit<Channel, "id" | "position"> = {
 
 /** A trading-floor Darkwood Room: a ticker instead of Matrix rain. */
 export const WALL_STREET_TILE: Omit<Channel, "id" | "position"> = {
-  name: "Wall Street",
+  name: "Trading Floor",
   kind: "room",
   image: "/wallstreet-tile.svg",
   roomKey: "darkwood-wall-street",
@@ -290,7 +290,7 @@ const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: OPERATION_TILE, chat: "operation-room" },
   { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #nodelounge-chat
   { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
-  { tile: WALL_STREET_TILE, chat: tileChatName(WALL_STREET_TILE.name) }, // #wallstreet-chat
+  { tile: WALL_STREET_TILE, chat: tileChatName(WALL_STREET_TILE.name) }, // #tradingfloor-chat
 ];
 
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
@@ -715,8 +715,8 @@ export async function restoreHomeMembers(sid: string) {
 /**
  * The home server's built-in tiles, each with its chat, made once: the
  * M2A ACCESS Operation Room (#operation-room), Node Lounge
- * (#nodelounge-chat), Living Room (#livingroom-chat) and Wall Street
- * (#wallstreet-chat), in HOME_TILES order above the other channels. Also
+ * (#nodelounge-chat), Living Room (#livingroom-chat) and Trading Floor
+ * (#tradingfloor-chat), in HOME_TILES order above the other channels. Also
  * renames a tile whose name has drifted from its spec, and gives a tile
  * without one its chat.
  */
