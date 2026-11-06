@@ -1432,9 +1432,23 @@ export function ProfileCard(props: {
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel?.focus();
-    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
-    const observer = new ResizeObserver(() => { if (panel) setHeight(panel.getBoundingClientRect().height); });
-    if (panel) observer.observe(panel);
+    const resize = () => setViewport({
+      width: window.innerWidth,
+      height: Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight, document.documentElement.clientHeight || window.innerHeight),
+    });
+    resize();
+    const measure = () => { if (panel) setHeight(panel.offsetHeight); };
+    const observer = new ResizeObserver(measure);
+    if (panel) {
+      observer.observe(panel);
+      // content (status rows, pictures) can settle after the first paint: re-measure a few times
+      measure();
+      requestAnimationFrame(measure);
+      for (const ms of [100, 300, 800]) setTimeout(measure, ms);
+      panel.addEventListener("animationend", measure);
+    }
+    const visual = window.visualViewport;
+    visual?.addEventListener("resize", resize);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); props.onClose(); }
       if (e.key === "Tab" && panel) {
@@ -1447,7 +1461,7 @@ export function ProfileCard(props: {
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", resize);
-    onCleanup(() => { observer.disconnect(); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", resize); previous?.focus(); });
+    onCleanup(() => { observer.disconnect(); window.removeEventListener("keydown", onKey); window.removeEventListener("resize", resize); visual?.removeEventListener("resize", resize); previous?.focus(); });
   });
   return (
     <div class="card-backdrop" onClick={props.onClose}>
