@@ -164,6 +164,8 @@ const STREAM_CAM_PUBLISH: TrackPublishOptions = {
 const STREAM_SIZE = { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] };
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
 const ATTENTION_TOPIC = "attention";
+// A phone held sideways shows the Living Room edge to edge: the camera comes closer until the walls fill the panel.
+const SIDEWAYS_ROOM_ZOOM = 1.18;
 // A phone is being turned: its picture is held still on every screen for a moment (see holdPicture).
 const TURN_TOPIC = "dh-turn";
 const TURN_HOLD_MS = 1400;
@@ -2252,7 +2254,12 @@ export function VoiceRoom(props: {
           <Show when={broadcastBig()}>
             {(style) => (
               <div class="broadcast-big" style={style()}>
-                <LivingRoomBroadcast track={broadcastTrack} serverId={props.serverId} channel={props.channel} />
+                <LivingRoomBroadcast
+                  track={broadcastTrack}
+                  serverId={props.serverId}
+                  channel={props.channel}
+                  zoom={phoneNow() && box().w >= box().h ? SIDEWAYS_ROOM_ZOOM : 1}
+                />
               </div>
             )}
           </Show>

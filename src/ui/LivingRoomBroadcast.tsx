@@ -129,7 +129,13 @@ function makeWallTextures(renderer: THREE.WebGLRenderer) {
   return { normalMap, roughnessMap };
 }
 
-export function LivingRoomBroadcast(props: { track: () => Track | undefined; serverId: string; channel: Channel }) {
+export function LivingRoomBroadcast(props: {
+  track: () => Track | undefined;
+  serverId: string;
+  channel: Channel;
+  /** 1 = the room as designed. Above 1 the camera comes closer, until the room's walls fill the whole panel and no black edge is left. */
+  zoom?: number;
+}) {
   let host: HTMLDivElement | undefined;
   // The renderer's canvas is appended imperatively (outside Solid's own
   // reconciliation) into its own dedicated child div, kept separate from
@@ -369,6 +375,7 @@ export function LivingRoomBroadcast(props: { track: () => Track | undefined; ser
       const w = el!.clientWidth || 1;
       const h = el!.clientHeight || 1;
       camera.aspect = w / h;
+      camera.fov = 55 / Math.max(0.5, props.zoom ?? 1);
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld(true);
       renderer.setSize(w, h);

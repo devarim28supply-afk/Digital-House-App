@@ -306,11 +306,12 @@ export function livingPhonePlan(args: {
     // always two columns; rows are added as people join (rows by columns: 2x2, 3x2, 4x2)
     place(region, n <= 1 ? 1 : 2);
   } else {
-    big = box(pad, pad, W, H);
+    // the room fills the whole screen, edge to edge
+    big = box(0, 0, args.width, args.height);
     if (n > 0) {
       // one row on the floor, under the TV: as tall as the floor allows, shrunk to fit the width
-      const floorTop = pad + Math.min(1, Math.max(0, args.tvBottom ?? 0.72)) * H + gap;
-      const floorH = Math.max(24, pad + H - floorTop);
+      const floorTop = Math.min(1, Math.max(0, args.tvBottom ?? 0.72)) * args.height + gap;
+      const floorH = Math.max(24, args.height - floorTop - pad);
       const ratios = keys.map((key) => (args.portraitKeys?.includes(key) ? 9 / 16 : 16 / 9));
       const sum = ratios.reduce((a, b) => a + b, 0);
       // The faces keep ONE size however many are there: sized for a full row of 6, so nobody's picture
