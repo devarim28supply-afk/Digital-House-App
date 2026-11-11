@@ -26,7 +26,7 @@ import { canRemoveFromCall, livingRoomTvBottom, setInCall, setStreamingIn, setWa
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
-import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
+import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 import "./call-status.css";
 
@@ -1599,6 +1599,8 @@ export function VoiceRoom(props: {
   const [openShare, setOpenShare] = createSignal<string | undefined>();
   const [shareDragX, setShareDragX] = createSignal(0);
   const [shareDragging, setShareDragging] = createSignal(false);
+  // the tiles whose picture really is tall (measured), for layouts that keep each tile the shape of its picture
+  const tallKeys = () => tiles().filter((t) => !t.screen && isTall(t.key, frameWide())).map((t) => t.key);
   const broadcastBig = createMemo<JSX.CSSProperties | undefined>(() => {
     if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
     const { w, h } = box();
@@ -1607,6 +1609,9 @@ export function VoiceRoom(props: {
       .filter((t) => !t.screen)
       .map((t) => t.key)
       .concat(loneRoomFaces().map(([name]) => `face:${name}`), teamScreens().map(teamKey));
+    if (phoneNow()) {
+      return livingPhonePlan({ keys, portraitKeys: tallKeys(), width: w, height: h, landscape: w >= h }).big as JSX.CSSProperties;
+    }
     return broadcastPlan({
       keys,
       width: w,
@@ -1623,7 +1628,7 @@ export function VoiceRoom(props: {
     let rows: number;
     let small = false;
     const { w: boxW, h: boxH } = box();
-    const phone = phoneNow() && n > 0;
+    const phone = phoneNow() && n > 0 && !isBroadcastRoom(props.channel.roomKey);
     if (phone) {
       const cams = tiles().filter((t) => !t.screen);
       const screens = tiles().filter((t) => t.screen);
@@ -1688,14 +1693,16 @@ export function VoiceRoom(props: {
         ...loneRoomFaces().map(([name]) => `face:${name}`),
         ...teamScreens().map(teamKey),
       ];
-      const { places } = broadcastPlan({
-        keys,
-        width: boxW,
-        height: boxH,
-        stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
-        rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
-        tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
-      });
+      const { places } = phoneNow()
+        ? livingPhonePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, landscape: boxW >= boxH })
+        : broadcastPlan({
+            keys,
+            width: boxW,
+            height: boxH,
+            stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
+            rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+            tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
+          });
       return {
         n: keys.length,
         narrow: false,

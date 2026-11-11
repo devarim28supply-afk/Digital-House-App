@@ -263,6 +263,50 @@ export function broadcastPlan(args: {
   return { places, big };
 }
 
+/**
+ * The Living Room on a phone. The desktop layout (broadcastPlan) lays the webcam row over the TV's floor
+ * with a fixed 150px row and 53% of the width, which is far too small on a phone, and the phone's own
+ * layout used to be drawn on top of the 3D room. Here the room (the TV) is one block and everyone's webcam
+ * sits in its own block next to it, each tile the shape of its picture:
+ *   upright:  the room across the top, everyone in a grid under it
+ *   sideways: the room on the left, everyone stacked in a column on the right
+ */
+export function livingPhonePlan(args: {
+  keys: string[];
+  portraitKeys?: string[];
+  width: number;
+  height: number;
+  landscape: boolean;
+}): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
+  const pad = 8;
+  const gap = 8;
+  const W = Math.max(1, args.width - pad * 2);
+  const H = Math.max(1, args.height - pad * 2);
+  const keys = args.keys.filter(Boolean);
+  const n = keys.length;
+  const places: Record<string, PhoneStyle> = {};
+  const place = (region: { x: number; y: number; w: number; h: number }, cols: number) => {
+    if (n === 0 || region.w <= 0 || region.h <= 0) return;
+    const grid = deskPlan({ keys, portraitKeys: args.portraitKeys, width: region.w, height: region.h, cols, gap });
+    for (const [key, style] of Object.entries(grid)) {
+      places[key] = { ...style, left: px(parseFloat(style.left) + region.x), top: px(parseFloat(style.top) + region.y) };
+    }
+  };
+  let big: PhoneStyle;
+  if (!args.landscape) {
+    // the room is about as wide as it is tall (its TV needs that to fit); the rest of the height is for faces
+    const roomH = Math.min(n ? H * 0.52 : H, W / 1.45);
+    big = box(pad, pad, W, roomH);
+    place({ x: pad, y: pad + roomH + gap, w: W, h: Math.max(0, H - roomH - gap) }, n <= 2 ? Math.max(1, n) : Math.ceil(Math.sqrt(n)));
+  } else {
+    const roomW = n ? W * 0.6 : W;
+    big = box(pad, pad, roomW, H);
+    place({ x: pad + roomW + gap, y: pad, w: Math.max(0, W - roomW - gap), h: H }, n > 4 ? 2 : 1);
+  }
+  big["z-index"] = "0";
+  return { places, big };
+}
+
 function box(x: number, y: number, width: number, height: number): PhoneStyle {
   return {
     position: "absolute",
