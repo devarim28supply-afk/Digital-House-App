@@ -762,11 +762,10 @@ export function VoiceRoom(props: {
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
-      // Kaalob: always start the camera on joining - never leave it off the
-      // way mic/camera used to both just "start off until you switch them
-      // on". The wall (viewOnly) has no camera or dock at all, so it's
-      // skipped.
-      if (!props.viewOnly && !camShown() && (back ? back.cam : true)) void toggleCam();
+      // Joining never turns the camera on: you stay on your private screen (the camera-off tile)
+      // until you press Camera yourself. Only a call that dropped and rejoined puts it back, and
+      // only if you had turned it on before the drop.
+      if (!props.viewOnly && !camShown() && back?.cam) void toggleCam();
       if (!props.viewOnly && back?.mic) void next.localParticipant.setMicrophoneEnabled(true).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not join the call.");
