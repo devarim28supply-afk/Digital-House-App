@@ -1681,8 +1681,10 @@ export function VoiceRoom(props: {
         height,
         pipSpot: pipSpot(),
         pipWide: pipWide(),
+        // every tile, your own included, is tall only when the picture it holds really is tall. How the
+        // phone is held is only the guess for your own picture before its first frame is measured.
         portraitKeys: cams
-          .filter((t) => !t.participant.isLocal && isTall(t.key, t.participant.attributes?.dh_phone, wide))
+          .filter((t) => isTall(t.key, t.participant.isLocal ? (landscape ? "0" : "1") : t.participant.attributes?.dh_phone, wide))
           .map((t) => t.key),
       });
       const open = screens.find((t) => t.key === openShare());

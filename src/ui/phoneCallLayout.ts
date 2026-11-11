@@ -65,7 +65,8 @@ export function phonePlan(args: {
   const portraits = new Set(args.portraitKeys ?? []);
   const items = keys.map((key) => ({
     key,
-    portrait: (key === args.localKey && !args.landscape) || portraits.has(key),
+    // tall only when the caller says the picture in it is tall (measured from the real frame)
+    portrait: portraits.has(key),
   }));
   const big: { key: string; portrait: boolean }[] = [];
   const small: { key: string; portrait: boolean }[] = [];
