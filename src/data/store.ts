@@ -291,7 +291,6 @@ export const WALL_STREET_TILE: Omit<Channel, "id" | "position"> = {
 
 /** The home server's built-in tiles, top to bottom, each with its own chat. */
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
-  { tile: OPERATION_TILE, chat: "operation-room" },
   { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #nodelounge-chat
   { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
   { tile: WALL_STREET_TILE, chat: tileChatName(WALL_STREET_TILE.name) }, // #tradingfloor-chat
@@ -836,9 +835,19 @@ export const removeServerMember = (sid: string, uid: string) =>
 
 // ---- channels ---------------------------------------------------------------
 
+/**
+ * Rooms that are not part of this app any more. The M2A ACCESS Operation Room
+ * moved to the construction project (desktop only, later), so its tile and
+ * its chat are hidden here. Their documents are left alone, so the chat
+ * history is still there if the room comes back.
+ */
+const HIDDEN_ROOM_KEYS = new Set(["m2a-operation"]);
+
 export function watchChannels(sid: string, cb: (channels: Channel[]) => void): Unsubscribe {
   return onSnapshot(query(collection(db, "servers", sid, "channels"), orderBy("position")), (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Channel, "id">) })));
+    const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Channel, "id">) }));
+    const hidden = new Set(all.filter((c) => c.roomKey && HIDDEN_ROOM_KEYS.has(c.roomKey)).map((c) => c.id));
+    cb(all.filter((c) => !hidden.has(c.id) && !(c.parentId && hidden.has(c.parentId))));
   });
 }
 

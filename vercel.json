@@ -5,12 +5,6 @@
   "redirects": [
     {
       "source": "/",
-      "missing": [
-        {
-          "type": "query",
-          "key": "spawn"
-        }
-      ],
       "destination": "/app/",
       "permanent": false
     },
@@ -47,20 +41,6 @@
     {
       "source": "/living/:path*",
       "destination": "https://gestr-living.vercel.app/:path*"
-    },
-    {
-      "source": "/",
-      "has": [
-        {
-          "type": "query",
-          "key": "spawn"
-        }
-      ],
-      "destination": "https://gestr-m2a-access.vercel.app/"
-    },
-    {
-      "source": "/:path*",
-      "destination": "https://gestr-m2a-access.vercel.app/:path*"
     }
   ]
 }
