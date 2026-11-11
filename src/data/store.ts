@@ -293,7 +293,6 @@ export const WALL_STREET_TILE: Omit<Channel, "id" | "position"> = {
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: LIVING_TILE, chat: tileChatName(LIVING_TILE.name) }, // #nodelounge-chat
   { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
-  { tile: WALL_STREET_TILE, chat: tileChatName(WALL_STREET_TILE.name) }, // #tradingfloor-chat
 ];
 
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
@@ -719,8 +718,7 @@ export async function restoreHomeMembers(sid: string) {
 /**
  * The home server's built-in tiles, each with its chat, made once: the
  * M2A ACCESS Operation Room (#operation-room), Node Lounge
- * (#nodelounge-chat), Living Room (#livingroom-chat) and Trading Floor
- * (#tradingfloor-chat), in HOME_TILES order above the other channels. Also
+ * (#nodelounge-chat) and Living Room (#livingroom-chat), in HOME_TILES order above the other channels. Also
  * renames a tile whose name has drifted from its spec, and gives a tile
  * without one its chat.
  */
@@ -837,11 +835,11 @@ export const removeServerMember = (sid: string, uid: string) =>
 
 /**
  * Rooms that are not part of this app any more. The M2A ACCESS Operation Room
- * moved to the construction project (desktop only, later), so its tile and
- * its chat are hidden here. Their documents are left alone, so the chat
+ * moved to the construction project (desktop only, later), and the Trading
+ * Floor was removed, so their tiles and chats are hidden here. Their documents are left alone, so the chat
  * history is still there if the room comes back.
  */
-const HIDDEN_ROOM_KEYS = new Set(["m2a-operation"]);
+const HIDDEN_ROOM_KEYS = new Set(["m2a-operation", "darkwood-wall-street"]);
 
 export function watchChannels(sid: string, cb: (channels: Channel[]) => void): Unsubscribe {
   return onSnapshot(query(collection(db, "servers", sid, "channels"), orderBy("position")), (snap) => {
