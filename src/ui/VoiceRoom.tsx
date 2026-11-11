@@ -172,29 +172,6 @@ async function shownSize(media: MediaStreamTrack): Promise<{ width: number; heig
   }
   return fallback;
 }
-/** Does the live frame already match how the phone is held right now? */
-async function shownMatchesHeld(media: MediaStreamTrack): Promise<boolean> {
-  const target = phoneAspect();
-  const settings = settingsSize(media);
-  if (matchesAspect(settings.width, settings.height, target)) return true;
-  const shown = await shownSize(media);
-  return matchesAspect(shown.width, shown.height, target);
-}
-function phoneLockConstraints(): MediaTrackConstraints {
-  const wide = phoneLandscape();
-  return {
-    width: { ideal: wide ? 1920 : 1080 },
-    height: { ideal: wide ? 1080 : 1920 },
-    aspectRatio: { exact: phoneAspect() },
-    resizeMode: "crop-and-scale",
-    frameRate: { ideal: 30, max: 30 },
-  } as MediaTrackConstraints;
-}
-/**
- * This phone's camera ignores the shape it is asked for (found out the first time every request
- * below failed). From then on the picture is cut to the held shape right away, with no more asking.
- */
-let deviceNeedsCrop = false;
 /** Cut the camera picture to the shape the phone is held in (phoneCrop.ts). It follows turning by itself. */
 async function engageCrop(local: LocalVideoTrack) {
   if (local.getProcessor()?.name === CROP_PROCESSOR_NAME) return;
@@ -205,92 +182,76 @@ async function engageCrop(local: LocalVideoTrack) {
   }
 }
 /**
- * Look at the picture the camera really delivers (not what it says it delivers) and, if its shape is
- * not the held one, cut it to the held shape. Run a moment after a turn: phones hand over the turned
- * picture late, and their reported size can be stale.
+ * A new capture that asks for the held shape by size only: no exact aspect and no crop-and-scale.
+ * Phones then apply their own turning rules, which give a real upright picture when held upright
+ * and a real wide one when held sideways. An exact-aspect request is what pinned some cameras to
+ * the shape they started in.
  */
-async function verifyPhoneShape(active: LocalParticipant) {
-  if (!phoneCameraCapture()) return;
-  const local = active.getTrackPublication(Track.Source.Camera)?.track;
-  const media = local?.mediaStreamTrack;
-  if (!local || !media || media.readyState !== "live") return;
-  const shown = await shownSize(media);
-  if (matchesAspect(shown.width, shown.height, phoneAspect())) return;
-  deviceNeedsCrop = true;
-  await engageCrop(local as LocalVideoTrack);
+function phoneNativeCapture(): VideoCaptureOptions | undefined {
+  if (!phoneCameraCapture()) return undefined;
+  const wide = phoneLandscape();
+  return {
+    resolution: {
+      width: wide ? 1280 : 720,
+      height: wide ? 720 : 1280,
+      frameRate: 30,
+    },
+  } as VideoCaptureOptions;
 }
-/** The camera opened the wrong way round. Ask again until the frame matches how the phone is held. */
+const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+let reshapeBusy = false;
+let reshapeAgain = false;
+/**
+ * Make the picture this phone sends the shape it is held in: 9:16 upright, 16:9 sideways, never a
+ * wide picture cut into a tall one (that looks zoomed in). The real camera picture is tried first,
+ * in this order, and each step looks at the frame that actually comes out:
+ *   1. any crop from an earlier turn is dropped, and the raw camera picture is checked
+ *   2. a new capture asking for the held size (phoneNativeCapture)
+ *   3. the exact-aspect request (phoneCameraCapture)
+ *   4. only if the camera still will not give the shape: cut the centre of the picture to it
+ * It runs again on every turn, so a crop is never kept for good.
+ */
 async function widenPhoneCamera(active: LocalParticipant) {
-  if (!phoneCameraCapture()) return;
-  const local = active.getTrackPublication(Track.Source.Camera)?.track;
-  const media = local?.mediaStreamTrack;
-  if (!media || media.readyState !== "live") return;
-  if (deviceNeedsCrop) {
-    await engageCrop(local as LocalVideoTrack);
+  if (reshapeBusy) {
+    reshapeAgain = true; // a turn happened while this was running: go round once more
     return;
   }
-  if (await shownMatchesHeld(media)) return;
-  const wide = phoneLandscape();
+  reshapeBusy = true;
   try {
-    await media.applyConstraints(phoneLockConstraints());
-  } catch {
-    /* an exact pixel size below asks again */
+    do {
+      reshapeAgain = false;
+      await reshapeOnce(active);
+    } while (reshapeAgain);
+  } finally {
+    reshapeBusy = false;
   }
-  if (await shownMatchesHeld(media)) return;
-  const sizes: [number, number][] = wide ? [[1920, 1080], [1280, 720]] : [[1080, 1920], [720, 1280]];
-  for (const [width, height] of sizes) {
+}
+async function reshapeOnce(active: LocalParticipant) {
+  if (!phoneCameraCapture()) return;
+  const local = active.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+  if (!local) return;
+  if (local.getProcessor()?.name === CROP_PROCESSOR_NAME) {
+    await local.stopProcessor().catch(() => undefined);
+    await pause(150);
+  }
+  const rightShape = async () => {
+    const media = local.mediaStreamTrack;
+    if (!media || media.readyState !== "live") return false;
+    const shown = await shownSize(media);
+    return matchesAspect(shown.width, shown.height, phoneAspect());
+  };
+  if (await rightShape()) return;
+  for (const options of [phoneNativeCapture(), phoneCameraCapture()]) {
+    if (!options) continue;
     try {
-      await media.applyConstraints({
-        width: { exact: width },
-        height: { exact: height },
-        resizeMode: "crop-and-scale",
-        frameRate: { ideal: 30, max: 30 },
-      } as MediaTrackConstraints);
+      await local.restartTrack(options);
     } catch {
       continue;
     }
-    if (await shownMatchesHeld(media)) return;
+    await pause(350);
+    if (await rightShape()) return;
   }
-  // A phone that applies aspect in sensor space, then rotates, hands back the
-  // opposite shape from the one asked for. Ask for that shape instead.
-  const shown = await shownSize(media);
-  const opposite = wide ? PHONE_ASPECT : PHONE_ASPECT_WIDE;
-  if (matchesAspect(shown.width, shown.height, opposite)) {
-    try {
-      await media.applyConstraints({
-        width: { ideal: wide ? 1080 : 1920 },
-        height: { ideal: wide ? 1920 : 1080 },
-        aspectRatio: { exact: opposite },
-        resizeMode: "crop-and-scale",
-        frameRate: { ideal: 30, max: 30 },
-      } as MediaTrackConstraints);
-    } catch {
-      /* put the direct request back below */
-    }
-    if (await shownMatchesHeld(media)) return;
-    try {
-      await media.applyConstraints(phoneLockConstraints());
-    } catch {
-      /* the picture already publishing stays */
-    }
-    if (await shownMatchesHeld(media)) return;
-  }
-  const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
-  if (restart.restartTrack) {
-    try {
-      await restart.restartTrack(phoneCameraCapture());
-    } catch {
-      /* the picture already publishing stays */
-    }
-  }
-  // Still the wrong shape: this camera will not give the shape asked for. A picture must never sit
-  // inside a tile of the other shape, so cut it to the held shape ourselves.
-  const now = active.getTrackPublication(Track.Source.Camera)?.track;
-  const nowMedia = now?.mediaStreamTrack;
-  if (now && nowMedia && nowMedia.readyState === "live" && !(await shownMatchesHeld(nowMedia))) {
-    deviceNeedsCrop = true;
-    await engageCrop(now as LocalVideoTrack);
-  }
+  await engageCrop(local);
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
   name: STREAM_CAM,
@@ -1252,7 +1213,7 @@ export function VoiceRoom(props: {
       for (const wait of [600, 1800]) {
         window.setTimeout(() => {
           if (room() !== current || !current.localParticipant.isCameraEnabled) return;
-          void verifyPhoneShape(current.localParticipant).then(() => (phoneNow() ? tellShape(current) : undefined));
+          void widenPhoneCamera(current.localParticipant).then(() => (phoneNow() ? tellShape(current) : undefined));
         }, wait);
       }
     };
