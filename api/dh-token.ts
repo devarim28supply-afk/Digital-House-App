@@ -24,6 +24,27 @@ const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 let certCache: { at: number; keys: Record<string, string> } | null = null;
 
+/**
+ * Who Firestore itself has recently let into which server. Used ONLY when
+ * Firestore is out of reads (429/503): then a person is let in only if the real
+ * check passed for them on this server not long ago. A login that merely
+ * has a valid signature (a pending, denied or banned account, or someone who
+ * never joined this server) gets nothing during an outage.
+ */
+const MEMBER_TTL = 12 * 60 * 60 * 1000;
+const verifiedMembers = new Map<string, number>();
+const memberKey = (uid: string, serverId: string) => `${uid}:${serverId}`;
+function rememberMember(uid: string, serverId: string) {
+  if (!uid) return;
+  const now = Date.now();
+  if (verifiedMembers.size > 5000) for (const [k, at] of verifiedMembers) if (now - at > MEMBER_TTL) verifiedMembers.delete(k);
+  verifiedMembers.set(memberKey(uid, serverId), now);
+}
+function recentlyVerified(uid: string, serverId: string) {
+  const at = verifiedMembers.get(memberKey(uid, serverId));
+  return at !== undefined && Date.now() - at < MEMBER_TTL;
+}
+
 async function googleCerts(): Promise<Record<string, string> | null> {
   if (certCache && Date.now() - certCache.at < 60 * 60 * 1000) return certCache.keys;
   const res = await fetch(CERTS);
@@ -136,10 +157,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       fsError = "";
     }
     console.log(JSON.stringify({ step: "server", fs: serverRes.status, fsError }));
-    // Firestore is out of reads. A signed-in member still gets into the call.
+    // Firestore is out of reads, so membership cannot be checked right now. Someone who passed the
+    // real check for this server a short while ago still gets into the call; nobody else does.
     if (serverRes.status === 429 || serverRes.status === 503) {
       const who = await signedIn(idToken);
       if (!who) return send(res, 401, { error: "Your login has expired. Log in again." });
+      if (!recentlyVerified(who.sub, serverId)) {
+        return send(res, 503, { error: "Calls are busy right now. Wait a minute and try again." });
+      }
       return issue(res, LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, who, body, serverId, channelId);
     }
     return send(res, 403, { error: "You are not in this server" });
@@ -163,6 +188,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     console.log(JSON.stringify({ step: "check", open, owner, member, count: members.length, uid: Boolean(uid) }));
     return send(res, 403, { error: "You are not in this server" });
   }
+
+  // the real check passed: remember it for the outage case above
+  rememberMember(uid, serverId);
 
   const channelRes = await fetch(`${FIRESTORE}/servers/${serverId}/channels/${channelId}`, { headers });
   if (!channelRes.ok) {
