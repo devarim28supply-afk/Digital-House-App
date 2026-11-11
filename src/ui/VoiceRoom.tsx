@@ -3,6 +3,8 @@ import { DeveloperBadge } from "./DeveloperBadge";
 import { For, type JSX, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 
 import {
+  ConnectionQuality,
+  DisconnectReason,
   type LocalParticipant,
   type LocalTrackPublication,
   type Participant,
@@ -26,6 +28,16 @@ import { Modal } from "./Modal";
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
+import "./call-status.css";
+
+/** Why a call ended that must NOT be answered by joining again: you chose it, or someone else did. */
+const NO_REJOIN = new Set<DisconnectReason>([
+  DisconnectReason.CLIENT_INITIATED,
+  DisconnectReason.DUPLICATE_IDENTITY,
+  DisconnectReason.PARTICIPANT_REMOVED,
+  DisconnectReason.ROOM_DELETED,
+  DisconnectReason.USER_REJECTED,
+]);
 
 /** A pass for this channel's LiveKit room, checked against Firestore. */
 export async function fetchPass(serverId: string, channelId: string, wall = false) {
@@ -510,6 +522,42 @@ export function VoiceRoom(props: {
   // people in the room who are not in the call: their own tiles
   const loneRoomFaces = () => [...roomFaces().entries()].filter(([face]) => !callNames().has(baseName(face)));
   const [joining, setJoining] = createSignal(false);
+  /** what the call is doing when it is not simply fine: shown as a chip in words and colour */
+  const [conn, setConn] = createSignal<"" | "connecting" | "reconnecting" | "weak">("");
+  /** the browser (iPhone Safari) is holding call sound back until a tap */
+  const [audioBlocked, setAudioBlocked] = createSignal(false);
+  /** mic and camera as they were when the call dropped, so the rejoin puts them back */
+  let resume: { cam: boolean; mic: boolean } | undefined;
+  let rejoinTimer = 0;
+  const statusChip = () => (
+    <Show when={conn() || audioBlocked()}>
+      <div class="call-chip" classList={{ bad: conn() === "weak" || conn() === "reconnecting" }} role="status" aria-live="polite">
+        <Show when={conn()}>
+          <span class="call-chip-dot" aria-hidden="true" />
+          <span>
+            {conn() === "connecting"
+              ? "Connecting…"
+              : conn() === "reconnecting"
+                ? "Connection lost. Reconnecting…"
+                : "Weak connection. Video may freeze."}
+          </span>
+        </Show>
+        <Show when={audioBlocked()}>
+          <button
+            type="button"
+            onClick={() => {
+              void room()
+                ?.startAudio()
+                .then(() => setAudioBlocked(false))
+                .catch(() => {});
+            }}
+          >
+            Tap to turn on sound
+          </button>
+        </Show>
+      </div>
+    </Show>
+  );
   const [error, setError] = createSignal("");
   const [version, setVersion] = createSignal(0);
   const [speaking, setSpeaking] = createSignal(new Set<string>());
@@ -522,6 +570,27 @@ export function VoiceRoom(props: {
   createEffect(() => {
     const current = room();
     if (current && !props.viewOnly) onCleanup(bindCallControls(current));
+  });
+  // A phone screen that dims or locks mid-call stops the camera: keep it awake while the call is up,
+  // and ask again when the page comes back to the front (the browser lets go of it in the background).
+  createEffect(() => {
+    if (!room() || props.viewOnly) return;
+    let lock: WakeLockSentinel | undefined;
+    const grab = async () => {
+      if (document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      try {
+        lock = await navigator.wakeLock?.request("screen");
+      } catch {
+        /* not allowed here (low battery, old browser): the call still works */
+      }
+    };
+    const onVisible = () => void grab();
+    void grab();
+    document.addEventListener("visibilitychange", onVisible);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", onVisible);
+      void lock?.release().catch(() => {});
+    });
   });
   createEffect(() => {
     const muted = deafened();
@@ -542,6 +611,9 @@ export function VoiceRoom(props: {
   let joinTries = 0;
   function leave() {
     joinGen++;
+    window.clearTimeout(rejoinTimer);
+    setConn("");
+    setAudioBlocked(false);
     const current = room();
     setRoom(undefined);
     current?.disconnect();
@@ -610,6 +682,7 @@ export function VoiceRoom(props: {
     if (joining() || room()) return;
     setError("");
     setJoining(true);
+    if (!resume) setConn("connecting");
     const gen = joinGen;
     try {
       const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
@@ -643,8 +716,29 @@ export function VoiceRoom(props: {
         .on(RoomEvent.DataReceived, (_payload, participant, _kind, topic) => {
           if (topic === ATTENTION_TOPIC && participant) flashTile(participant.identity);
         })
-        .on(RoomEvent.Disconnected, () => {
-          if (room() === next) leave();
+        .on(RoomEvent.Reconnecting, () => setConn("reconnecting"))
+        .on(RoomEvent.Reconnected, () => {
+          setConn("");
+          void next.startAudio().catch(() => {});
+        })
+        .on(RoomEvent.ConnectionQualityChanged, (quality, who) => {
+          if (!who.isLocal) return;
+          setConn((c) =>
+            c === "reconnecting" ? c : quality === ConnectionQuality.Poor || quality === ConnectionQuality.Lost ? "weak" : "",
+          );
+        })
+        .on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!next.canPlaybackAudio))
+        .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+          if (room() !== next) return;
+          // the connection was lost (a phone changing from Wi-Fi to mobile data, a tunnel):
+          // join again by itself and put mic and camera back; a hang-up or a removal stays hung up
+          const keep = { cam: camShown(), mic: micOn() };
+          leave();
+          if (reason !== undefined && NO_REJOIN.has(reason)) return;
+          resume = keep;
+          joinTries = 0;
+          setConn("reconnecting");
+          rejoinTimer = window.setTimeout(() => void join(), 1500);
         });
       for (const event of [
         RoomEvent.ParticipantConnected,
@@ -667,6 +761,12 @@ export function VoiceRoom(props: {
       }
       setRoom(next);
       joinTries = 0;
+      setConn("");
+      const back = resume;
+      resume = undefined;
+      // iPhone Safari holds sound back until it has been asked inside the page
+      void next.startAudio().catch(() => {});
+      setAudioBlocked(!next.canPlaybackAudio);
       bump();
       if (phoneNow()) {
         void next.localParticipant.setAttributes({ dh_phone: "1" }).catch(() => {});
@@ -679,12 +779,16 @@ export function VoiceRoom(props: {
       // on". The wall (viewOnly) has no camera or dock at all, so it's
       // skipped; the Operation Room (webcamOnly) is camera-first, so it's
       // included.
-      if (!props.viewOnly && !camShown()) void toggleCam();
+      if (!props.viewOnly && !camShown() && (back ? back.cam : true)) void toggleCam();
+      if (!props.viewOnly && back?.mic) void next.localParticipant.setMicrophoneEnabled(true).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not join the call.");
       if (gen === joinGen && joinTries < 6) {
         joinTries += 1;
-        window.setTimeout(() => void join(), 5000);
+        rejoinTimer = window.setTimeout(() => void join(), 5000);
+      } else {
+        resume = undefined;
+        setConn("");
       }
     } finally {
       setJoining(false);
@@ -2163,6 +2267,7 @@ export function VoiceRoom(props: {
             <button class="btn primary" type="button" disabled={joining()} onClick={() => void join()}>
               {joining() ? "Joining…" : "Join"}
             </button>
+            {statusChip()}
             <Show when={error()}>
               <p class="form-error">{error()}</p>
             </Show>
@@ -2263,6 +2368,7 @@ export function VoiceRoom(props: {
             </div>
           </Show>
         </div>
+        {statusChip()}
         <Show when={error()}>
           <p class="form-error voice-error">{error()}</p>
         </Show>
