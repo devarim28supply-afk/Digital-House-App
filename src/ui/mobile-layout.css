@@ -139,6 +139,13 @@
   .voice .dock .dock-menu{width:200px;max-width:calc(100vw - 24px);min-width:0}
 }
 
+/* A phone held sideways is short: the rows above the call give up their height to the pictures. */
+@media(pointer:coarse) and (max-height:520px){
+  .main-head{height:44px;min-height:44px;padding-top:0;padding-bottom:0}
+  .main-head.in-call .main-title{display:none}
+  .voice .dock:not(.hidden){padding-top:4px;padding-bottom:max(4px,env(safe-area-inset-bottom))}
+}
+
 /* No native blue tap/selection flash when changing mobile panels. */
 @media(max-width:600px){
   .mobile-panel-switch,.mobile-panel-track,.mobile-panel-track>button,.mobile-panel-track>button *{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
