@@ -147,6 +147,8 @@
   /* In a call the header and the control row float over the pictures, so the pictures get the whole screen.
      They slide away after 5 seconds without a touch and slide back in on any touch (VoiceRoom sets data-chrome). */
   html[data-call-auto] .main{position:relative}
+  /* the pictures run edge to edge: no padding around the call area (it left a black frame around the Living Room) */
+  html[data-call-auto] .voice{padding:0;gap:0}
   html[data-call-auto] .main-head.in-call{position:absolute;top:0;left:0;right:0;z-index:20;background:rgba(0,0,0,.8);transition:transform .25s ease,opacity .25s ease}
   html[data-call-auto] .voice .dock:not(.hidden){position:absolute;left:0;right:0;bottom:0;z-index:20;background:rgba(12,20,24,.88);transition:transform .25s ease,opacity .25s ease}
   html[data-call-auto][data-chrome="hidden"] .main-head.in-call{transform:translateY(-100%);opacity:0;pointer-events:none}
