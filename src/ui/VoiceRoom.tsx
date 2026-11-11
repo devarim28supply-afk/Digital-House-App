@@ -188,6 +188,31 @@ function phoneNativeCapture(): VideoCaptureOptions | undefined {
     },
   } as VideoCaptureOptions;
 }
+/**
+ * iPhone Safari (seen on a real iPhone) hands back a wide 16:9 picture when held upright, whether it is asked
+ * for 9:16 exactly or by size only. An earlier fix found that some phones apply the aspect to the sensor,
+ * which is wide, and then turn the picture: there the OPPOSITE shape is what gives the held one. So each shape
+ * is tried in turn, and the one that works on this phone is remembered and tried first from then on.
+ */
+function phoneOppositeCapture(): VideoCaptureOptions | undefined {
+  if (!phoneCameraCapture()) return undefined;
+  const wide = phoneLandscape();
+  return {
+    aspectRatio: { exact: wide ? PHONE_ASPECT : PHONE_ASPECT_WIDE },
+    resizeMode: "crop-and-scale",
+    resolution: {
+      width: { ideal: wide ? 1080 : 1920 } as unknown as number,
+      height: { ideal: wide ? 1920 : 1080 } as unknown as number,
+      frameRate: { ideal: 30, max: 30 } as unknown as number,
+    },
+  } as VideoCaptureOptions;
+}
+/** The camera with nothing asked of it but which way it faces. */
+function phoneBareCapture(): VideoCaptureOptions | undefined {
+  if (!phoneCameraCapture()) return undefined;
+  return { facingMode: "user" } as VideoCaptureOptions;
+}
+let winningRecipe: string | undefined;
 const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 /** The last few camera-shape steps, shown by the ?camdebug=1 overlay (for finding out what a phone's camera really does). */
 const camLog: string[] = [];
@@ -238,18 +263,26 @@ async function reshapeOnce(active: LocalParticipant) {
     return ok;
   };
   if (await rightShape("turn")) return;
-  let n = 0;
-  for (const options of [phoneNativeCapture(), phoneCameraCapture()]) {
-    n += 1;
+  const recipes: [string, VideoCaptureOptions | undefined][] = [
+    ["by size", phoneNativeCapture()],
+    ["exact held shape", phoneCameraCapture()],
+    ["opposite shape", phoneOppositeCapture()],
+    ["bare camera", phoneBareCapture()],
+  ];
+  recipes.sort((a, b) => Number(b[0] === winningRecipe) - Number(a[0] === winningRecipe));
+  for (const [name, options] of recipes) {
     if (!options) continue;
     try {
       await local.restartTrack(options);
     } catch (err) {
-      logCam(`restart ${n} failed: ${err instanceof Error ? err.name : "error"}`);
+      logCam(`${name}: failed ${err instanceof Error ? err.name : "error"}`);
       continue;
     }
     await pause(350);
-    if (await rightShape(`restart ${n}`)) return;
+    if (await rightShape(name)) {
+      winningRecipe = name;
+      return;
+    }
   }
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
