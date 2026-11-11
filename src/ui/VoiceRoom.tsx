@@ -146,6 +146,9 @@ const STREAM_CAM_PUBLISH: TrackPublishOptions = {
 const STREAM_SIZE = { width: 1920, height: 1080, maxBitrate: 3_000_000, layers: [VideoPresets.h360] };
 // Attention (Kaalob, Deaf-first): your tile strobes white for everyone, 3 s.
 const ATTENTION_TOPIC = "attention";
+// A phone is being turned: its picture is held still on every screen for a moment (see holdPicture).
+const TURN_TOPIC = "dh-turn";
+const TURN_HOLD_MS = 1400;
 const TEAM_TOPIC = "dh-team";
 const ATTENTION_MS = 3000;
 type InsetCorner = "tl" | "tr" | "bl" | "br";
@@ -438,6 +441,27 @@ export function VoiceRoom(props: {
   const [error, setError] = createSignal("");
   const [version, setVersion] = createSignal(0);
   const [speaking, setSpeaking] = createSignal(new Set<string>());
+  // Whose picture is held still because their phone is turning. Turning a phone makes the camera hand over
+  // frames of the new shape before the stream has caught up, and for a moment the picture looks stretched
+  // or squashed. The last good frame stays on screen instead, on every screen, then the picture carries on.
+  const [held, setHeld] = createSignal(new Set<string>());
+  const holdTimers = new Map<string, number>();
+  function holdPicture(identity: string) {
+    window.clearTimeout(holdTimers.get(identity));
+    setHeld((prev) => new Set(prev).add(identity));
+    holdTimers.set(
+      identity,
+      window.setTimeout(() => {
+        holdTimers.delete(identity);
+        setHeld((prev) => {
+          const next = new Set(prev);
+          next.delete(identity);
+          return next;
+        });
+      }, TURN_HOLD_MS),
+    );
+  }
+  onCleanup(() => holdTimers.forEach((t) => window.clearTimeout(t)));
   const bump = () => setVersion((v) => v + 1);
   const audioHost = document.createElement("div");
   audioHost.hidden = true;
@@ -615,6 +639,7 @@ export function VoiceRoom(props: {
         .on(RoomEvent.ActiveSpeakersChanged, (who: Participant[]) => setSpeaking(new Set(who.map((p) => p.identity))))
         .on(RoomEvent.DataReceived, (_payload, participant, _kind, topic) => {
           if (topic === ATTENTION_TOPIC && participant) flashTile(participant.identity);
+          if (topic === TURN_TOPIC && participant) holdPicture(participant.identity);
         })
         .on(RoomEvent.Reconnecting, () => setConn("reconnecting"))
         .on(RoomEvent.Reconnected, () => {
@@ -1084,6 +1109,18 @@ export function VoiceRoom(props: {
     const result = await Promise.race([attempt, slow]);
     window.clearTimeout(timer);
     return result;
+  }
+
+  // Turning this phone: hold my own picture still, and tell everyone else to hold mine.
+  if (COARSE_POINTER && typeof screen !== "undefined" && screen.orientation) {
+    const onTurn = () => {
+      const current = room();
+      if (!current) return;
+      holdPicture(current.localParticipant.identity);
+      void current.localParticipant.publishData(new TextEncoder().encode("turn"), { reliable: false, topic: TURN_TOPIC }).catch(() => {});
+    };
+    screen.orientation.addEventListener("change", onTurn);
+    onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
   }
 
   async function toggleCam() {
@@ -2008,6 +2045,7 @@ export function VoiceRoom(props: {
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
+                held={!tile.screen && held().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
                 canZoom={Boolean(spot()) && tile.screen && focus() === tile.key}
                 zoomed={zoomOn() && focus() === tile.key}
@@ -2719,6 +2757,8 @@ function Tile(props: {
   forceOff?: boolean;
   /** they asked for attention: a white strobe around the tile */
   flashing?: boolean;
+  /** their phone is turning: keep the last good frame on screen for a moment */
+  held?: boolean;
   /** their stream (stream mode): a small picture on their tile */
   stream?: Track;
   /** the stream big and the webcam small (double-click the small one) */
@@ -2779,6 +2819,20 @@ function Tile(props: {
     if (!t || !inset) return;
     t.attach(inset);
     onCleanup(() => t.detach(inset!));
+  });
+
+  // while held, the picture stops on its last good frame; it carries on when the hold ends
+  let pausedForTurn = false;
+  createEffect(() => {
+    const el = video;
+    if (!el) return;
+    if (props.held) {
+      pausedForTurn = true;
+      el.pause();
+    } else if (pausedForTurn) {
+      pausedForTurn = false;
+      void el.play().catch(() => undefined);
+    }
   });
 
   const mirrored = () => props.tile.participant.isLocal && !props.tile.screen && !swapped();
