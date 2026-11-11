@@ -333,7 +333,7 @@ export function livingPhonePlan(args: {
 
 /**
  * Experiment (sideways Living Room): the TV is scaled up until it almost touches the top and bottom edges and sits on
- * the left; everyone's webcam stands in ONE column on the right (1 to 6 people), never over the TV. `tvRight` is the TV's right edge as
+ * the left; everyone's webcam stands in ONE column on the right (1 to 6 people; big up to 4, smaller at 5 and 6), never over the TV. `tvRight` is the TV's right edge as
  * a fraction of the width (projected live from the 3D room).
  */
 export function livingSidePlan(args: {
@@ -354,9 +354,9 @@ export function livingSidePlan(args: {
     const x0 = Math.min(1, Math.max(0, args.tvRight)) * args.width + gap;
     const region = { x: x0, y: pad, w: Math.max(0, args.width - x0 - pad), h: Math.max(0, args.height - pad * 2) };
     if (region.w > 0 && region.h > 0) {
-      // always ONE column, 1 to 6 people. Every face is the same size, sized for a full column of 6 (more than 6
-      // shrinks to fit), so nobody's picture changes size as people join; the column is centred in its space.
-      const slots = Math.max(n, 6);
+      // always ONE column, 1 to 6 people, centred in its space. Up to 4 faces are as big as 4 fit in the space beside
+      // the TV (all the same size); at 5 and 6 they shrink once, to what 6 fit (more than 6 shrinks to fit).
+      const slots = n <= 4 ? 4 : Math.max(n, 6);
       const h = Math.max(16, Math.min((region.h - gap * (slots - 1)) / slots, (region.w * 9) / 16));
       const heights = keys.map(() => h);
       const widths = keys.map((key) => h * (args.portraitKeys?.includes(key) ? 9 / 16 : 16 / 9));
