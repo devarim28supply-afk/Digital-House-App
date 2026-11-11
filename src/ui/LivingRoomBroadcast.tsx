@@ -135,6 +135,8 @@ export function LivingRoomBroadcast(props: {
   channel: Channel;
   /** 1 = the room as designed. Above 1 the camera comes closer, until the room's walls fill the whole panel and no black edge is left. */
   zoom?: number;
+  /** moves the picture of the room down by this fraction of its height (0.05 = 5%); the wall above fills the gap */
+  shiftDown?: number;
 }) {
   let host: HTMLDivElement | undefined;
   // The renderer's canvas is appended imperatively (outside Solid's own
@@ -376,6 +378,9 @@ export function LivingRoomBroadcast(props: {
       const h = el!.clientHeight || 1;
       camera.aspect = w / h;
       camera.fov = 55 / Math.max(0.5, props.zoom ?? 1);
+      const shift = Math.max(0, props.shiftDown ?? 0);
+      if (shift > 0) camera.setViewOffset(w, h, 0, -Math.round(h * shift), w, h);
+      else camera.clearViewOffset();
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld(true);
       renderer.setSize(w, h);
