@@ -271,16 +271,12 @@ const GAP = 10;
 // A phone's short side. Desktop windows are not phones, even when narrow.
 const PHONE_SHORT = 540;
 const COARSE_POINTER = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
-// Wall Street (store.ts's WALL_STREET_TILE.roomKey): one fixed host - whoever
+// Living Room (store.ts's LIVING_ROOM_TILE.roomKey): one fixed host - whoever
 // joined the call first - permanently big, everyone else a small column,
 // never the adaptive grid. Read off props.channel directly rather than a new
 // prop, so this stays entirely inside VoiceRoom/phoneCallLayout.ts.
-const WALL_STREET_ROOMKEY = "darkwood-wall-street";
-// Living Room (store.ts's LIVING_ROOM_TILE.roomKey): the same fixed big
-// panel + webcam row as Wall Street, but its panel is Stream only - no
-// TradingView, so no Chart tab (see showChartTab() below).
 const LIVING_ROOM_ROOMKEY = "darkwood-living-room";
-const BROADCAST_ROOMKEYS = new Set([WALL_STREET_ROOMKEY, LIVING_ROOM_ROOMKEY]);
+const BROADCAST_ROOMKEYS = new Set([LIVING_ROOM_ROOMKEY]);
 const isBroadcastRoom = (roomKey?: string) => Boolean(roomKey && BROADCAST_ROOMKEYS.has(roomKey));
 const SMALL_ROOM_VIEW = 0.4;
 // double-click layout: this many small screens in the row under the big one
@@ -1083,25 +1079,6 @@ export function VoiceRoom(props: {
     }
     return undefined;
   });
-  // Wall Street's big panel has two tabs: a live TradingView chart (your own
-  // session in your own browser - everyone gets their own, fully
-  // interactive, not shared) or whoever's Stream is on (so everyone can
-  // watch one specific person's own TradingView tab, drawings and all).
-  // Living Room shares the same big panel, but has no Chart tab at all -
-  // its screen is always whoever's Stream (webcam or OBS) is on.
-  const showChartTab = () => props.channel.roomKey === WALL_STREET_ROOMKEY;
-  const [bigView, setBigView] = createSignal<"chart" | "stream">("chart");
-  const effectiveBigView = () => (showChartTab() ? bigView() : "stream");
-  // The charts' timeframe, remembered across visits (TIMEFRAME_PICKER below).
-  const [chartInterval, setChartInterval] = createSignal(recallInterval());
-  function pickInterval(value: string) {
-    setChartInterval(value);
-    try {
-      localStorage.setItem(WALL_STREET_INTERVAL_KEY, value);
-    } catch {
-      /* private mode */
-    }
-  }
   // Whose tile shows the stream big and the webcam small: your own choice,
   // only on your screen (double-click the small picture).
   const [swapped, setSwapped] = createSignal(new Set<string>());
@@ -1635,7 +1612,7 @@ export function VoiceRoom(props: {
   const [openShare, setOpenShare] = createSignal<string | undefined>();
   const [shareDragX, setShareDragX] = createSignal(0);
   const [shareDragging, setShareDragging] = createSignal(false);
-  const wallStreetBig = createMemo<JSX.CSSProperties | undefined>(() => {
+  const broadcastBig = createMemo<JSX.CSSProperties | undefined>(() => {
     if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
     const { w, h } = box();
     if (w <= 0 || h <= 0) return undefined;
@@ -2276,48 +2253,10 @@ export function VoiceRoom(props: {
           ref={watchBox}
           style={spot() || layout().phone ? {} : layout().grid}
         >
-          <Show when={wallStreetBig()}>
+          <Show when={broadcastBig()}>
             {(style) => (
               <div class="broadcast-big" style={style()}>
-                <Show when={showChartTab()}>
-                  <div class="broadcast-tabs" role="tablist">
-                    <button type="button" role="tab" aria-pressed={bigView() === "chart"} onClick={() => setBigView("chart")}>
-                      Chart
-                    </button>
-                    <button type="button" role="tab" aria-pressed={bigView() === "stream"} onClick={() => setBigView("stream")}>
-                      Stream
-                    </button>
-                    <Show when={bigView() === "chart"}>
-                      <div class="broadcast-timeframes" role="group" aria-label="Timeframe">
-                        <For each={TIMEFRAME_PICKER}>
-                          {(t) => (
-                            <button type="button" aria-pressed={chartInterval() === t.value} onClick={() => pickInterval(t.value)}>
-                              {t.label}
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                  </div>
-                </Show>
-                <Show when={effectiveBigView() === "chart"} fallback={
-                  <Show
-                    when={props.channel.roomKey === LIVING_ROOM_ROOMKEY}
-                    fallback={
-                      <Show when={broadcastTrack()} fallback={<div class="broadcast-big-empty">Nobody's Stream is on. Press Stream to show it here.</div>}>
-                        {(track) => <BroadcastVideo track={track()} />}
-                      </Show>
-                    }
-                  >
-                    <LivingRoomBroadcast track={broadcastTrack} serverId={props.serverId} channel={props.channel} />
-                  </Show>
-                }>
-                  <div class="tradingview-grid">
-                    <TradingViewChart interval={chartInterval()} />
-                    <TradingViewChart interval={chartInterval()} />
-                    <TradingViewChart interval={chartInterval()} />
-                  </div>
-                </Show>
+                <LivingRoomBroadcast track={broadcastTrack} serverId={props.serverId} channel={props.channel} />
               </div>
             )}
           </Show>
@@ -2858,86 +2797,6 @@ function RoomViewTile(props: {
       </span>
     </article>
   );
-}
-
-/**
- * A live TradingView chart: the "Advanced Chart" widget, embedded exactly
- * the way TradingView's own docs do it (a script tag holding a JSON config,
- * which TradingView's script turns into the real chart) - full toolbar,
- * symbol search, every timeframe, and the drawing-tools sidebar
- * (hide_side_toolbar: false). Each viewer's browser loads its own, fresh:
- * nobody's personal TradingView login or saved layout carries over, by
- * design - see BroadcastVideo/the Stream tab for watching one specific
- * person's own, already-logged-in chart instead.
- *
- * TradingView's free embed has no way to tell this page when you change
- * the timeframe with its own toolbar - no event, no callback, nothing this
- * page can listen for (confirmed: not documented anywhere). So "remember
- * the timeframe I set" is TIMEFRAME_PICKER below, not the widget's own
- * toolbar: a small picker this page fully controls, saved to localStorage,
- * passed in here as the chart's starting interval on every load.
- */
-function TradingViewChart(props: { symbol?: string; interval: string }) {
-  let container: HTMLDivElement | undefined;
-  createEffect(() => {
-    const el = container;
-    const interval = props.interval; // tracked: rebuilds the widget when it changes
-    if (!el) return;
-    el.innerHTML = "";
-    const widget = document.createElement("div");
-    widget.className = "tradingview-widget-container__widget";
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.async = true;
-    // set before appending: the external script reads this text as soon as
-    // it loads, so it has to already be there, not filled in afterward
-    script.text = JSON.stringify({
-      autosize: true,
-      symbol: props.symbol || "FX:EURUSD",
-      interval,
-      timezone: "Etc/UTC",
-      theme: "dark",
-      style: "1",
-      locale: "en",
-      allow_symbol_change: true,
-      hide_side_toolbar: false,
-      hide_top_toolbar: false,
-      calendar: false,
-      support_host: "https://www.tradingview.com",
-    });
-    el.append(widget, script);
-  });
-  return <div class="tradingview-chart" ref={container} />;
-}
-
-const WALL_STREET_INTERVAL_KEY = "dh_wallstreet_interval";
-const TIMEFRAME_PICKER: { value: string; label: string }[] = [
-  { value: "1", label: "1m" },
-  { value: "5", label: "5m" },
-  { value: "15", label: "15m" },
-  { value: "60", label: "1h" },
-  { value: "240", label: "4h" },
-  { value: "D", label: "1D" },
-];
-function recallInterval(): string {
-  try {
-    const saved = localStorage.getItem(WALL_STREET_INTERVAL_KEY);
-    return saved && TIMEFRAME_PICKER.some((t) => t.value === saved) ? saved : "60";
-  } catch {
-    return "60";
-  }
-}
-
-/** Wall Street's big panel: just an attached track, no mirror/pip/tile semantics. */
-function BroadcastVideo(props: { track: Track }) {
-  let video: HTMLVideoElement | undefined;
-  createEffect(() => {
-    const el = video;
-    if (!el) return;
-    props.track.attach(el);
-    onCleanup(() => props.track.detach(el));
-  });
-  return <video ref={video} autoplay playsinline muted />;
 }
 
 function Tile(props: {

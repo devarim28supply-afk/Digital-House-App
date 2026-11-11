@@ -179,7 +179,6 @@ export function imageSrc(image?: string) {
 const DARKWOOD_ROOM_TILES: Record<string, string> = {
   "gestr-living": "matrix",
   "darkwood-living-room": "living",
-  "darkwood-wall-street": "wallstreet",
 };
 
 export const hasDarkwoodRoom = (channel: Channel) => Object.hasOwn(DARKWOOD_ROOM_TILES, channel.roomKey ?? "");
@@ -250,14 +249,6 @@ export const LIVING_ROOM_TILE: Omit<Channel, "id" | "position"> = {
   kind: "room",
   image: "/livingroom-tile.svg",
   roomKey: "darkwood-living-room",
-};
-
-/** A trading-floor Darkwood Room: a ticker instead of Matrix rain. */
-export const WALL_STREET_TILE: Omit<Channel, "id" | "position"> = {
-  name: "Trading Floor",
-  kind: "room",
-  image: "/wallstreet-tile.svg",
-  roomKey: "darkwood-wall-street",
 };
 
 /** The home server's built-in tiles, top to bottom, each with its own chat. */

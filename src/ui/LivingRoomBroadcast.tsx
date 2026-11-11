@@ -17,7 +17,7 @@ const DEFAULT_LIGHTS: NonNullable<Channel["lrLights"]> = {
  * CamDisplay plaster wall, the same cement floor, a wall-mounted TV with a
  * real RectAreaLight backlight, and soft shadows. The TV's screen shows
  * whoever's Stream (webcam or OBS) is on, as a real video texture, fed by
- * the same LiveKit track the flat Wall Street panel uses (BroadcastVideo) —
+ * the LiveKit track of whoever's Stream is on —
  * this doesn't pick its own camera, it just renders what's already chosen.
  *
  * Ported from the design sandbox (design/living-room-3d/main.js), where

@@ -163,7 +163,7 @@ export function deskPlan(args: {
 }
 
 /**
- * Broadcast layout (Wall Street): a permanent full-width panel on top (its
+ * Broadcast layout (the Living Room): a permanent full-width panel on top (its
  * content - someone's Stream, if anyone has one on - is rendered separately,
  * not a tile), everyone's webcam a small row along the bottom - never the
  * adaptive grid, and never rearranged by who is talking.
@@ -176,14 +176,13 @@ export function broadcastPlan(args: {
    * instead of right at it - Living Room's 3D floor, so the webcam zone
    * reads as part of the room instead of a strip stuck on below it. */
   overlap?: number;
-  /** overrides the webcam row's default (64-96px) height clamp - Wall
-   * Street's TradingView chart needs that height kept small, but Living
-   * Room's tiles can be bigger since there's no chart competing for space. */
+  /** overrides the webcam row's default (64-96px) height clamp: the Living
+   * Room's tiles can be bigger than the default row. */
   stripHeight?: number;
   /** caps the row's total width to this fraction of the panel's width -
    * Living Room's TV doesn't span the whole panel (there's wall on both
-   * sides, unlike Wall Street's edge-to-edge chart/video), so the webcam
-   * row should stay within the TV's own width instead of the full panel. */
+   * sides), so the webcam row should stay within the TV's own width
+   * instead of the full panel. */
   rowWidthRatio?: number;
   /** the tile row's TOP edge, as a fraction (0 top, 1 bottom) of the
    * panel's own height - Living Room's actual TV bottom edge on screen,
@@ -201,9 +200,7 @@ export function broadcastPlan(args: {
   const innerW = Math.max(1, args.width - pad * 2);
   const innerH = Math.max(1, args.height - pad * 2);
 
-  // The webcam strip stays small on purpose - the chart (or three, stacked)
-  // above it needs the real height; a cramped TradingView widget can render
-  // blank instead of just small.
+  // The webcam strip stays small on purpose - the panel above it needs the real height.
   const stripH = keys.length ? (args.stripHeight ?? Math.min(96, Math.max(64, innerH * 0.14))) : 0;
   // The row's POSITION is still worked out as if space were reserved for
   // it below the panel (reservedH) - that's what keeps the row itself
