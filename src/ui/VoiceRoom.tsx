@@ -30,7 +30,6 @@ import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 import "./call-status.css";
-import { CROP_PROCESSOR_NAME, createCropProcessor } from "./phoneCrop";
 
 /** Why a call ended that must NOT be answered by joining again: you chose it, or someone else did. */
 const NO_REJOIN = new Set<DisconnectReason>([
@@ -172,15 +171,6 @@ async function shownSize(media: MediaStreamTrack): Promise<{ width: number; heig
   }
   return fallback;
 }
-/** Cut the camera picture to the shape the phone is held in (phoneCrop.ts). It follows turning by itself. */
-async function engageCrop(local: LocalVideoTrack) {
-  if (local.getProcessor()?.name === CROP_PROCESSOR_NAME) return;
-  try {
-    await local.setProcessor(createCropProcessor(phoneAspect));
-  } catch {
-    /* the picture already publishing stays */
-  }
-}
 /**
  * A new capture that asks for the held shape by size only: no exact aspect and no crop-and-scale.
  * Phones then apply their own turning rules, which give a real upright picture when held upright
@@ -202,14 +192,14 @@ const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(r
 let reshapeBusy = false;
 let reshapeAgain = false;
 /**
- * Make the picture this phone sends the shape it is held in: 9:16 upright, 16:9 sideways, never a
- * wide picture cut into a tall one (that looks zoomed in). The real camera picture is tried first,
- * in this order, and each step looks at the frame that actually comes out:
- *   1. any crop from an earlier turn is dropped, and the raw camera picture is checked
+ * Make the picture this phone sends the shape it is held in: 9:16 upright, 16:9 sideways. The picture
+ * is NEVER cut or padded to fit a tile (Kaalob's rule): the whole camera picture is always shown, and
+ * every tile takes the shape of the picture it holds. Each step looks at the frame that actually comes out:
+ *   1. the raw camera picture is checked
  *   2. a new capture asking for the held size (phoneNativeCapture)
  *   3. the exact-aspect request (phoneCameraCapture)
- *   4. only if the camera still will not give the shape: cut the centre of the picture to it
- * It runs again on every turn, so a crop is never kept for good.
+ * If the camera still gives the other shape, that is the shape everyone sees: the tile follows the real picture.
+ * It runs again on every turn.
  */
 async function widenPhoneCamera(active: LocalParticipant) {
   if (reshapeBusy) {
@@ -230,10 +220,6 @@ async function reshapeOnce(active: LocalParticipant) {
   if (!phoneCameraCapture()) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
   if (!local) return;
-  if (local.getProcessor()?.name === CROP_PROCESSOR_NAME) {
-    await local.stopProcessor().catch(() => undefined);
-    await pause(150);
-  }
   const rightShape = async () => {
     const media = local.mediaStreamTrack;
     if (!media || media.readyState !== "live") return false;
@@ -251,7 +237,6 @@ async function reshapeOnce(active: LocalParticipant) {
     await pause(350);
     if (await rightShape()) return;
   }
-  await engageCrop(local);
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
   name: STREAM_CAM,
