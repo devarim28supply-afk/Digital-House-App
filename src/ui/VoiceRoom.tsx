@@ -119,9 +119,27 @@ function phoneLandscape(): boolean {
 function phoneAspect(): number {
   return phoneLandscape() ? PHONE_ASPECT_WIDE : PHONE_ASPECT;
 }
+// iPhone and iPad Safari read the requested shape against the camera's own wide sensor and then turn the
+// picture the way the phone is held (a diagnostics run on a real iPhone: asking for tall 9:16 upright gave a
+// wide 16:9 picture). So there the shape is always asked for as WIDE, and the phone hands back tall when held
+// upright and wide when held sideways, and keeps doing so as it turns.
+const IS_IOS =
+  typeof navigator !== "undefined" &&
+  (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 function phoneCameraCapture(loose = false): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
+  if (IS_IOS) {
+    return {
+      aspectRatio: loose ? { ideal: PHONE_ASPECT_WIDE } : { exact: PHONE_ASPECT_WIDE },
+      resizeMode: "crop-and-scale",
+      resolution: {
+        width: { ideal: loose ? 1280 : 1920 } as unknown as number,
+        height: { ideal: loose ? 720 : 1080 } as unknown as number,
+        frameRate: { ideal: 30, max: 30 } as unknown as number,
+      },
+    } as VideoCaptureOptions;
+  }
   const wide = phoneLandscape();
   const short = loose ? 720 : 1080;
   const long = loose ? 1280 : 1920;
