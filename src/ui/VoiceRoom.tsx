@@ -204,6 +204,21 @@ async function engageCrop(local: LocalVideoTrack) {
     /* the picture already publishing stays */
   }
 }
+/**
+ * Look at the picture the camera really delivers (not what it says it delivers) and, if its shape is
+ * not the held one, cut it to the held shape. Run a moment after a turn: phones hand over the turned
+ * picture late, and their reported size can be stale.
+ */
+async function verifyPhoneShape(active: LocalParticipant) {
+  if (!phoneCameraCapture()) return;
+  const local = active.getTrackPublication(Track.Source.Camera)?.track;
+  const media = local?.mediaStreamTrack;
+  if (!local || !media || media.readyState !== "live") return;
+  const shown = await shownSize(media);
+  if (matchesAspect(shown.width, shown.height, phoneAspect())) return;
+  deviceNeedsCrop = true;
+  await engageCrop(local as LocalVideoTrack);
+}
 /** The camera opened the wrong way round. Ask again until the frame matches how the phone is held. */
 async function widenPhoneCamera(active: LocalParticipant) {
   if (!phoneCameraCapture()) return;
@@ -1230,7 +1245,16 @@ export function VoiceRoom(props: {
       if (!current) return;
       if (phoneNow()) void tellShape(current);
       const me = current.localParticipant;
-      if (me.isCameraEnabled) void widenPhoneCamera(me).then(() => (phoneNow() ? tellShape(current) : undefined));
+      if (!me.isCameraEnabled) return;
+      void widenPhoneCamera(me).then(() => (phoneNow() ? tellShape(current) : undefined));
+      // The turned picture arrives a moment after the turn. Check what really comes out and, if it is
+      // still the old shape (turning back upright, in particular), cut it to the held one, then tell everyone.
+      for (const wait of [600, 1800]) {
+        window.setTimeout(() => {
+          if (room() !== current || !current.localParticipant.isCameraEnabled) return;
+          void verifyPhoneShape(current.localParticipant).then(() => (phoneNow() ? tellShape(current) : undefined));
+        }, wait);
+      }
     };
     screen.orientation.addEventListener("change", onTurn);
     onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
