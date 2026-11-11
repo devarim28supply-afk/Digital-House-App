@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Digital House",
-  "short_name": "Digital House",
+  "name": "Darkwood Node",
+  "short_name": "Darkwood",
   "start_url": "./",
   "scope": "/",
   "display": "standalone",

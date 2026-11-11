@@ -343,3 +343,235 @@
     opacity: 0;
   }
 }
+
+/* ---- phone: big targets, 16px fields (iPhone does not zoom), keyboard-aware ---- */
+
+.auth-page {
+  min-height: 100dvh;
+  padding-top: max(32px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+}
+
+/* keyboard open: the card moves to the top so the button stays in view */
+@media (max-width: 760px) {
+  .auth-page:has(input:focus) {
+    place-items: start center;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-bottom: 12px;
+  }
+  .auth-page:has(input:focus) .auth-body {
+    gap: 12px;
+    padding-top: 16px;
+  }
+  .auth-page:has(input:focus) .auth-title {
+    font-size: 1.2rem;
+  }
+}
+
+.auth-field input {
+  height: 52px;
+  font-size: 16px;
+}
+
+.auth-field > span:first-child {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.auth-submit {
+  height: 54px;
+  font-size: 1rem;
+}
+
+.auth-links button {
+  min-height: 48px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* password field with the Show / Hide button inside */
+.auth-pw {
+  position: relative;
+  display: block;
+}
+.auth-pw input {
+  width: 100%;
+  padding-right: 72px;
+}
+.auth-show {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 52px;
+  min-width: 64px;
+  border: 0;
+  background: none;
+  color: #a3a3a3;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.auth-show:hover {
+  color: var(--green);
+}
+
+/* stay signed in: a 48px row with a big checkbox */
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  font-size: 0.92rem;
+  color: #cfcfcf;
+  cursor: pointer;
+}
+.auth-remember input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.auth-remember i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid #4a4a4a;
+  border-radius: 7px;
+}
+.auth-remember input:checked + i {
+  background: var(--green);
+  border-color: var(--green);
+}
+.auth-remember input:checked + i::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  border: solid #000;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+.auth-remember input:focus-visible + i {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+/* face unlock button: green outline, steady (no glitch) like the fields and main button */
+.auth-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 64px;
+  border: 1px solid rgba(74, 222, 128, 0.55);
+  border-radius: 12px;
+  background: rgba(74, 222, 128, 0.08);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-face svg {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+.auth-face:disabled {
+  border-color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+  cursor: default;
+}
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: #737373;
+}
+.auth-or::before,
+.auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #262626;
+}
+
+/* wrong password: red outline + a short shake, plus the message below */
+.auth-pw.bad input {
+  border-bottom-color: #f87171;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2);
+  animation: authShake 0.4s 1;
+}
+.auth-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 10px;
+  background: rgba(248, 113, 113, 0.08);
+  font-family: var(--sans, inherit);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: #fca5a5;
+}
+@keyframes authShake {
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-pw.bad input { animation: none; }
+}
+
+/* the one-time "turn on face unlock?" sheet after a password login */
+.face-offer {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 50;
+  display: grid;
+  gap: 12px;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  border-top: 1px solid #262626;
+  border-radius: 18px 18px 0 0;
+  background: #0c0c0c;
+  box-shadow: 0 -20px 50px rgba(0, 0, 0, 0.7);
+}
+.face-offer h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  color: #e5e5e5;
+}
+.face-offer p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #a3a3a3;
+}
+.face-offer .err {
+  color: #fca5a5;
+}
+.face-offer button {
+  height: 54px;
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.face-offer .yes {
+  border: 0;
+  background: var(--green);
+  color: #04130a;
+}
+.face-offer .no {
+  border: 1px solid #333;
+  background: none;
+  color: #cfcfcf;
+}
+.face-offer button:disabled {
+  opacity: 0.6;
+}

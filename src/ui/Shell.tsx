@@ -51,6 +51,7 @@ import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
+import { FaceUnlockSetting } from "../auth/FaceOffer";
 import { RoomPane, type RoomPaneToggle } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
@@ -1360,6 +1361,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           </div>
           <small class="call-name-note">Applies to both sides. Hover-only closes when the pointer leaves; slides in and out stays open briefly. Touch devices keep their tap controls.</small>
         </fieldset>
+        <FaceUnlockSetting />
         <div class="modal-actions">
           <Show when={isOwnerAccount()}>
             <button

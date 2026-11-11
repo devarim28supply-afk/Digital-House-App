@@ -1,5 +1,6 @@
 import { Match, Switch, createEffect, createSignal, onCleanup } from "solid-js";
 
+import { FaceOffer } from "./auth/FaceOffer";
 import { Login } from "./auth/Login";
 import { type AccessState, access } from "./firebase";
 import { Shell } from "./ui/Shell";
@@ -17,10 +18,8 @@ const PHONE = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: 
  * Who you are decides what you see: the login card, the waiting room
  * (registered but not approved yet), or Darkwood Node itself.
  *
- * The front door: on a computer, someone not logged in is sent to the
- * M2A-access bunker (the front page, /), logs in at its terminal, and walks
- * through the blast door back here. Phones get the login card right here.
- * ?login shows the card on a computer too.
+ * The front door is the login card, on phones and computers alike (the
+ * M2A-access bunker is no longer the front page).
  */
 export function App() {
   const [state, setState] = createSignal<AccessState>(access.getState() as AccessState);
@@ -33,19 +32,11 @@ export function App() {
   void access.auth.authStateReady().then(() => setAuthReady(true));
   const settled = () => state().status !== "guest" || (authReady() && !access.auth.currentUser);
 
-  // Computers go to the bunker to log in (live site; this PC's dev servers
-  // are separate addresses, so the shared login would not carry over).
-  const toBunker = () =>
-    settled() && state().status === "guest" && !LOCAL && !PHONE && !wallRoom && !params.has("login") && window.top === window;
-  createEffect(() => {
-    if (toBunker()) location.replace("/");
-  });
-
   const logout = () => void access.logout();
 
   return (
     <Switch>
-      <Match when={!settled() || toBunker()}>{null}</Match>
+      <Match when={!settled()}>{null}</Match>
       <Match when={Boolean(wallRoom) && state().status === "approved" && state().user}>
         {(user) => (
           <WallView
@@ -58,15 +49,18 @@ export function App() {
       </Match>
       <Match when={state().status === "approved" && state().user}>
         {(user) => (
-          <Shell
-            uid={user().uid}
-            admin={state().admin}
-            staff={state().staff}
-            developer={Boolean(state().member?.roles?.develop)}
-            name={state().member?.name || user().displayName || "Member"}
-            username={state().member?.username || ""}
-            onLogout={logout}
-          />
+          <>
+            <Shell
+              uid={user().uid}
+              admin={state().admin}
+              staff={state().staff}
+              developer={Boolean(state().member?.roles?.develop)}
+              name={state().member?.name || user().displayName || "Member"}
+              username={state().member?.username || ""}
+              onLogout={logout}
+            />
+            <FaceOffer />
+          </>
         )}
       </Match>
       <Match when={state().status === "pending"}>

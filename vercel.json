@@ -5,29 +5,62 @@
   "redirects": [
     {
       "source": "/",
-      "has": [{ "type": "header", "key": "user-agent", "value": { "re": "Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini" } }],
+      "missing": [
+        {
+          "type": "query",
+          "key": "spawn"
+        }
+      ],
       "destination": "/app/",
       "permanent": false
     },
     {
-      "source": "/m2a-access",
-      "has": [{ "type": "header", "key": "user-agent", "value": { "re": "Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini" } }],
+      "source": "/app",
       "destination": "/app/",
       "permanent": false
     },
-    { "source": "/app", "destination": "/app/", "permanent": false },
-    { "source": "/living", "destination": "/living/", "permanent": false },
-    { "source": "/construction", "destination": "/construction/", "permanent": false },
-    { "source": "/m2a-access", "destination": "/", "permanent": false },
-    { "source": "/m2a-access/:path*", "destination": "/:path*", "permanent": false }
+    {
+      "source": "/living",
+      "destination": "/living/",
+      "permanent": false
+    },
+    {
+      "source": "/m2a-access",
+      "destination": "/app/",
+      "permanent": false
+    },
+    {
+      "source": "/m2a-access/:path*",
+      "destination": "/app/",
+      "permanent": false
+    }
   ],
   "rewrites": [
-    { "source": "/app/:path*", "destination": "/app/index.html" },
-    { "source": "/living/", "destination": "https://gestr-living.vercel.app/" },
-    { "source": "/living/:path*", "destination": "https://gestr-living.vercel.app/:path*" },
-    { "source": "/construction/", "destination": "https://gestr-m2a-construction.vercel.app/" },
-    { "source": "/construction/:path*", "destination": "https://gestr-m2a-construction.vercel.app/:path*" },
-    { "source": "/", "destination": "https://gestr-m2a-access.vercel.app/" },
-    { "source": "/:path*", "destination": "https://gestr-m2a-access.vercel.app/:path*" }
+    {
+      "source": "/app/:path*",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/living/",
+      "destination": "https://gestr-living.vercel.app/"
+    },
+    {
+      "source": "/living/:path*",
+      "destination": "https://gestr-living.vercel.app/:path*"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "query",
+          "key": "spawn"
+        }
+      ],
+      "destination": "https://gestr-m2a-access.vercel.app/"
+    },
+    {
+      "source": "/:path*",
+      "destination": "https://gestr-m2a-access.vercel.app/:path*"
+    }
   ]
 }
