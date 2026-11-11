@@ -64,30 +64,15 @@ export function phonePlan(args: {
 
   const portraits = new Set(args.portraitKeys ?? []);
 
-  // A phone held sideways is short and wide: everyone sits side by side in one grid that uses the whole
-  // width, as large as it can be (a stack down the middle leaves the sides empty and the pictures tiny).
+  // A phone held sideways is short and wide: everyone sits side by side in one balanced grid that uses the
+  // whole width (a stack down the middle leaves the sides empty and the pictures tiny).
   if (args.landscape && n > 1) {
     const pad = 8;
     const gap = 8;
     const W = Math.max(1, args.width - pad * 2);
     const H = Math.max(1, args.height - pad * 2);
-    const ratioOf = (key: string) => (portraits.has(key) ? 9 / 16 : 16 / 9);
-    let bestCols = 1;
-    let bestHeight = -1;
-    for (let cols = 1; cols <= n; cols++) {
-      const rows: string[][] = [];
-      for (let i = 0; i < n; i += cols) rows.push(keys.slice(i, i + cols));
-      let h = Infinity;
-      for (const row of rows) {
-        const units = row.reduce((sum, key) => sum + ratioOf(key), 0);
-        h = Math.min(h, Math.max(0, (W - gap * (row.length - 1)) / units));
-      }
-      h = Math.min(h, Math.max(0, (H - gap * (rows.length - 1)) / rows.length));
-      if (h > bestHeight + 0.5) {
-        bestHeight = h;
-        bestCols = cols;
-      }
-    }
+    // a balanced block (4 people are 2 by 2, never 1 by 4)
+    const bestCols = Math.ceil(Math.sqrt(n));
     const grid = deskPlan({ keys, portraitKeys: [...portraits], width: W, height: H, cols: bestCols, gap });
     const placed: Record<string, PhoneStyle> = {};
     for (const [key, style] of Object.entries(grid)) {

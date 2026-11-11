@@ -490,6 +490,37 @@ export function VoiceRoom(props: {
     const current = room();
     if (current && !props.viewOnly) onCleanup(bindCallControls(current));
   });
+  // On a phone the call's buttons (header and control row) slide away when nobody touches the screen for
+  // 5 seconds, and slide back in on any touch. The CSS only acts when the phone is held sideways.
+  createEffect(() => {
+    if (!room() || props.viewOnly || !COARSE_POINTER) return;
+    const root = document.documentElement;
+    let timer = 0;
+    const hide = () => {
+      // a menu or dialog is open: keep the buttons and look again in 5 seconds
+      if (document.querySelector(".dock-menu, .modal")) {
+        timer = window.setTimeout(hide, 5000);
+        return;
+      }
+      root.dataset.chrome = "hidden";
+    };
+    const show = () => {
+      root.dataset.chrome = "shown";
+      window.clearTimeout(timer);
+      timer = window.setTimeout(hide, 5000);
+    };
+    root.dataset.callAuto = "1";
+    show();
+    document.addEventListener("pointerdown", show, true);
+    document.addEventListener("keydown", show, true);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", show, true);
+      document.removeEventListener("keydown", show, true);
+      window.clearTimeout(timer);
+      delete root.dataset.callAuto;
+      delete root.dataset.chrome;
+    });
+  });
   // ?camdebug=1 on the app address: a text overlay with what this phone's camera is really doing
   createEffect(() => {
     if (!room() || props.viewOnly || !new URLSearchParams(location.search).has("camdebug")) return;
