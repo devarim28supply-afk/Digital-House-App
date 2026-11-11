@@ -884,10 +884,16 @@ export async function deleteRoomTile(sid: string, tileId: string, channels: Chan
 
 // ---- messages ---------------------------------------------------------------
 
-const PAGE = 150;
+/** How many messages a chat loads at first, and how many more each "Load older messages" adds. */
+export const MESSAGE_PAGE = 150;
 
-export function watchMessages(sid: string, cid: string, cb: (messages: Message[]) => void): Unsubscribe {
-  const q = query(collection(db, "servers", sid, "channels", cid, "messages"), orderBy("createdAt", "desc"), limit(PAGE));
+export function watchMessages(
+  sid: string,
+  cid: string,
+  cb: (messages: Message[], fromCache?: boolean) => void,
+  count = MESSAGE_PAGE,
+): Unsubscribe {
+  const q = query(collection(db, "servers", sid, "channels", cid, "messages"), orderBy("createdAt", "desc"), limit(count));
   return onSnapshot(q, (snap) => {
     const rows = snap.docs.map((d) => {
       const data = d.data();
@@ -903,7 +909,7 @@ export function watchMessages(sid: string, cid: string, cb: (messages: Message[]
         editedAt: toDate(data.editedAt),
       };
     });
-    cb(rows.reverse());
+    cb(rows.reverse(), snap.metadata.fromCache);
   });
 }
 

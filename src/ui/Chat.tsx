@@ -16,6 +16,7 @@ import {
   reactToMessage,
   sendMessage,
   watchMessages,
+  MESSAGE_PAGE,
 } from "../data/store";
 import { audit } from "../data/audit";
 import { EmojiPicker, ImageViewer } from "./Emoji";
@@ -202,6 +203,10 @@ export function Chat(props: {
   const jumbo = (text: string) => ONLY_EMOJI.test(text) && [...text.replace(/\s/g, "")].length <= 54;
   const [messages, setMessages] = createSignal<Message[]>([]);
   const [loaded, setLoaded] = createSignal(false);
+  /** how many of the newest messages are loaded; "Load older messages" raises it */
+  const [pageSize, setPageSize] = createSignal(MESSAGE_PAGE);
+  let loadOlder: (() => void) | undefined;
+  const [loadingOlder, setLoadingOlder] = createSignal(false);
   const [editing, setEditing] = createSignal<string | undefined>();
   const [draft, setDraft] = createSignal("");
   const [error, setError] = createSignal("");
@@ -269,9 +274,14 @@ export function Chat(props: {
         setMessageActions(undefined);cancelHold();
         stickToBottom = true;
         let seen: Set<string> | undefined;
-        const stop = watchMessages(sid, cid, (rows) => {
+        let size = MESSAGE_PAGE;
+        setPageSize(size);
+        setLoadingOlder(false);
+        // set while "Load older messages" is waiting: the rows that arrive are old, not new
+        let olderAnchor: { height: number; top: number; count: number } | undefined;
+        const handle = (rows: Message[], fromCache?: boolean) => {
           // after the first load, any message not seen before is new
-          if (seen && rows.some((r) => !seen!.has(r.id))) props.onNewMessage?.();
+          if (!olderAnchor && seen && rows.some((r) => !seen!.has(r.id))) props.onNewMessage?.();
           seen = new Set(rows.map((r) => r.id));
           setMessages(previous => {
             const existing=new Map(previous.map(message=>[message.id,message]));
@@ -281,8 +291,36 @@ export function Chat(props: {
             });
           });
           setLoaded(true);
+          if (olderAnchor && rows.length > olderAnchor.count) {
+            // older messages were added above: keep the same message under the thumb (iPhone Safari does not do this itself)
+            const anchor = olderAnchor;
+            olderAnchor = undefined;
+            setLoadingOlder(false);
+            requestAnimationFrame(() => {
+              if (scroller) scroller.scrollTop = anchor.top + (scroller.scrollHeight - anchor.height);
+            });
+          } else if (olderAnchor && !fromCache && rows.length === olderAnchor.count) {
+            // the server answered with the same messages: nothing older exists
+            olderAnchor = undefined;
+            setLoadingOlder(false);
+          }
+        };
+        let stop = watchMessages(sid, cid, handle, size);
+        loadOlder = () => {
+          if (olderAnchor) return;
+          olderAnchor = { height: scroller?.scrollHeight ?? 0, top: scroller?.scrollTop ?? 0, count: messages().length };
+          setLoadingOlder(true);
+          size += MESSAGE_PAGE;
+          setPageSize(size);
+          // open the bigger window first, then drop the old one, so the list never shrinks in between
+          const previous = stop;
+          stop = watchMessages(sid, cid, handle, size);
+          previous();
+        };
+        onCleanup(() => {
+          stop();
+          loadOlder = undefined;
         });
-        onCleanup(stop);
         // the sidebar chat must not pull focus away from the call or the room
         if (!props.compact) queueMicrotask(() => input?.focus());
       },
@@ -554,6 +592,11 @@ export function Chat(props: {
         </div>
       </Show>
       <div class="chat-scroll" ref={scroller} onScroll={onScroll}>
+        <Show when={loaded() && messages().length >= pageSize()}>
+          <button type="button" class="chat-older" disabled={loadingOlder()} onClick={() => loadOlder?.()}>
+            {loadingOlder() ? "Loading older messages…" : "Load older messages"}
+          </button>
+        </Show>
         <Show when={loaded() && !messages().length}>
           <div class="chat-start">
             <h2># {props.channel.name}</h2>

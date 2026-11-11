@@ -3840,3 +3840,26 @@ img.live-tile-still {
 
 .announcement-text a { color: #7fd9ac; text-decoration: underline; }
 .announcement-text a:hover { color: #b6f3d3; }
+
+/* chat: the button at the top of a long channel that loads the next page of older messages */
+.chat-older {
+  display: block;
+  width: calc(100% - 24px);
+  min-height: 48px;
+  margin: 10px 12px;
+  border: 1px solid var(--line-2, #262626);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted, #a3a3a3);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chat-older:hover:not(:disabled) {
+  color: var(--green);
+  border-color: var(--green);
+}
+.chat-older:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
