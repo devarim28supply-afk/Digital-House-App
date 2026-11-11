@@ -143,12 +143,6 @@ const GESTR_ROOMS: Record<string, GestrRoom> = {
     live: "/living/",
     cam: { localToken: "http://localhost:5176/api/livekit-token", liveToken: "/living/api/livekit-token", room: "gestr-living", wide: false },
   },
-  // The operation booth behind the bunker's one-way glass (M2A-access is / live).
-  "m2a-operation": {
-    local: "http://localhost:5179/?spawn=operation",
-    live: "/?spawn=operation",
-    cam: { localToken: "http://localhost:5179/api/livekit-token", liveToken: "/api/livekit-token", room: "m2a-access", wide: true },
-  },
 };
 
 const ON_THIS_PC = () => /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
@@ -172,8 +166,7 @@ export function imageSrc(image?: string) {
 
 /**
  * The tiles whose Room side is the Darkwood Room (room.html, this app's own
- * CSS 3D room where everyone walks around as their webcam). The Operation
- * Room is not one of these: it opens the M2A bunker. Every other tile
+ * CSS 3D room where everyone walks around as their webcam). Every other tile
  * opens only its videochat for now, Room greyed out.
  *
  * Each key here gets its own, independent Darkwood Room: room.js already
@@ -230,23 +223,9 @@ export function hiddenFromSidebar(channel: Channel) {
   return HIDDEN_SIDEBAR_SITES.has(linkSite(channel.url));
 }
 
-/**
- * The M2A bunker, one page for the whole visit. Window and Room only change
- * the camera, so switching does not reload it. People in it are the Living
- * Room hex plate and eye, not a MetaPhysical body.
- */
-export function operationSessionUrl(_serverId: string, _channelId: string, view: "window" | "room") {
-  const room = GESTR_ROOMS["m2a-operation"];
-  const url = new URL(ON_THIS_PC() ? room.local : room.live, location.href);
-  url.searchParams.set("spawn", "operation");
-  url.searchParams.set("view", view);
-  url.searchParams.delete("fixed");
-  return url.href;
-}
 
 /** The page a tile's Room side shows, or "" when it has none. */
 export function roomUrlOf(channel: Channel, serverId: string) {
-  if (channel.roomKey === "m2a-operation") return operationSessionUrl(serverId, channel.id, "window");
   if (!channel.roomKey && ROOM_LINK_SITES.has(linkSite(channel.url))) {
     if (PLAY_IN_PAGE.has(linkSite(channel.url))) return "/api/white-torture";
     return channel.url!;
@@ -262,14 +241,6 @@ export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
   kind: "room",
   image: "/living.png",
   roomKey: "gestr-living",
-};
-
-/** The booth behind the bunker's window. You spawn in it. */
-export const OPERATION_TILE: Omit<Channel, "id" | "position"> = {
-  name: "M2A ACCESS Operation Room",
-  kind: "room",
-  image: "/operation-room.jpg",
-  roomKey: "m2a-operation",
 };
 
 /** A second, separate sitting room - its own Darkwood Room, warm instead of
@@ -717,8 +688,7 @@ export async function restoreHomeMembers(sid: string) {
 
 /**
  * The home server's built-in tiles, each with its chat, made once: the
- * M2A ACCESS Operation Room (#operation-room), Node Lounge
- * (#nodelounge-chat) and Living Room (#livingroom-chat), in HOME_TILES order above the other channels. Also
+ * Node Lounge (#nodelounge-chat) and Living Room (#livingroom-chat), in HOME_TILES order above the other channels. Also
  * renames a tile whose name has drifted from its spec, and gives a tile
  * without one its chat.
  */

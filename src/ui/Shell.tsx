@@ -73,7 +73,6 @@ type SidebarMode = "slide" | "pinned" | "hover";
 const TILE_FACES = 5;
 // other names a tile's room goes by in people's "where"
 const TILE_ALIASES: Record<string, string[]> = {
-  "m2a-operation": ["M2A-access"],
   // The tile was Living Room. People already standing there still count.
   "gestr-living": ["Living Room"],
 };
@@ -631,7 +630,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     pickChannel(ch.id);
   }
   // Who is in a tile's room right now: standing in the 3D room or in its
-  // videochat (their "where"). The bunker's lobby is the Operation Room's room.
+  // videochat (their "where").
   const peopleIn = (tile: Channel) => {
     const names = [tile.name, ...(TILE_ALIASES[tile.roomKey ?? ""] ?? [])];
     const places = new Set(names.flatMap((n) => [`In ${n}`, `Videochat · ${n}`]));
@@ -925,7 +924,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                       />
                     </label>
                   </Show>
-                  {/* built-in tiles (Operation Room, Living Room) cannot be deleted */}
+                  {/* built-in tiles (Node Lounge, Living Room) cannot be deleted */}
                   <Show when={runsServer() && !isBuiltInTile(c)}>
                     <button
                       class="icon-btn tile-del"

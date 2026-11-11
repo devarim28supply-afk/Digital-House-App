@@ -1,9 +1,8 @@
 import { Show, createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
 
-import { callFaces } from "../data/callFaces";
-import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, operationSessionUrl, roomCamOf, roomUrlOf } from "../data/store";
+import { type Channel, type Profile, hasDarkwoodRoom, imageSrc, roomCamOf, roomUrlOf } from "../data/store";
 import { setInRoom, watchRequest } from "../data/where";
-import { CallStrip, CamRow } from "./CallStrip";
+import { CallStrip } from "./CallStrip";
 import { VoiceRoom } from "./VoiceRoom";
 
 type Pane = "video" | "room";
@@ -11,15 +10,14 @@ type Pane = "video" | "room";
  * The Videochat/Room toggle itself lives in Shell.tsx's header now (same row
  * as the title, Feedback and Dashboard) - this is how it reaches in to drive
  * the actual pane, since that state (and everything switching it touches:
- * the operation bunker's camera, localStorage, the room page loading) stays
- * owned here, not duplicated in Shell.
+ * localStorage, the room page loading) stays owned here, not duplicated in Shell.
  */
 export type RoomPaneToggle = {
   pane: () => Pane;
   show: (next: Pane) => void;
-  /** Room is reachable at all: a url exists (or, the Operation Room, not on a phone) */
+  /** Room is reachable at all: the tile has a room page */
   canRoom: () => boolean;
-  /** "Videochat"/"Room" normally, "Window"/"Room" for the Operation Room */
+  /** "Videochat" / "Room" */
   labels: { video: string; room: string };
 };
 const paneKey = (cid: string) => `dh_pane_${cid}`;
@@ -63,76 +61,9 @@ export function RoomPane(props: {
   // The room page loads the first time it is shown, then stays loaded.
   const [roomLoaded, setRoomLoaded] = createSignal(pane() === "room");
 
-  const operation = () => props.channel.roomKey === "m2a-operation";
-  // One bunker page for the whole visit. Window and Room only tell that
-  // page which camera to use, so the src never changes and nobody drops.
-  const operationSrc = operationSessionUrl(props.serverId, props.channel.id, pane() === "room" ? "room" : "window");
-  const operationOrigin = new URL(operationSrc, location.href).origin;
-  let operationFrame: HTMLIFrameElement | undefined;
-  const tellOperation = (view: "window" | "room") =>
-    operationFrame?.contentWindow?.postMessage({ type: "dh-operation-view", view }, operationOrigin);
-  // One camera: this call already has it. The bunker must not open a second
-  // one, or the device goes black for everyone else. Frames of this person's
-  // camera are handed to that page for the hex plate.
-  let operationCamGen = 0;
-  createEffect(on(
-    () => {
-      if (!operation()) return undefined;
-      const faces = callFaces();
-      if (!faces || faces.channelKey !== `${props.serverId}/${props.channel.id}`) return undefined;
-      return faces.callers.find((c) => c.identity === props.uid)?.video;
-    },
-    (stream) => {
-      const gen = ++operationCamGen;
-      const send = (data: Record<string, unknown>, transfer?: Transferable[]) =>
-        operationFrame?.contentWindow?.postMessage({ gen, ...data }, operationOrigin, transfer ?? []);
-      if (!stream) {
-        send({ type: "dh-operation-cam", on: false });
-        return;
-      }
-      const video = document.createElement("video");
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.setAttribute("playsinline", "");
-      video.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
-      video.srcObject = stream;
-      document.body.appendChild(video);
-      video.play().catch(() => {});
-      let alive = true;
-      let busy = false;
-      const pump = () => {
-        if (!alive) return;
-        window.setTimeout(async () => {
-          if (!alive) return;
-          const win = operationFrame?.contentWindow;
-          if (!busy && win && video.readyState >= 2 && video.videoWidth > 0) {
-            busy = true;
-            try {
-              const frame = await createImageBitmap(video);
-              if (!alive || !operationFrame?.contentWindow) frame.close();
-              else send({ type: "dh-operation-frame", frame }, [frame]);
-            } catch {
-              /* this frame missed; the next one still goes */
-            }
-            busy = false;
-          }
-          if (alive) pump();
-        }, 80);
-      };
-      pump();
-      onCleanup(() => {
-        alive = false;
-        send({ type: "dh-operation-cam", on: false, gen: ++operationCamGen });
-        video.srcObject = null;
-        video.remove();
-      });
-    },
-  ));
   // Looking at the room: the Online list says "In <room>".
-  // The Operation Room is always that window, so it counts the whole time.
   createEffect(() => {
-    if (!operation() && pane() !== "room") return;
+    if (pane() !== "room") return;
     setInRoom(props.channel.name);
     onCleanup(() => setInRoom(undefined));
   });
@@ -167,7 +98,6 @@ export function RoomPane(props: {
     if (phone() && next === "room") return;
     setPane(next);
     if (next === "room") setRoomLoaded(true);
-    if (operation()) tellOperation(next === "room" ? "room" : "window");
     try {
       localStorage.setItem(paneKey(props.channel.id), next);
     } catch {
@@ -176,7 +106,7 @@ export function RoomPane(props: {
   }
 
   const url = () => roomUrlOf(props.channel, props.serverId);
-  const canRoom = () => (operation() ? !phone() : Boolean(url()));
+  const canRoom = () => Boolean(url());
   // A Darkwood Room is loaded for everyone in the tile, even on the videochat
   // side (hidden, and idle: it draws, tracks and plays nothing while hidden).
   // Then the room's TV keeps running for whoever is still in the tile when
@@ -209,19 +139,10 @@ export function RoomPane(props: {
   // (none while the tile has no room attached, and none from the Darkwood
   // Room, which has no room camera)
   const roomView = () => {
-    const cam = url() && !hasDarkwoodRoom(props.channel) && !operation() ? roomCamOf(props.channel) : null;
+    const cam = url() && !hasDarkwoodRoom(props.channel) ? roomCamOf(props.channel) : null;
     return cam ? { ...cam, username: props.username } : undefined;
   };
-  const operationCallers = () => {
-    const faces = callFaces();
-    if (!faces || faces.channelKey !== `${props.serverId}/${props.channel.id}`) return [];
-    return faces.callers;
-  };
-
   return (
-    <Show
-      when={operation()}
-      fallback={
     <div class="room-pane">
       <div class="pane-layer" classList={{ hidden: pane() !== "video" }}>
         <VoiceRoom
@@ -267,35 +188,5 @@ export function RoomPane(props: {
         </Show>
       </div>
     </div>
-      }
-    >
-      <div class="room-pane operation" classList={{ "in-room": pane() === "room" }}>
-        <div class="operation-stage">
-          <div class="operation-view">
-            <iframe
-              ref={operationFrame}
-              src={operationSrc}
-              onLoad={() => tellOperation(pane() === "room" ? "room" : "window")}
-              title={props.channel.name}
-              allow="camera; microphone; fullscreen; autoplay; pointer-lock"
-            />
-          </div>
-          <div class="operation-cams">
-            <CamRow callers={operationCallers()} profiles={props.profiles} fit />
-          </div>
-        </div>
-        <VoiceRoom
-          serverId={props.serverId}
-          channel={props.channel}
-          uid={props.uid}
-          name={props.name}
-          profiles={props.profiles}
-          teams={props.teams}
-          autoJoin
-          webcamOnly
-          onLeave={props.onLeave}
-        />
-      </div>
-    </Show>
   );
 }

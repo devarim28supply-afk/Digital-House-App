@@ -433,18 +433,12 @@ export function VoiceRoom(props: {
    * screen share on and off (one camera and one share for both).
    */
   seats?: boolean;
-  /**
-   * Operation Room: mic and camera only. The window is the view, so this
-   * call's own tiles stay hidden, and Share screen and Stream are not here.
-   */
-  webcamOnly?: boolean;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
-  // Wall Street's layout is fixed (broadcastPlan, below) - a screen share
-  // would have nowhere defined to go in it, so it's off there the same way
-  // it's off for webcamOnly (the Operation Room).
-  const noShare = () => props.webcamOnly || isBroadcastRoom(props.channel.roomKey);
+  // A broadcast room's layout is fixed (broadcastPlan, below) - a screen share
+  // would have nowhere defined to go in it, so it's off there.
+  const noShare = () => isBroadcastRoom(props.channel.roomKey);
   // Hide / show the Room view, remembered per tile.
   const hiddenKey = () => `dh_roomview_hidden_${props.channel.id}`;
   const readHidden = () => {
@@ -688,14 +682,12 @@ export function VoiceRoom(props: {
       const pass = await fetchPass(props.serverId, props.channel.id, Boolean(props.viewOnly));
       // LiveKit pauses a video it cannot see attached on the page, and the
       // picture goes black. The wall (viewOnly) is a page turned in 3D space.
-      // The operation room hides these tiles and plays the same tracks in the
-      // webcam row, which LiveKit does not know about. Both keep every video.
       // H.264 for everything we send: Chrome hands it to the graphics card's own
       // video encoder (NVENC), so a game holding the GPU's 3D engine near 100%
       // no longer starves the webcam and the stream (Kaalob's slow webcam).
       const phoneCap = phoneCameraCapture();
       const next = new Room({
-        adaptiveStream: !props.viewOnly && !props.webcamOnly,
+        adaptiveStream: !props.viewOnly,
         dynacast: true,
         publishDefaults: { videoCodec: "h264" },
         // Without this, LiveKit fills a missing size with exact 1280×720 (16:9).
@@ -777,8 +769,7 @@ export function VoiceRoom(props: {
       // Kaalob: always start the camera on joining - never leave it off the
       // way mic/camera used to both just "start off until you switch them
       // on". The wall (viewOnly) has no camera or dock at all, so it's
-      // skipped; the Operation Room (webcamOnly) is camera-first, so it's
-      // included.
+      // skipped.
       if (!props.viewOnly && !camShown() && (back ? back.cam : true)) void toggleCam();
       if (!props.viewOnly && back?.mic) void next.localParticipant.setMicrophoneEnabled(true).catch(() => {});
     } catch (err) {
@@ -867,7 +858,6 @@ export function VoiceRoom(props: {
   const [streamOn, setStreamOn] = createSignal(false);
   const [streamBusy, setStreamBusy] = createSignal(false);
   async function toggleStream() {
-    if (props.webcamOnly) return;
     const me = room()?.localParticipant;
     if (!me || streamBusy()) return;
     setError("");
@@ -1365,7 +1355,6 @@ export function VoiceRoom(props: {
   }
 
   async function startStreamCam() {
-    if (props.webcamOnly) return;
     const me = room()?.localParticipant;
     const id = streamCamDevice;
     if (!me || !id) {
@@ -2257,7 +2246,7 @@ export function VoiceRoom(props: {
   }
 
   return (
-    <div class="voice" classList={{ phone: Boolean(room()) && layout().phone, "cams-only": Boolean(props.webcamOnly) }}>
+    <div class="voice" classList={{ phone: Boolean(room()) && layout().phone }}>
       <Show
         when={room()}
         fallback={
@@ -2387,7 +2376,7 @@ export function VoiceRoom(props: {
                     full={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
                   />
                 </button>
-                <Show when={!props.webcamOnly && !coarsePhone()}>
+                <Show when={!coarsePhone()}>
                   <StreamMenu />
                 </Show>
               </>
