@@ -7,6 +7,7 @@ import {
   DisconnectReason,
   type LocalParticipant,
   type LocalTrackPublication,
+  type LocalVideoTrack,
   type Participant,
   type RemoteTrack,
   Room,
@@ -29,6 +30,7 @@ import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 import "./call-status.css";
+import { CROP_PROCESSOR_NAME, createCropProcessor } from "./phoneCrop";
 
 /** Why a call ended that must NOT be answered by joining again: you chose it, or someone else did. */
 const NO_REJOIN = new Set<DisconnectReason>([
@@ -188,12 +190,30 @@ function phoneLockConstraints(): MediaTrackConstraints {
     frameRate: { ideal: 30, max: 30 },
   } as MediaTrackConstraints;
 }
+/**
+ * This phone's camera ignores the shape it is asked for (found out the first time every request
+ * below failed). From then on the picture is cut to the held shape right away, with no more asking.
+ */
+let deviceNeedsCrop = false;
+/** Cut the camera picture to the shape the phone is held in (phoneCrop.ts). It follows turning by itself. */
+async function engageCrop(local: LocalVideoTrack) {
+  if (local.getProcessor()?.name === CROP_PROCESSOR_NAME) return;
+  try {
+    await local.setProcessor(createCropProcessor(phoneAspect));
+  } catch {
+    /* the picture already publishing stays */
+  }
+}
 /** The camera opened the wrong way round. Ask again until the frame matches how the phone is held. */
 async function widenPhoneCamera(active: LocalParticipant) {
   if (!phoneCameraCapture()) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track;
   const media = local?.mediaStreamTrack;
   if (!media || media.readyState !== "live") return;
+  if (deviceNeedsCrop) {
+    await engageCrop(local as LocalVideoTrack);
+    return;
+  }
   if (await shownMatchesHeld(media)) return;
   const wide = phoneLandscape();
   try {
@@ -241,11 +261,20 @@ async function widenPhoneCamera(active: LocalParticipant) {
     if (await shownMatchesHeld(media)) return;
   }
   const restart = local as { restartTrack?: (options?: VideoCaptureOptions) => Promise<void> };
-  if (!restart.restartTrack) return;
-  try {
-    await restart.restartTrack(phoneCameraCapture());
-  } catch {
-    /* the picture already publishing stays */
+  if (restart.restartTrack) {
+    try {
+      await restart.restartTrack(phoneCameraCapture());
+    } catch {
+      /* the picture already publishing stays */
+    }
+  }
+  // Still the wrong shape: this camera will not give the shape asked for. A picture must never sit
+  // inside a tile of the other shape, so cut it to the held shape ourselves.
+  const now = active.getTrackPublication(Track.Source.Camera)?.track;
+  const nowMedia = now?.mediaStreamTrack;
+  if (now && nowMedia && nowMedia.readyState === "live" && !(await shownMatchesHeld(nowMedia))) {
+    deviceNeedsCrop = true;
+    await engageCrop(now as LocalVideoTrack);
   }
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
