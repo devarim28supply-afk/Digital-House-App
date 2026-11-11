@@ -268,8 +268,10 @@ export function broadcastPlan(args: {
  * with a fixed 150px row and 53% of the width, which is far too small on a phone, and the phone's own
  * layout used to be drawn on top of the 3D room. Here the room (the TV) is one block and everyone's webcam
  * sits in its own block next to it, each tile the shape of its picture:
- *   upright:  the room across the top, everyone in a grid under it
- *   sideways: the room on the left, everyone stacked in a column on the right
+ *   upright:  the room across the top, everyone in a grid under it (3 columns from 5 people on, sized for
+ *             3 rows, so 6 people sit in the same cells as 9)
+ *   sideways: the room fills the whole screen and everyone floats over it in one row on the floor, under
+ *             the TV and never over it (`tvBottom` is where the TV's bottom edge is, 0 to 1 of the height)
  */
 export function livingPhonePlan(args: {
   keys: string[];
@@ -277,6 +279,8 @@ export function livingPhonePlan(args: {
   width: number;
   height: number;
   landscape: boolean;
+  /** the TV's bottom edge as a fraction of the room's height, projected live from the 3D room */
+  tvBottom?: number;
 }): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
   const pad = 8;
   const gap = 8;
@@ -285,11 +289,14 @@ export function livingPhonePlan(args: {
   const keys = args.keys.filter(Boolean);
   const n = keys.length;
   const places: Record<string, PhoneStyle> = {};
-  const place = (region: { x: number; y: number; w: number; h: number }, cols: number) => {
+  const place = (region: { x: number; y: number; w: number; h: number }, cols: number, rowsReserved = 0) => {
     if (n === 0 || region.w <= 0 || region.h <= 0) return;
-    const grid = deskPlan({ keys, portraitKeys: args.portraitKeys, width: region.w, height: region.h, cols, gap });
-    for (const [key, style] of Object.entries(grid)) {
-      places[key] = { ...style, left: px(parseFloat(style.left) + region.x), top: px(parseFloat(style.top) + region.y) };
+    // from 5 people on the cells are sized for a full block (3 columns by 3 rows), not for the people there
+    const filler = rowsReserved > 0 ? Array.from({ length: Math.max(0, cols * rowsReserved - n) }, (_, i) => `\u0000filler${i}`) : [];
+    const grid = deskPlan({ keys: [...keys, ...filler], portraitKeys: args.portraitKeys, width: region.w, height: region.h, cols, gap });
+    for (const key of keys) {
+      const style = grid[key];
+      if (style) places[key] = { ...style, left: px(parseFloat(style.left) + region.x), top: px(parseFloat(style.top) + region.y) };
     }
   };
   let big: PhoneStyle;
@@ -297,11 +304,25 @@ export function livingPhonePlan(args: {
     // the room is about as wide as it is tall (its TV needs that to fit); the rest of the height is for faces
     const roomH = Math.min(n ? H * 0.52 : H, W / 1.45);
     big = box(pad, pad, W, roomH);
-    place({ x: pad, y: pad + roomH + gap, w: W, h: Math.max(0, H - roomH - gap) }, n <= 2 ? Math.max(1, n) : Math.ceil(Math.sqrt(n)));
+    const region = { x: pad, y: pad + roomH + gap, w: W, h: Math.max(0, H - roomH - gap) };
+    if (n >= 5) place(region, 3, 3);
+    else place(region, n <= 2 ? Math.max(1, n) : 2);
   } else {
-    const roomW = n ? W * 0.6 : W;
-    big = box(pad, pad, roomW, H);
-    place({ x: pad + roomW + gap, y: pad, w: Math.max(0, W - roomW - gap), h: H }, n > 4 ? 2 : 1);
+    big = box(pad, pad, W, H);
+    if (n > 0) {
+      // one row on the floor, under the TV: as tall as the floor allows, shrunk to fit the width
+      const floorTop = pad + Math.min(1, Math.max(0, args.tvBottom ?? 0.72)) * H + gap;
+      const floorH = Math.max(24, pad + H - floorTop);
+      const ratios = keys.map((key) => (args.portraitKeys?.includes(key) ? 9 / 16 : 16 / 9));
+      const sum = ratios.reduce((a, b) => a + b, 0);
+      const h = Math.max(16, Math.min(150, floorH, (W - gap * (n - 1)) / sum));
+      const rowW = h * sum + gap * (n - 1);
+      let x = pad + Math.max(0, (W - rowW) / 2);
+      keys.forEach((key, i) => {
+        places[key] = box(x, floorTop, h * ratios[i], h);
+        x += h * ratios[i] + gap;
+      });
+    }
   }
   big["z-index"] = "0";
   return { places, big };

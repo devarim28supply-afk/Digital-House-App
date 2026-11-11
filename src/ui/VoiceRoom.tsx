@@ -1610,7 +1610,7 @@ export function VoiceRoom(props: {
       .map((t) => t.key)
       .concat(loneRoomFaces().map(([name]) => `face:${name}`), teamScreens().map(teamKey));
     if (phoneNow()) {
-      return livingPhonePlan({ keys, portraitKeys: tallKeys(), width: w, height: h, landscape: w >= h }).big as JSX.CSSProperties;
+      return livingPhonePlan({ keys, portraitKeys: tallKeys(), width: w, height: h, landscape: w >= h, tvBottom: livingRoomTvBottom() }).big as JSX.CSSProperties;
     }
     return broadcastPlan({
       keys,
@@ -1694,7 +1694,7 @@ export function VoiceRoom(props: {
         ...teamScreens().map(teamKey),
       ];
       const { places } = phoneNow()
-        ? livingPhonePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, landscape: boxW >= boxH })
+        ? livingPhonePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, landscape: boxW >= boxH, tvBottom: livingRoomTvBottom() })
         : broadcastPlan({
             keys,
             width: boxW,
