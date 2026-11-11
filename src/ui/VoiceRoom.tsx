@@ -756,9 +756,7 @@ export function VoiceRoom(props: {
       void next.startAudio().catch(() => {});
       setAudioBlocked(!next.canPlaybackAudio);
       bump();
-      if (phoneNow()) {
-        void next.localParticipant.setAttributes({ dh_phone: "1" }).catch(() => {});
-      }
+      if (phoneNow()) tellShape(next);
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
@@ -1178,12 +1176,22 @@ export function VoiceRoom(props: {
     return result;
   }
 
+  // Tell everyone else how this phone is held: "1" = upright (a tall picture), "0" = on its side, a
+  // 16:9 picture like a desktop's. Other people's screens lay the tile out from this, so held sideways
+  // a phone looks the same to them as any other 16:9 camera.
+  function tellShape(me: Room) {
+    void me.localParticipant.setAttributes({ dh_phone: phoneLandscape() ? "0" : "1" }).catch(() => {});
+  }
+
   // Turning the phone changes which shape its camera should be. Ask again
   // for whichever one that now is - widenPhoneCamera reads it fresh.
   if (COARSE_POINTER && typeof screen !== "undefined" && screen.orientation) {
     const onTurn = () => {
-      const me = room()?.localParticipant;
-      if (me?.isCameraEnabled) void widenPhoneCamera(me);
+      const current = room();
+      if (!current) return;
+      if (phoneNow()) tellShape(current);
+      const me = current.localParticipant;
+      if (me.isCameraEnabled) void widenPhoneCamera(me);
     };
     screen.orientation.addEventListener("change", onTurn);
     onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
