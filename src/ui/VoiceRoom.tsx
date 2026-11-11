@@ -7,7 +7,6 @@ import {
   DisconnectReason,
   type LocalParticipant,
   type LocalTrackPublication,
-  type LocalVideoTrack,
   type Participant,
   type RemoteTrack,
   Room,
@@ -135,155 +134,6 @@ function phoneCameraCapture(loose = false): VideoCaptureOptions | undefined {
       frameRate: { ideal: 30, max: 30 } as unknown as number,
     },
   } as VideoCaptureOptions;
-}
-function matchesAspect(width: number, height: number, aspect: number): boolean {
-  if (width <= 0 || height <= 0) return false;
-  return Math.abs(width / height - aspect) < 0.06;
-}
-function settingsSize(media: MediaStreamTrack): { width: number; height: number } {
-  const settings = media.getSettings();
-  return { width: settings.width ?? 0, height: settings.height ?? 0 };
-}
-/** The frame the tile draws. getSettings() can still be the sideways sensor. */
-async function shownSize(media: MediaStreamTrack): Promise<{ width: number; height: number }> {
-  const fallback = settingsSize(media);
-  if (typeof document === "undefined") return fallback;
-  const video = document.createElement("video");
-  video.muted = true;
-  video.playsInline = true;
-  video.srcObject = new MediaStream([media]);
-  try {
-    await video.play().catch(() => undefined);
-    const sawFrame = await new Promise<boolean>((resolve) => {
-      if (typeof video.requestVideoFrameCallback === "function") {
-        video.requestVideoFrameCallback(() => resolve(true));
-      } else {
-        video.addEventListener("loadeddata", () => resolve(true), { once: true });
-      }
-      window.setTimeout(() => resolve(false), 400);
-    });
-    if (sawFrame && video.videoWidth > 0 && video.videoHeight > 0) {
-      return { width: video.videoWidth, height: video.videoHeight };
-    }
-  } finally {
-    video.pause();
-    video.srcObject = null;
-  }
-  return fallback;
-}
-/**
- * A new capture that asks for the held shape by size only: no exact aspect and no crop-and-scale.
- * Phones then apply their own turning rules, which give a real upright picture when held upright
- * and a real wide one when held sideways. An exact-aspect request is what pinned some cameras to
- * the shape they started in.
- */
-function phoneNativeCapture(): VideoCaptureOptions | undefined {
-  if (!phoneCameraCapture()) return undefined;
-  const wide = phoneLandscape();
-  return {
-    resolution: {
-      width: wide ? 1280 : 720,
-      height: wide ? 720 : 1280,
-      frameRate: 30,
-    },
-  } as VideoCaptureOptions;
-}
-/**
- * iPhone Safari (seen on a real iPhone) hands back a wide 16:9 picture when held upright, whether it is asked
- * for 9:16 exactly or by size only. An earlier fix found that some phones apply the aspect to the sensor,
- * which is wide, and then turn the picture: there the OPPOSITE shape is what gives the held one. So each shape
- * is tried in turn, and the one that works on this phone is remembered and tried first from then on.
- */
-function phoneOppositeCapture(): VideoCaptureOptions | undefined {
-  if (!phoneCameraCapture()) return undefined;
-  const wide = phoneLandscape();
-  return {
-    aspectRatio: { exact: wide ? PHONE_ASPECT : PHONE_ASPECT_WIDE },
-    resizeMode: "crop-and-scale",
-    resolution: {
-      width: { ideal: wide ? 1080 : 1920 } as unknown as number,
-      height: { ideal: wide ? 1920 : 1080 } as unknown as number,
-      frameRate: { ideal: 30, max: 30 } as unknown as number,
-    },
-  } as VideoCaptureOptions;
-}
-/** The camera with nothing asked of it but which way it faces. */
-function phoneBareCapture(): VideoCaptureOptions | undefined {
-  if (!phoneCameraCapture()) return undefined;
-  return { facingMode: "user" } as VideoCaptureOptions;
-}
-let winningRecipe: string | undefined;
-const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-/** The last few camera-shape steps, shown by the ?camdebug=1 overlay (for finding out what a phone's camera really does). */
-const camLog: string[] = [];
-function logCam(line: string) {
-  camLog.push(`${new Date().toTimeString().slice(3, 8)} ${line}`);
-  if (camLog.length > 12) camLog.shift();
-}
-let reshapeBusy = false;
-let reshapeAgain = false;
-/**
- * Make the picture this phone sends the shape it is held in: 9:16 upright, 16:9 sideways. The picture
- * is NEVER cut or padded to fit a tile (Kaalob's rule): the whole camera picture is always shown, and
- * every tile takes the shape of the picture it holds. Each step looks at the frame that actually comes out:
- *   1. the raw camera picture is checked
- *   2. a new capture asking for the held size (phoneNativeCapture)
- *   3. the exact-aspect request (phoneCameraCapture)
- * If the camera still gives the other shape, that is the shape everyone sees: the tile follows the real picture.
- * It runs again on every turn.
- */
-async function widenPhoneCamera(active: LocalParticipant) {
-  if (reshapeBusy) {
-    reshapeAgain = true; // a turn happened while this was running: go round once more
-    return;
-  }
-  reshapeBusy = true;
-  try {
-    do {
-      reshapeAgain = false;
-      await reshapeOnce(active);
-    } while (reshapeAgain);
-  } finally {
-    reshapeBusy = false;
-  }
-}
-async function reshapeOnce(active: LocalParticipant) {
-  if (!phoneCameraCapture()) return;
-  const local = active.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
-  if (!local) return;
-  const rightShape = async (step: string) => {
-    const media = local.mediaStreamTrack;
-    if (!media || media.readyState !== "live") {
-      logCam(`${step}: no live camera`);
-      return false;
-    }
-    const shown = await shownSize(media);
-    const ok = matchesAspect(shown.width, shown.height, phoneAspect());
-    logCam(`${step}: picture ${shown.width}x${shown.height}, wanted ${phoneLandscape() ? "wide" : "tall"} -> ${ok ? "ok" : "WRONG"}`);
-    return ok;
-  };
-  if (await rightShape("turn")) return;
-  const recipes: [string, VideoCaptureOptions | undefined][] = [
-    ["by size", phoneNativeCapture()],
-    ["exact held shape", phoneCameraCapture()],
-    ["opposite shape", phoneOppositeCapture()],
-    ["bare camera", phoneBareCapture()],
-  ];
-  recipes.sort((a, b) => Number(b[0] === winningRecipe) - Number(a[0] === winningRecipe));
-  for (const [name, options] of recipes) {
-    if (!options) continue;
-    try {
-      await local.restartTrack(options);
-    } catch (err) {
-      logCam(`${name}: failed ${err instanceof Error ? err.name : "error"}`);
-      continue;
-    }
-    await pause(350);
-    if (await rightShape(name)) {
-      winningRecipe = name;
-      return;
-    }
-  }
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
   name: STREAM_CAM,
@@ -606,8 +456,7 @@ export function VoiceRoom(props: {
       "position:fixed;left:0;right:0;top:0;z-index:99999;margin:0;padding:max(6px,env(safe-area-inset-top)) 8px 6px;background:rgba(0,0,0,.88);color:#4ade80;font:10px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;pointer-events:none";
     document.body.appendChild(box);
     const tick = () => {
-      const local = room()?.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
-      const media = local?.mediaStreamTrack;
+      const media = room()?.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
       const st = media?.getSettings();
       box.textContent = [
         `held: ${screen.orientation?.type ?? "unknown"} -> ${phoneLandscape() ? "sideways" : "upright"}; window ${window.innerWidth}x${window.innerHeight}`,
@@ -615,8 +464,6 @@ export function VoiceRoom(props: {
           ? `camera now: ${st?.width}x${st?.height} aspect ${st?.aspectRatio?.toFixed?.(3)} resizeMode ${(st as { resizeMode?: string })?.resizeMode} facing ${st?.facingMode}`
           : "camera now: off",
         `asked: ${media ? JSON.stringify(media.getConstraints()) : "-"}`,
-        `processor: ${local?.getProcessor?.()?.name ?? "none"}`,
-        ...camLog,
       ].join("\n");
     };
     tick();
@@ -821,7 +668,6 @@ export function VoiceRoom(props: {
       void next.startAudio().catch(() => {});
       setAudioBlocked(!next.canPlaybackAudio);
       bump();
-      if (phoneNow()) void tellShape(next);
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
@@ -1237,48 +1083,7 @@ export function VoiceRoom(props: {
     });
     const result = await Promise.race([attempt, slow]);
     window.clearTimeout(timer);
-    if (result.ok && on) {
-      await widenPhoneCamera(active);
-      const current = room();
-      if (current && phoneNow()) void tellShape(current);
-    }
     return result;
-  }
-
-  // Tell everyone else how this phone is held: "1" = upright (a tall picture), "0" = on its side, a
-  // 16:9 picture like a desktop's. Other people's screens lay the tile out from this, so held sideways
-  // a phone looks the same to them as any other 16:9 camera.
-  async function tellShape(me: Room) {
-    let tall = !phoneLandscape();
-    const media = me.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
-    if (media && media.readyState === "live") {
-      const shown = await shownSize(media);
-      if (shown.width > 0 && shown.height > 0) tall = shown.height > shown.width; // the real frame beats how the phone is held
-    }
-    await me.localParticipant.setAttributes({ dh_phone: tall ? "1" : "0" }).catch(() => {});
-  }
-
-  // Turning the phone changes which shape its camera should be. Ask again
-  // for whichever one that now is - widenPhoneCamera reads it fresh.
-  if (COARSE_POINTER && typeof screen !== "undefined" && screen.orientation) {
-    const onTurn = () => {
-      const current = room();
-      if (!current) return;
-      if (phoneNow()) void tellShape(current);
-      const me = current.localParticipant;
-      if (!me.isCameraEnabled) return;
-      void widenPhoneCamera(me).then(() => (phoneNow() ? tellShape(current) : undefined));
-      // The turned picture arrives a moment after the turn. Check what really comes out and, if it is
-      // still the old shape (turning back upright, in particular), cut it to the held one, then tell everyone.
-      for (const wait of [600, 1800]) {
-        window.setTimeout(() => {
-          if (room() !== current || !current.localParticipant.isCameraEnabled) return;
-          void widenPhoneCamera(current.localParticipant).then(() => (phoneNow() ? tellShape(current) : undefined));
-        }, wait);
-      }
-    };
-    screen.orientation.addEventListener("change", onTurn);
-    onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
   }
 
   async function toggleCam() {
@@ -1690,8 +1495,7 @@ export function VoiceRoom(props: {
   // says about how it holds its phone is only a hint for the moment before the first frame, so a
   // phone that claims "upright" but sends a 16:9 picture is never drawn as a tall tile with the
   // wide picture letterboxed inside it.
-  const isTall = (key: string, claim: string | undefined, measured: Record<string, boolean>) =>
-    measured[key] !== undefined ? measured[key] === false : claim === "1";
+  const isTall = (key: string, measured: Record<string, boolean>) => measured[key] === false;
   function rememberFrame(key: string, wide: boolean) {
     setFrameWide((prev) => (prev[key] === wide ? prev : { ...prev, [key]: wide }));
   }
@@ -1759,7 +1563,7 @@ export function VoiceRoom(props: {
         // every tile, your own included, is tall only when the picture it holds really is tall. How the
         // phone is held is only the guess for your own picture before its first frame is measured.
         portraitKeys: cams
-          .filter((t) => isTall(t.key, t.participant.isLocal ? (landscape ? "0" : "1") : t.participant.attributes?.dh_phone, wide))
+          .filter((t) => isTall(t.key, wide))
           .map((t) => t.key),
       });
       const open = screens.find((t) => t.key === openShare());
@@ -1845,7 +1649,7 @@ export function VoiceRoom(props: {
     const onPhone = (key: string) => {
       const tile = tiles().find((t) => t.key === key);
       if (!tile || tile.screen || tile.participant.isLocal) return wideMap[key] === false && !tile?.screen;
-      return isTall(key, tile.participant.attributes?.dh_phone, wideMap);
+      return isTall(key, wideMap);
     };
     const gridKeys = [
       ...tiles().map((t) => t.key),
