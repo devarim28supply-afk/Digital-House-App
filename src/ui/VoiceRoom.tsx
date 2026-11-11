@@ -189,6 +189,12 @@ function phoneNativeCapture(): VideoCaptureOptions | undefined {
   } as VideoCaptureOptions;
 }
 const pause = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+/** The last few camera-shape steps, shown by the ?camdebug=1 overlay (for finding out what a phone's camera really does). */
+const camLog: string[] = [];
+function logCam(line: string) {
+  camLog.push(`${new Date().toTimeString().slice(3, 8)} ${line}`);
+  if (camLog.length > 12) camLog.shift();
+}
 let reshapeBusy = false;
 let reshapeAgain = false;
 /**
@@ -220,22 +226,30 @@ async function reshapeOnce(active: LocalParticipant) {
   if (!phoneCameraCapture()) return;
   const local = active.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
   if (!local) return;
-  const rightShape = async () => {
+  const rightShape = async (step: string) => {
     const media = local.mediaStreamTrack;
-    if (!media || media.readyState !== "live") return false;
+    if (!media || media.readyState !== "live") {
+      logCam(`${step}: no live camera`);
+      return false;
+    }
     const shown = await shownSize(media);
-    return matchesAspect(shown.width, shown.height, phoneAspect());
+    const ok = matchesAspect(shown.width, shown.height, phoneAspect());
+    logCam(`${step}: picture ${shown.width}x${shown.height}, wanted ${phoneLandscape() ? "wide" : "tall"} -> ${ok ? "ok" : "WRONG"}`);
+    return ok;
   };
-  if (await rightShape()) return;
+  if (await rightShape("turn")) return;
+  let n = 0;
   for (const options of [phoneNativeCapture(), phoneCameraCapture()]) {
+    n += 1;
     if (!options) continue;
     try {
       await local.restartTrack(options);
-    } catch {
+    } catch (err) {
+      logCam(`restart ${n} failed: ${err instanceof Error ? err.name : "error"}`);
       continue;
     }
     await pause(350);
-    if (await rightShape()) return;
+    if (await rightShape(`restart ${n}`)) return;
   }
 }
 const STREAM_CAM_PUBLISH: TrackPublishOptions = {
@@ -550,6 +564,34 @@ export function VoiceRoom(props: {
   createEffect(() => {
     const current = room();
     if (current && !props.viewOnly) onCleanup(bindCallControls(current));
+  });
+  // ?camdebug=1 on the app address: a text overlay with what this phone's camera is really doing
+  createEffect(() => {
+    if (!room() || props.viewOnly || !new URLSearchParams(location.search).has("camdebug")) return;
+    const box = document.createElement("pre");
+    box.style.cssText =
+      "position:fixed;left:0;right:0;top:0;z-index:99999;margin:0;padding:max(6px,env(safe-area-inset-top)) 8px 6px;background:rgba(0,0,0,.88);color:#4ade80;font:10px/1.35 ui-monospace,Menlo,monospace;white-space:pre-wrap;pointer-events:none";
+    document.body.appendChild(box);
+    const tick = () => {
+      const local = room()?.localParticipant.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined;
+      const media = local?.mediaStreamTrack;
+      const st = media?.getSettings();
+      box.textContent = [
+        `held: ${screen.orientation?.type ?? "unknown"} -> ${phoneLandscape() ? "sideways" : "upright"}; window ${window.innerWidth}x${window.innerHeight}`,
+        media
+          ? `camera now: ${st?.width}x${st?.height} aspect ${st?.aspectRatio?.toFixed?.(3)} resizeMode ${(st as { resizeMode?: string })?.resizeMode} facing ${st?.facingMode}`
+          : "camera now: off",
+        `asked: ${media ? JSON.stringify(media.getConstraints()) : "-"}`,
+        `processor: ${local?.getProcessor?.()?.name ?? "none"}`,
+        ...camLog,
+      ].join("\n");
+    };
+    tick();
+    const timer = window.setInterval(tick, 600);
+    onCleanup(() => {
+      window.clearInterval(timer);
+      box.remove();
+    });
   });
   // A phone screen that dims or locks mid-call stops the camera: keep it awake while the call is up,
   // and ask again when the page comes back to the front (the browser lets go of it in the background).
