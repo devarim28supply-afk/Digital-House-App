@@ -756,7 +756,7 @@ export function VoiceRoom(props: {
       void next.startAudio().catch(() => {});
       setAudioBlocked(!next.canPlaybackAudio);
       bump();
-      if (phoneNow()) tellShape(next);
+      if (phoneNow()) void tellShape(next);
       if (props.seats) seatControl = startSeats(next);
       // In the call: also watch the 3D room's camera (the Room view).
       if (props.roomView) startRoomView(next);
@@ -1172,15 +1172,25 @@ export function VoiceRoom(props: {
     });
     const result = await Promise.race([attempt, slow]);
     window.clearTimeout(timer);
-    if (result.ok && on) await widenPhoneCamera(active);
+    if (result.ok && on) {
+      await widenPhoneCamera(active);
+      const current = room();
+      if (current && phoneNow()) void tellShape(current);
+    }
     return result;
   }
 
   // Tell everyone else how this phone is held: "1" = upright (a tall picture), "0" = on its side, a
   // 16:9 picture like a desktop's. Other people's screens lay the tile out from this, so held sideways
   // a phone looks the same to them as any other 16:9 camera.
-  function tellShape(me: Room) {
-    void me.localParticipant.setAttributes({ dh_phone: phoneLandscape() ? "0" : "1" }).catch(() => {});
+  async function tellShape(me: Room) {
+    let tall = !phoneLandscape();
+    const media = me.localParticipant.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
+    if (media && media.readyState === "live") {
+      const shown = await shownSize(media);
+      if (shown.width > 0 && shown.height > 0) tall = shown.height > shown.width; // the real frame beats how the phone is held
+    }
+    await me.localParticipant.setAttributes({ dh_phone: tall ? "1" : "0" }).catch(() => {});
   }
 
   // Turning the phone changes which shape its camera should be. Ask again
@@ -1189,9 +1199,9 @@ export function VoiceRoom(props: {
     const onTurn = () => {
       const current = room();
       if (!current) return;
-      if (phoneNow()) tellShape(current);
+      if (phoneNow()) void tellShape(current);
       const me = current.localParticipant;
-      if (me.isCameraEnabled) void widenPhoneCamera(me);
+      if (me.isCameraEnabled) void widenPhoneCamera(me).then(() => (phoneNow() ? tellShape(current) : undefined));
     };
     screen.orientation.addEventListener("change", onTurn);
     onCleanup(() => screen.orientation.removeEventListener("change", onTurn));
@@ -1602,6 +1612,12 @@ export function VoiceRoom(props: {
   // Which cameras are taller than wide. Phone tiles use this: desktop stays
   // 16:9, a phone picture is the vertical tile beside it.
   const [frameWide, setFrameWide] = createSignal<Record<string, boolean>>({});
+  // A tile is tall only when the picture that really arrives is taller than wide. What the sender
+  // says about how it holds its phone is only a hint for the moment before the first frame, so a
+  // phone that claims "upright" but sends a 16:9 picture is never drawn as a tall tile with the
+  // wide picture letterboxed inside it.
+  const isTall = (key: string, claim: string | undefined, measured: Record<string, boolean>) =>
+    measured[key] !== undefined ? measured[key] === false : claim === "1";
   function rememberFrame(key: string, wide: boolean) {
     setFrameWide((prev) => (prev[key] === wide ? prev : { ...prev, [key]: wide }));
   }
@@ -1667,7 +1683,7 @@ export function VoiceRoom(props: {
         pipSpot: pipSpot(),
         pipWide: pipWide(),
         portraitKeys: cams
-          .filter((t) => !t.participant.isLocal && (wide[t.key] === false || t.participant.attributes?.dh_phone === "1"))
+          .filter((t) => !t.participant.isLocal && isTall(t.key, t.participant.attributes?.dh_phone, wide))
           .map((t) => t.key),
       });
       const open = screens.find((t) => t.key === openShare());
@@ -1753,8 +1769,7 @@ export function VoiceRoom(props: {
     const onPhone = (key: string) => {
       const tile = tiles().find((t) => t.key === key);
       if (!tile || tile.screen || tile.participant.isLocal) return wideMap[key] === false && !tile?.screen;
-      if (tile.participant.attributes?.dh_phone === "1") return true;
-      return wideMap[key] === false;
+      return isTall(key, tile.participant.attributes?.dh_phone, wideMap);
     };
     const gridKeys = [
       ...tiles().map((t) => t.key),
