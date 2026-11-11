@@ -22,11 +22,11 @@ import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
 import { audit } from "../data/audit";
-import { canRemoveFromCall, livingRoomTvBottom, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
+import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
-import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
+import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, livingSidePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 import "./call-status.css";
 
@@ -168,6 +168,10 @@ const ATTENTION_TOPIC = "attention";
 const SIDEWAYS_ROOM_ZOOM = 1.1;
 // ...and the room sits a little lower, so the top of the TV is not cut off by the screen edge.
 const SIDEWAYS_ROOM_SHIFT = 0.06;
+// Experiment, off unless the app address has ?tvside=1: sideways, the TV is big on the left and the faces stand in
+// columns on the right (see livingSidePlan).
+const TV_SIDE = typeof location !== "undefined" && new URLSearchParams(location.search).has("tvside");
+const SIDE_ROOM = { zoom: 1.25, shiftDown: 0.17, shiftLeft: 0.11 };
 // A phone is being turned: its picture is held still on every screen for a moment (see holdPicture).
 const TURN_TOPIC = "dh-turn";
 const TURN_HOLD_MS = 1400;
@@ -1614,6 +1618,7 @@ export function VoiceRoom(props: {
       .map((t) => t.key)
       .concat(loneRoomFaces().map(([name]) => `face:${name}`), teamScreens().map(teamKey));
     if (phoneNow()) {
+      if (TV_SIDE && w >= h) return livingSidePlan({ keys, portraitKeys: tallKeys(), width: w, height: h, tvRight: livingRoomTvRight() }).big as JSX.CSSProperties;
       return livingPhonePlan({ keys, portraitKeys: tallKeys(), width: w, height: h, landscape: w >= h, tvBottom: livingRoomTvBottom() }).big as JSX.CSSProperties;
     }
     return broadcastPlan({
@@ -1698,7 +1703,9 @@ export function VoiceRoom(props: {
         ...teamScreens().map(teamKey),
       ];
       const { places } = phoneNow()
-        ? livingPhonePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, landscape: boxW >= boxH, tvBottom: livingRoomTvBottom() })
+        ? TV_SIDE && boxW >= boxH
+          ? livingSidePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, tvRight: livingRoomTvRight() })
+          : livingPhonePlan({ keys, portraitKeys: tallKeys(), width: boxW, height: boxH, landscape: boxW >= boxH, tvBottom: livingRoomTvBottom() })
         : broadcastPlan({
             keys,
             width: boxW,
@@ -2260,8 +2267,9 @@ export function VoiceRoom(props: {
                   track={broadcastTrack}
                   serverId={props.serverId}
                   channel={props.channel}
-                  zoom={phoneNow() && box().w >= box().h ? SIDEWAYS_ROOM_ZOOM : 1}
-                  shiftDown={phoneNow() && box().w >= box().h ? SIDEWAYS_ROOM_SHIFT : 0}
+                  zoom={phoneNow() && box().w >= box().h ? (TV_SIDE ? SIDE_ROOM.zoom : SIDEWAYS_ROOM_ZOOM) : 1}
+                  shiftDown={phoneNow() && box().w >= box().h ? (TV_SIDE ? SIDE_ROOM.shiftDown : SIDEWAYS_ROOM_SHIFT) : 0}
+                  shiftLeft={phoneNow() && box().w >= box().h && TV_SIDE ? SIDE_ROOM.shiftLeft : 0}
                 />
               </div>
             )}

@@ -331,6 +331,40 @@ export function livingPhonePlan(args: {
   return { places, big };
 }
 
+/**
+ * Experiment (sideways Living Room): the TV is scaled up until it almost touches the top and bottom edges and sits on
+ * the left; everyone's webcam stands in columns on the right, never over the TV. `tvRight` is the TV's right edge as
+ * a fraction of the width (projected live from the 3D room).
+ */
+export function livingSidePlan(args: {
+  keys: string[];
+  portraitKeys?: string[];
+  width: number;
+  height: number;
+  tvRight: number;
+}): { places: Record<string, PhoneStyle>; big: PhoneStyle } {
+  const pad = 8;
+  const gap = 8;
+  const keys = args.keys.filter(Boolean);
+  const n = keys.length;
+  const places: Record<string, PhoneStyle> = {};
+  const big = box(0, 0, args.width, args.height);
+  big["z-index"] = "0";
+  if (n > 0) {
+    const x0 = Math.min(1, Math.max(0, args.tvRight)) * args.width + gap;
+    const region = { x: x0, y: pad, w: Math.max(0, args.width - x0 - pad), h: Math.max(0, args.height - pad * 2) };
+    if (region.w > 0 && region.h > 0) {
+      const cols = n <= 3 ? 1 : 2;
+      const grid = deskPlan({ keys, portraitKeys: args.portraitKeys, width: region.w, height: region.h, cols, gap });
+      for (const key of keys) {
+        const style = grid[key];
+        if (style) places[key] = { ...style, left: px(parseFloat(style.left) + region.x), top: px(parseFloat(style.top) + region.y) };
+      }
+    }
+  }
+  return { places, big };
+}
+
 function box(x: number, y: number, width: number, height: number): PhoneStyle {
   return {
     position: "absolute",

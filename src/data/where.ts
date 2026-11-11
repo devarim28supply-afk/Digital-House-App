@@ -44,6 +44,9 @@ export { tvRemoteAvailable, setTvRemoteAvailable, tvRemoteOpen, setTvRemoteOpen 
  */
 const [livingRoomTvBottom, setLivingRoomTvBottom] = createSignal(0.62);
 export { livingRoomTvBottom, setLivingRoomTvBottom };
+/** the TV's right edge as a fraction of the panel's width (0 to 1), projected the same way; the "TV on the left" layout reads it */
+const [livingRoomTvRight, setLivingRoomTvRight] = createSignal(0.76);
+export { livingRoomTvRight, setLivingRoomTvRight };
 
 export function whereNow() {
   const room = inRoom();
