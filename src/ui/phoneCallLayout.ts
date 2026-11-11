@@ -271,7 +271,7 @@ export function broadcastPlan(args: {
  *   upright:  the room across the top, everyone in a grid under it (3 columns from 5 people on, sized for
  *             3 rows, so 6 people sit in the same cells as 9)
  *   sideways: the room fills the whole screen and everyone floats over it in one row on the floor, under
- *             the TV and never over it (`tvBottom` is where the TV's bottom edge is, 0 to 1 of the height)
+ *             the TV and never over it, every face the same size for 1 to 6 people (`tvBottom` is where the TV's bottom edge is, 0 to 1 of the height)
  */
 export function livingPhonePlan(args: {
   keys: string[];
@@ -315,7 +315,11 @@ export function livingPhonePlan(args: {
       const floorH = Math.max(24, pad + H - floorTop);
       const ratios = keys.map((key) => (args.portraitKeys?.includes(key) ? 9 / 16 : 16 / 9));
       const sum = ratios.reduce((a, b) => a + b, 0);
-      const h = Math.max(16, Math.min(150, floorH, (W - gap * (n - 1)) / sum));
+      // The faces keep ONE size however many are there: sized for a full row of 6, so nobody's picture
+      // shrinks when more people join (up to 6; with more than 6 the row has to shrink to fit).
+      const slots = Math.max(n, 6);
+      const sizedFor = sum + (slots - n) * (16 / 9);
+      const h = Math.max(16, Math.min(150, floorH, (W - gap * (slots - 1)) / sizedFor));
       const rowW = h * sum + gap * (n - 1);
       let x = pad + Math.max(0, (W - rowW) / 2);
       keys.forEach((key, i) => {
