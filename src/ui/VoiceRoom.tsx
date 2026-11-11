@@ -168,9 +168,9 @@ const ATTENTION_TOPIC = "attention";
 const SIDEWAYS_ROOM_ZOOM = 1.1;
 // ...and the room sits a little lower, so the top of the TV is not cut off by the screen edge.
 const SIDEWAYS_ROOM_SHIFT = 0.06;
-// Experiment, off unless the app address has ?tvside=1: sideways, the TV is big on the left and the faces stand in
-// columns on the right (see livingSidePlan).
-const TV_SIDE = typeof location !== "undefined" && new URLSearchParams(location.search).has("tvside");
+// Sideways, the Living Room has the TV big on the left and the faces in one column on the right (see livingSidePlan).
+// Adding ?tvfloor=1 to the app address brings back the older layout with the faces on the floor under the TV.
+const TV_SIDE = !(typeof location !== "undefined" && new URLSearchParams(location.search).has("tvfloor"));
 const SIDE_ROOM = { zoom: 1.25, shiftDown: 0.17, shiftLeft: 0.11 };
 // A phone is being turned: its picture is held still on every screen for a moment (see holdPicture).
 const TURN_TOPIC = "dh-turn";
