@@ -192,3 +192,14 @@
   .shell,.shell *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   .shell input,.shell textarea,.shell [contenteditable="true"],.shell [contenteditable="true"] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 }
+
+/* The people list (the right side panel): big faces and names, easy to read and tap on a phone. */
+@media(max-width:600px),(pointer:coarse) and (max-height:520px){
+  .side-online .member,.members .member{gap:14px;min-height:68px;padding:8px 12px;border-radius:14px}
+  .side-online .avatar.small,.members .avatar.small{width:52px;height:52px;font-size:18px}
+  .side-online .avatar.small .dot,.members .avatar.small .dot{width:15px;height:15px;right:-1px;bottom:-1px}
+  .side-online .member-name,.members .member-name{font-size:1.15rem;font-weight:600}
+  .side-online .member-where,.members .member-where{font-size:13px;margin-top:2px}
+  .side-online .group-label,.members .group-label{margin:16px 12px 8px;font-size:13px}
+  .side-online .side-tool,.members .side-tool{min-height:48px;font-size:1rem}
+}
