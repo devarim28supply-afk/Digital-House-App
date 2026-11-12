@@ -3,8 +3,7 @@
 const KEY = "dh_style";
 try {
   const asked = new URLSearchParams(location.search).get("style");
-  if (asked === "off") localStorage.removeItem(KEY);
-  else if (asked) localStorage.setItem(KEY, asked);
+  if (asked === "off" || asked === "noir") localStorage.setItem(KEY, asked);
   const chosen = localStorage.getItem(KEY) ?? "noir";
   if (chosen === "noir") document.documentElement.dataset.style = "noir";
 } catch {
