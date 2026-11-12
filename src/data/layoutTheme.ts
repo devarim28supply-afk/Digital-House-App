@@ -10,7 +10,8 @@ const [layoutTheme, updateTheme] = createSignal<LayoutTheme>(readTheme());
 export { layoutTheme };
 export function previewLayoutTheme(theme: LayoutTheme) {
   updateTheme(theme);
-  document.documentElement.dataset.layoutTheme = theme;
+  // Terminal Noir is the look for everyone: while it is on, Smoky Glass does not take over the colours
+  document.documentElement.dataset.layoutTheme = document.documentElement.dataset.style === "noir" ? "classic" : theme;
 }
 export function saveLayoutTheme(theme: LayoutTheme) {
   try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* Private browsing still supports the current session. */ }
