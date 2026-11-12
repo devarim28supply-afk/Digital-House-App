@@ -1944,7 +1944,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           if (!name || !props.server) return;
           setSaving(true);
           try {
-            await saveServerSettings(props.server.id, name, banner(), form.get("open") === "on");
+            await saveServerSettings(props.server.id, name, banner(), false); // servers are never open: people ask to join
             close();
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not save that.");
@@ -1956,13 +1956,6 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
         <label class="field">
           <span>Server name</span>
           <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
-        </label>
-        <label class="check-row">
-          <input type="checkbox" name="open" checked={Boolean(props.server?.open)} />
-          <span>
-            <b>Open to everyone who gets in</b>
-            <small>Every approved member (past the M2A-access door) joins this server on their own.</small>
-          </span>
         </label>
         <InviteCodeField server={props.server} />
         <div class="field">

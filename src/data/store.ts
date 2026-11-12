@@ -422,22 +422,19 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
   const repairing = new Set<string>();
   let asMember: Server[] = [];
   let asOwner: Server[] = [];
-  let asOpen: Server[] = [];
   const emit = () => {
     const byId = new Map<string, Server>();
-    // An open server shows for every approved member, not only people already
-    // written on memberUids. The owner also sees a closed server he owns.
-    for (const s of [...asMember, ...asOwner, ...asOpen]) byId.set(s.id, s);
+    // Only servers you are in (or own). Nothing is shown or joined by itself any more: other servers are found by
+    // searching their name and asking to join.
+    for (const s of [...asMember, ...asOwner]) byId.set(s.id, s);
     const servers = [...byId.values()];
     servers.sort((a, b) => a.name.localeCompare(b.name));
     cb(servers);
     for (const s of servers) {
       if (s.kind === "dm" || repairing.has(s.id)) continue;
-      const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true; kind?: "server" } = {};
+      const patch: { memberUids?: ReturnType<typeof arrayUnion>; kind?: "server" } = {};
       const home = s.ownerUid === uid && s.name.startsWith("Digital House");
-      if ((home || s.open === true) && !s.memberUids.includes(uid)) patch.memberUids = arrayUnion(uid);
-      // The lock wrote open:false. Digital House is open to everyone approved.
-      if (home && s.open !== true) patch.open = true;
+      if (home && !s.memberUids.includes(uid)) patch.memberUids = arrayUnion(uid);
       // A server from before kind:"server" existed has no kind at all - this
       // query (member/owner/open, same as a regular person's own server
       // list) still finds it fine, but the staff-only oversight query
@@ -448,7 +445,7 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
       // time they load their own server list - no separate migration needed.
       if (!s.kind) patch.kind = "server";
       if (home) void restoreHomeMembers(s.id).catch(() => {});
-      if (!patch.memberUids && patch.open !== true && !patch.kind) continue;
+      if (!patch.memberUids && !patch.kind) continue;
       repairing.add(s.id);
       void updateDoc(doc(db, "servers", s.id), patch).catch(() => repairing.delete(s.id));
     }
@@ -480,21 +477,9 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
       emit();
     },
   );
-  const unsubOpen = onSnapshot(
-    query(collection(db, "servers"), where("open", "==", true)),
-    (snap) => {
-      asOpen = map(snap).filter((s) => s.kind !== "dm");
-      emit();
-    },
-    () => {
-      asOpen = [];
-      emit();
-    },
-  );
   return () => {
     unsubMember();
     unsubOwner();
-    unsubOpen();
   };
 }
 
