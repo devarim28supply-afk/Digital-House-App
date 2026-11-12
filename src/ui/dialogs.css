@@ -164,3 +164,157 @@ fieldset.field > .btn {
   align-items: center;
   gap: 8px;
 }
+
+/* Customize your profile: same green terminal look as the rest (Classic Dark; Smoky Glass keeps its own colors) */
+:root:not([data-layout-theme="smoky"]) .modal:has(.customize-layout) {
+  background: var(--panel);
+  border-color: var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .customize-layout {
+  gap: 22px 28px;
+}
+:root:not([data-layout-theme="smoky"]) .customize-preview {
+  background-color: var(--panel-2);
+  border-color: var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .customize-preview-label,
+:root:not([data-layout-theme="smoky"]) .customize-section-label {
+  font-family: var(--mono);
+  color: var(--green);
+  opacity: 0.8;
+}
+:root:not([data-layout-theme="smoky"]) .customize-preview-footer {
+  font-family: var(--mono);
+  border-top-color: var(--line-2);
+  color: var(--muted);
+}
+:root:not([data-layout-theme="smoky"]) .customize-preview-indicator {
+  background: var(--dim);
+}
+:root:not([data-layout-theme="smoky"]) .customize-preview-indicator.changed {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+}
+:root:not([data-layout-theme="smoky"]) .customize-nameplate-row {
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+}
+:root:not([data-layout-theme="smoky"]) .customize-edit-name,
+:root:not([data-layout-theme="smoky"]) .customize-photo-menu {
+  background: var(--panel-3);
+  border: 1px solid var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .customize-banner-edit {
+  border-color: var(--line-2);
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .customize-banner-edit:hover {
+  border-color: var(--green);
+  background: rgba(74, 222, 128, 0.15);
+}
+
+/* tabs: one clean row of mono buttons, the open one green */
+:root:not([data-layout-theme="smoky"]) .customize-tabs {
+  gap: 8px;
+}
+:root:not([data-layout-theme="smoky"]) .customize-tabs button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+:root:not([data-layout-theme="smoky"]) .customize-tabs button:hover {
+  color: var(--text);
+  border-color: var(--dim);
+}
+:root:not([data-layout-theme="smoky"]) .customize-tabs button[aria-pressed="true"] {
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green) inset;
+}
+
+/* the options area */
+:root:not([data-layout-theme="smoky"]) .customize-options h3 {
+  font-family: var(--mono);
+  font-size: 17px;
+  color: var(--text);
+}
+:root:not([data-layout-theme="smoky"]) .customize-options h3::before {
+  content: "› ";
+  color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .customize-options section {
+  border-bottom-color: var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .cosmetic-choice,
+:root:not([data-layout-theme="smoky"]) .nameplate-option {
+  background: var(--panel-2);
+  border-color: var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .cosmetic-choice:hover,
+:root:not([data-layout-theme="smoky"]) .nameplate-option:hover {
+  border-color: var(--dim);
+}
+:root:not([data-layout-theme="smoky"]) .cosmetic-choice[aria-pressed="true"],
+:root:not([data-layout-theme="smoky"]) .nameplate-option[aria-pressed="true"] {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green) inset;
+}
+:root:not([data-layout-theme="smoky"]) .cosmetic-choice b,
+:root:not([data-layout-theme="smoky"]) .nameplate-option-check {
+  color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .layout-theme-choice {
+  background: var(--panel-2);
+  border-color: var(--line-2);
+}
+:root:not([data-layout-theme="smoky"]) .layout-theme-choice[aria-pressed="true"] {
+  outline: 0;
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green) inset, 0 0 18px rgba(74, 222, 128, 0.18);
+}
+:root:not([data-layout-theme="smoky"]) .layout-theme-choice[aria-pressed="true"] strong {
+  color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .layout-theme-choice:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* focus rings, the name field, the footer buttons */
+.customize-display-name-row .customize-name-input:focus {
+  border-color: var(--green);
+  outline-color: rgba(74, 222, 128, 0.3);
+}
+button.avatar.big.customize-avatar:focus-visible,
+.customize-banner-edit:focus-visible,
+.customize-edit-name:focus-visible {
+  outline-color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .customize-footer {
+  border-top-color: var(--line-2);
+  gap: 10px;
+}
+:root:not([data-layout-theme="smoky"]) .customize-footer .btn {
+  min-height: 44px;
+  padding: 0 20px;
+  font-family: var(--mono);
+}
+:root:not([data-layout-theme="smoky"]) .customize-footer .btn.primary {
+  border: 1px solid var(--green);
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--green);
+}
+:root:not([data-layout-theme="smoky"]) .customize-footer .btn.primary:hover:not(:disabled) {
+  background: rgba(74, 222, 128, 0.22);
+}
+:root:not([data-layout-theme="smoky"]) .cosmetic-choice[aria-pressed="true"],
+:root:not([data-layout-theme="smoky"]) .customize-tabs button[aria-pressed="true"] {
+  outline: 0;
+}
