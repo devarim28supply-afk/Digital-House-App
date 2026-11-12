@@ -743,7 +743,10 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           )}
         </For>
         <button type="button" class="rail-add" title="Find a server" aria-label="Find a server" onClick={() => setModal("find")}>
-          🔍
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m15.5 15.5 5 5" />
+          </svg>
         </button>
         <button type="button" class="rail-add" title="New server" aria-label="New server" onClick={() => setModal("new-server")}>
           +
