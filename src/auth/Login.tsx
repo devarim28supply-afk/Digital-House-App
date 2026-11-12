@@ -211,7 +211,7 @@ export function Login() {
 
             <Match when={mode() === "register"}>
               <h1 class="auth-title">Create account</h1>
-              <p class="auth-sub">Use your real email. We send a link to confirm it, then you are in.</p>
+              <p class="auth-sub">We send a link to confirm your email, then you are in.</p>
               <form class="auth-form" onSubmit={onRegister}>
                 <label class="auth-field">
                   <span>Full name</span>
@@ -222,7 +222,7 @@ export function Login() {
                   <input name="username" autocapitalize="off" spellcheck={false} maxLength={24} required />
                 </label>
                 <label class="auth-field">
-                  <span>Real email</span>
+                  <span>Email</span>
                   <input name="email" type="email" autocomplete="email" required />
                 </label>
                 <label class="auth-field">
