@@ -23,6 +23,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
+import { createSignal } from "solid-js";
 import { db } from "../firebase";
 import { type AuditAction, audit } from "./audit";
 
@@ -418,6 +419,9 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
 
 // ---- servers ----------------------------------------------------------------
 
+/** Why the list of your servers could not load (a Firestore error code), shown on the empty screen so it can be fixed. */
+export const [serverListError, setServerListError] = createSignal("");
+
 export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsubscribe {
   const repairing = new Set<string>();
   let asMember: Server[] = [];
@@ -458,11 +462,14 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
   const unsubMember = onSnapshot(
     query(collection(db, "servers"), where("memberUids", "array-contains", uid)),
     (snap) => {
+      setServerListError("");
       asMember = map(snap);
       emit();
     },
-    () => {
-      asMember = [];
+    (err) => {
+      // keep what was already listed (do not blank the screen on a failed refresh) and say why
+      console.error("servers (member) listener failed", err);
+      setServerListError(String((err as { code?: string }).code ?? err));
       emit();
     },
   );
@@ -472,8 +479,8 @@ export function watchServers(uid: string, cb: (servers: Server[]) => void): Unsu
       asOwner = map(snap);
       emit();
     },
-    () => {
-      asOwner = [];
+    (err) => {
+      console.error("servers (owner) listener failed", err);
       emit();
     },
   );

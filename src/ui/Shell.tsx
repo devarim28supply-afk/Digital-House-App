@@ -21,6 +21,7 @@ import {
   deleteRoomTile,
   announceJoinRequest,
   ensureHomeServer,
+  serverListError,
   markJoinRequestAnnounced,
   syncDirectoryEntry,
   watchJoinRequests,
@@ -1119,6 +1120,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             <div class="find-empty-state">
               <h2>Find a server</h2>
               <p class="find-hint">You are not in any server yet. Search for one by name and ask to join, or make your own with +.</p>
+              <Show when={serverListError()}>
+                <p class="form-error" role="alert">Your servers could not be loaded ({serverListError()}). Reload the page; if this stays, tell Kaalob this code.</p>
+              </Show>
               <FindServer uid={props.uid} name={nameOf(props.uid)} username={props.username} joinedIds={servers().map((x) => x.id)} />
             </div>
           </Match>
