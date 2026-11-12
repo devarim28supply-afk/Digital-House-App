@@ -44,7 +44,6 @@ import {
   startPresence,
   watchChannels,
   displayName,
-  setTileImage,
   watchEmojis,
   watchPresence,
   watchProfiles,
@@ -949,27 +948,6 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                       </span>
                     </Show>
                   </button>
-                  {/* whoever runs the server can change any tile's picture */}
-                  <Show when={runsServer()}>
-                    <label class="icon-btn tile-pic" title={`Change the picture of ${c.name}`}>
-                      🖼
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        onChange={async (e) => {
-                          const file = e.currentTarget.files?.[0];
-                          e.currentTarget.value = "";
-                          if (!file) return;
-                          try {
-                            await setTileImage(serverId()!, c.id, await shrinkImage(file, 480), c.name);
-                          } catch {
-                            /* the old picture stays */
-                          }
-                        }}
-                      />
-                    </label>
-                  </Show>
                   {/* built-in tiles (Node Lounge, Living Room) cannot be deleted */}
                   <Show when={runsServer() && !isBuiltInTile(c)}>
                     <button
@@ -1039,7 +1017,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             when={isDm(server()) && server()}
             fallback={
               <span class="main-title">
-                <span class="hash">{channel()?.kind === "room" ? "▣" : channel()?.kind === "voice" ? "◉" : "#"}</span>{" "}
+                <Show when={channel()?.kind !== "room" && channel()?.kind !== "voice"}>
+                  <span class="hash">#</span>{" "}
+                </Show>
                 {channel()?.name ?? ""}
               </span>
             }
