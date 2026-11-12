@@ -542,6 +542,7 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
   for (const ch of start) batch.set(doc(collection(ref, "channels")), ch);
   await batch.commit();
   audit("server.create", { serverId: ref.id, target: name });
+  await syncDirectoryEntry(ref.id, name).catch(() => {});
   await setInviteCode(ref.id).catch(() => {});
   return ref.id;
 }
@@ -616,10 +617,15 @@ export async function ensureHomeServer(uid: string) {
     hasReal = true;
     if (data.ownerUid !== uid) continue;
     const members = (data.memberUids as string[] | undefined) ?? [];
-    const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: true } = {};
+    const patch: { memberUids?: ReturnType<typeof arrayUnion>; open?: false } = {};
     if (!members.includes(uid)) patch.memberUids = arrayUnion(uid);
-    if (typeof data.name === "string" && data.name.startsWith("Digital House") && data.open !== true) patch.open = true;
-    if (patch.memberUids || patch.open) await updateDoc(s.ref, patch).catch(() => {});
+    // Digital House is private now. First every operator-approved member is put on its list (so nobody who was in
+    // it by being open loses their place), then it closes: new people find it by searching and ask to join.
+    if (typeof data.name === "string" && data.name.startsWith("Digital House") && data.open === true) {
+      await restoreHomeMembers(s.id).catch(() => {});
+      patch.open = false;
+    }
+    if (patch.memberUids || patch.open === false) await updateDoc(s.ref, patch).catch(() => {});
   }
   if (hasReal) return;
   // The Living Room tile and its chat are added by the app once it watches
@@ -631,21 +637,8 @@ export async function ensureHomeServer(uid: string) {
       { name: "general", kind: "text", position: 1 },
       { name: "Lounge", kind: "voice", position: 2 },
     ],
-    true, // open: everyone who gets in through M2A-access is in it
+    false, // private: people search for it and ask to join
   );
-}
-
-/**
- * Everyone who gets in (an approved member, past the M2A-access door) is in
- * every open server: add yourself to any you are not in yet. The rules let
- * you add exactly yourself to an open server and nothing else.
- */
-export async function joinOpenServers(uid: string) {
-  const open = await getDocs(query(collection(db, "servers"), where("open", "==", true)));
-  for (const s of open.docs) {
-    const members = (s.data().memberUids as string[] | undefined) ?? [];
-    if (!members.includes(uid)) await updateDoc(s.ref, { memberUids: arrayUnion(uid) }).catch(() => {});
-  }
 }
 
 const restoredHomes = new Set<string>();
@@ -754,8 +747,9 @@ export const renameServer = (sid: string, name: string) =>
   logged(updateDoc(doc(db, "servers", sid), { name }), "server.rename", { serverId: sid, target: name });
 
 /** Name and banner together (Server settings). banner null removes it. */
-export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) =>
-  logged(
+export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) => {
+  void syncDirectoryEntry(sid, name).catch(() => {});
+  return logged(
     updateDoc(doc(db, "servers", sid), {
       name,
       open,
@@ -768,6 +762,7 @@ export const saveServerSettings = (sid: string, name: string, banner: string | n
       detail: `${open ? "open to everyone" : "closed"}${banner === undefined ? "" : banner === null ? ", banner removed" : ", banner changed"}`,
     },
   );
+};
 
 export const setServerOpen = (sid: string, open: boolean) =>
   logged(updateDoc(doc(db, "servers", sid), { open }), "server.open", { serverId: sid, detail: open ? "open to everyone" : "closed" });
@@ -784,6 +779,7 @@ export async function deleteServer(sid: string) {
     for (const m of messages.docs) await deleteDoc(m.ref);
     await deleteDoc(c.ref);
   }
+  await deleteDoc(doc(db, "serverDirectory", sid)).catch(() => {}); // while the server still exists (the rule checks its owner)
   await deleteDoc(doc(db, "servers", sid));
   audit("server.delete", { serverId: sid });
 }
@@ -981,3 +977,77 @@ export const addEmoji = (sid: string, emoji: Omit<Emoji, "id">) =>
 
 export const deleteEmoji = (sid: string, id: string, name = "") =>
   logged(deleteDoc(doc(db, "servers", sid, "emojis", id)), "emoji.delete", { serverId: sid, target: name ? `:${name}:` : id });
+
+// ---- finding servers and asking to join --------------------------------------------------
+// Anyone with a Darkwood Node account can search server NAMES (serverDirectory: name only, never channels, members
+// or messages) and ask to join. The server's owner / admins approve from the server's settings.
+
+export type DirectoryEntry = { id: string; name: string };
+
+export function watchDirectory(cb: (entries: DirectoryEntry[]) => void, onError?: () => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, "serverDirectory")),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, name: String(d.data().name ?? "") })).filter((e) => e.name)),
+    () => onError?.(),
+  );
+}
+
+/** The owner keeps their server's search entry (name only). Safe to call again: it just rewrites the name. */
+export const syncDirectoryEntry = (sid: string, name: string) =>
+  setDoc(doc(db, "serverDirectory", sid), { name: name.slice(0, 60), at: serverTimestamp() });
+
+export type JoinRequest = { uid: string; name: string; username: string; at?: Date; announced?: boolean };
+
+export const requestToJoin = (sid: string, uid: string, name: string, username: string) =>
+  setDoc(doc(db, "servers", sid, "joinRequests", uid), { uid, name: name.slice(0, 60), username, at: serverTimestamp() });
+
+export const cancelJoinRequest = (sid: string, uid: string) => deleteDoc(doc(db, "servers", sid, "joinRequests", uid));
+
+/** Has this person already asked to join (their own request is the one they are allowed to read)? */
+export async function hasRequestedJoin(sid: string, uid: string) {
+  try {
+    return (await getDoc(doc(db, "servers", sid, "joinRequests", uid))).exists();
+  } catch {
+    return false;
+  }
+}
+
+export function watchJoinRequests(sid: string, cb: (requests: JoinRequest[]) => void): Unsubscribe {
+  return onSnapshot(
+    collection(db, "servers", sid, "joinRequests"),
+    (snap) =>
+      cb(
+        snap.docs
+          .map((d) => {
+            const data = d.data();
+            return { uid: d.id, name: String(data.name ?? ""), username: String(data.username ?? ""), at: toDate(data.at) ?? undefined, announced: data.announced === true };
+          })
+          .sort((a, b) => (a.at?.getTime() ?? 0) - (b.at?.getTime() ?? 0)),
+      ),
+    () => cb([]),
+  );
+}
+
+/** Approve: add the person to the server, then clear their request. */
+export async function approveJoinRequest(sid: string, uid: string, name: string) {
+  await updateDoc(doc(db, "servers", sid), { memberUids: arrayUnion(uid) });
+  await deleteDoc(doc(db, "servers", sid, "joinRequests", uid)).catch(() => {});
+  audit("member.add", { serverId: sid, target: uid, detail: `approved join request: ${name}` });
+}
+
+export async function declineJoinRequest(sid: string, uid: string, name: string) {
+  await deleteDoc(doc(db, "servers", sid, "joinRequests", uid));
+  audit("member.remove", { serverId: sid, target: uid, detail: `declined join request: ${name}` });
+}
+
+/** Mark that the server's admins have been told in its chat. */
+export const markJoinRequestAnnounced = (sid: string, uid: string) =>
+  updateDoc(doc(db, "servers", sid, "joinRequests", uid), { announced: true });
+
+/** Tell the server's first text channel that someone wants to join (the owner's app does this once per request). */
+export async function announceJoinRequest(sid: string, ownerUid: string, name: string, username: string) {
+  const channels = await getDocs(query(collection(db, "servers", sid, "channels"), orderBy("position")));
+  const first = channels.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Channel, "id">) })).find((c) => c.kind === "text" && !c.parentId);
+  if (!first) return;
+  await sendMessage(sid, first.id, ownerUid, `Join request: ${name} (@${username}) wants to join. Open the server settings to approve or decline.`);
+}

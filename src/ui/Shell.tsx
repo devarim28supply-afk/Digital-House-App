@@ -19,9 +19,13 @@ import {
   createRoomTile,
   createServer,
   deleteRoomTile,
+  announceJoinRequest,
   ensureHomeServer,
+  markJoinRequestAnnounced,
+  syncDirectoryEntry,
+  watchJoinRequests,
+  type JoinRequest,
   ensureHomeTiles,
-  joinOpenServers,
   restoreHomeMembers,
   lookupInvite,
   redeemInvite,
@@ -51,6 +55,8 @@ import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
+import { FindServer, FindServerDialog } from "./FindServer";
+import { JoinRequestList } from "./JoinRequests";
 import { FaceUnlockSetting } from "../auth/FaceOffer";
 import { RoomPane, type RoomPaneToggle } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
@@ -228,7 +234,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
   }
-  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "rename" | "people" | "new-channel" | "me">("");
+  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "find" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
@@ -273,12 +279,42 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setNavOpen(false);
   }
 
+  const [waiting, setWaiting] = createSignal<Record<string, JoinRequest[]>>({});
+  const waitingCount = (sid: string) => waiting()[sid]?.length ?? 0;
+  const announced = new Set<string>();
+  createEffect(() => {
+    const mine = realServers().filter((s) => s.ownerUid === props.uid || props.admin || props.staff);
+    const stops = mine.map((s) =>
+      watchJoinRequests(s.id, (list) => {
+        setWaiting((prev) => ({ ...prev, [s.id]: list }));
+        if (s.ownerUid !== props.uid) return;
+        for (const request of list) {
+          const key = `${s.id}/${request.uid}`;
+          if (request.announced || announced.has(key)) continue;
+          announced.add(key);
+          void announceJoinRequest(s.id, props.uid, request.name, request.username)
+            .then(() => markJoinRequestAnnounced(s.id, request.uid))
+            .catch(() => announced.delete(key));
+        }
+      }),
+    );
+    onCleanup(() => stops.forEach((stop) => stop()));
+  });
+  // the search list shows the NAME of every server; its owner keeps the entry current (and fills it in for older servers)
+  const syncedNames = new Map<string, string>();
+  createEffect(() => {
+    for (const s of realServers()) {
+      if (s.ownerUid !== props.uid || syncedNames.get(s.id) === s.name) continue;
+      syncedNames.set(s.id, s.name);
+      void syncDirectoryEntry(s.id, s.name).catch(() => syncedNames.delete(s.id));
+    }
+  });
+
   onMount(() => {
     void saveProfile(props.uid, props.name, props.username);
-    // Open Digital House first, then join every open server.
+    // The operator makes Digital House first (it is private; people ask to join).
     void (async () => {
       if (props.admin) await ensureHomeServer(props.uid).catch(() => {});
-      await joinOpenServers(props.uid).catch(() => {});
     })();
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
@@ -700,9 +736,15 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               onClick={() => openServer(s.id)}
             >
               {initials(s.name)}
+              <Show when={waitingCount(s.id)}>
+                <span class="rail-badge" title="People waiting to join">{waitingCount(s.id)}</span>
+              </Show>
             </button>
           )}
         </For>
+        <button type="button" class="rail-add" title="Find a server" aria-label="Find a server" onClick={() => setModal("find")}>
+          🔍
+        </button>
         <button type="button" class="rail-add" title="New server" aria-label="New server" onClick={() => setModal("new-server")}>
           +
         </button>
@@ -846,7 +888,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             </Show>
           </Show>
           <Show when={!dmMode()}>
-          <Show when={server()} fallback={<p class="side-empty">No servers yet. Make one with +, or wait to be added.</p>}>
+          <Show when={server()} fallback={<p class="side-empty">No servers yet. Find one with the magnifier, or make your own with +.</p>}>
             {/* someone in stream mode: their LIVE tile first (Kaalob's drawing) */}
             <For each={liveStreams().filter((key) => {
               const ch = channels().find((c) => c.id === key.split("|")[1]);
@@ -1060,6 +1102,13 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           </Show>
         </header>
         <Switch fallback={<div class="main-empty">Pick a channel.</div>}>
+          <Match when={!dmMode() && !realServers().length}>
+            <div class="find-empty-state">
+              <h2>Find a server</h2>
+              <p class="find-hint">You are not in any server yet. Search for one by name and ask to join, or make your own with +.</p>
+              <FindServer uid={props.uid} name={nameOf(props.uid)} username={props.username} joinedIds={servers().map((x) => x.id)} />
+            </div>
+          </Match>
           <Match when={dmHome() && !isDm(server())}>
             <div class="main-empty">Pick a conversation, or start one with + (or Message on a profile card).</div>
           </Match>
@@ -1278,6 +1327,14 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           const id = await createServer(props.uid, name);
           setServerId(id);
         }}
+      />
+      <FindServerDialog
+        open={modal() === "find"}
+        uid={props.uid}
+        name={nameOf(props.uid)}
+        username={props.username}
+        joinedIds={servers().map((x) => x.id)}
+        onClose={() => setModal("")}
       />
       <JoinServerDialog
         open={modal() === "join"}
@@ -1877,6 +1934,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
 
   return (
     <Modal title="Server settings" open={props.open} onClose={close}>
+      <Show when={props.open && props.server}>{(server) => <JoinRequestList serverId={server().id} />}</Show>
       <form
         class="modal-form"
         onSubmit={async (e) => {

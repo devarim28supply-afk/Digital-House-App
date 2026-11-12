@@ -3,6 +3,7 @@ import { browserLocalPersistence, browserSessionPersistence, setPersistence } fr
 import { Match, Show, Switch, createSignal, onMount } from "solid-js";
 
 import { access, auth } from "../firebase";
+import { registerDhAccount } from "./dhAccount";
 import { disableFaceUnlock, faceOfferDismissed, faceUnlockEnabled, faceUnlockSupported, holdLoginForOffer, unlockWithFace } from "./faceUnlock";
 
 import "./auth.css";
@@ -128,8 +129,8 @@ export function Login() {
     setError("");
     setMood("working");
     try {
-      await access.register({
-        fullName: String(form.get("name") ?? ""),
+      await registerDhAccount({
+        name: String(form.get("name") ?? ""),
         username: String(form.get("username") ?? ""),
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
@@ -210,7 +211,7 @@ export function Login() {
 
             <Match when={mode() === "register"}>
               <h1 class="auth-title">Create account</h1>
-              <p class="auth-sub">The operator approves new members.</p>
+              <p class="auth-sub">Use your real email. We send a link to confirm it, then you are in.</p>
               <form class="auth-form" onSubmit={onRegister}>
                 <label class="auth-field">
                   <span>Full name</span>
@@ -221,7 +222,7 @@ export function Login() {
                   <input name="username" autocapitalize="off" spellcheck={false} maxLength={24} required />
                 </label>
                 <label class="auth-field">
-                  <span>Email</span>
+                  <span>Real email</span>
                   <input name="email" type="email" autocomplete="email" required />
                 </label>
                 <label class="auth-field">

@@ -1,0 +1,84 @@
+/* Finding a server and asking to join, and the owner's list of requests. Big rows and 48px buttons for a phone. */
+.find-server {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 520px;
+}
+.find-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.find-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.find-name {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.find-name small {
+  display: block;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.find-row .btn {
+  min-height: 48px;
+  padding: 0 16px;
+}
+.find-sent {
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.find-empty,
+.find-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.join-requests {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-2);
+}
+.join-requests h3 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+/* a new person with no server yet: the search fills the main area */
+.find-empty-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  height: 100%;
+  padding: 20px;
+  text-align: center;
+}
+.find-empty-state h2 {
+  margin: 0;
+  font-family: var(--mono);
+}

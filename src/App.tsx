@@ -1,5 +1,6 @@
 import { Match, Switch, createEffect, createSignal, onCleanup } from "solid-js";
 
+import { DhGate } from "./auth/DhGate";
 import { FaceOffer } from "./auth/FaceOffer";
 import { Login } from "./auth/Login";
 import { type AccessState, access } from "./firebase";
@@ -83,6 +84,27 @@ export function App() {
         <Notice title="Account banned" onLogout={logout}>
           A staff member has banned this account.
         </Notice>
+      </Match>
+      {/* an open sign-up account (real email, no operator approval): verify the email, then Darkwood Node */}
+      <Match when={state().status === "unregistered" && state().user}>
+        {(user) => (
+          <DhGate>
+            {(member) => (
+              <>
+                <Shell
+                  uid={user().uid}
+                  admin={false}
+                  staff={false}
+                  developer={false}
+                  name={member.name}
+                  username={member.username}
+                  onLogout={logout}
+                />
+                <FaceOffer />
+              </>
+            )}
+          </DhGate>
+        )}
       </Match>
       <Match when={state().status === "unregistered"}>
         <Notice title="No membership" onLogout={logout}>

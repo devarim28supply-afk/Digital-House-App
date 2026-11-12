@@ -34,12 +34,13 @@ const MAX_PICTURE_BYTES = 10 * 1024 * 1024;
 const MAX_FEEDBACK_BYTES = 50 * 1024 * 1024;
 
 /**
- * An approved member's uid: Firestore reads members/{uid} with their own
- * token. The owner account passes without a record, exactly as in the rooms'
- * own token route (M2A-access's api/livekit-token.js).
+ * A Darkwood Node member's uid: an operator-approved member (members/{uid}, Firestore read with their own token), or
+ * someone who registered for Darkwood Node with a verified real email (dhMembers/{uid} exists AND the token says the
+ * email is verified). The owner account passes without a record, exactly as in the rooms' own token route
+ * (M2A-access's api/livekit-token.js).
  */
 async function approvedUid(idToken: string) {
-  const claims = claimsOf(idToken);
+  const claims = claimsOf(idToken) as { sub?: string; email?: string; email_verified?: boolean };
   const uid = claims.sub ?? "";
   if (!idToken || !ID_RE.test(uid)) throw new Error("Log in first");
   const res = await fetch(`${FIRESTORE}/members/${uid}`, { headers: { Authorization: `Bearer ${idToken}` } });
@@ -50,6 +51,12 @@ async function approvedUid(idToken: string) {
     // only to a genuine, unexpired token. Any other failure (a forged token,
     // an outage) never counts as the owner: fail closed.
     if (owner && res.status === 404) return uid;
+    // no operator-approved record: an open sign-up member with a verified email (Firestore itself accepts
+    // the read only for a genuine token, and only the account's own record)
+    if (res.status === 404 && claims.email_verified === true) {
+      const dh = await fetch(`${FIRESTORE}/dhMembers/${uid}`, { headers: { Authorization: `Bearer ${idToken}` } });
+      if (dh.ok) return uid;
+    }
     throw new Error("Approved members only");
   }
   if (!owner) {
