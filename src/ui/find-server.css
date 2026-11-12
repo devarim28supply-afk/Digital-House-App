@@ -5,7 +5,7 @@
   width: 100%;
   max-width: 520px;
 }
-.find-list {
+.srv-list {
   display: grid;
   gap: 8px;
   margin: 0;

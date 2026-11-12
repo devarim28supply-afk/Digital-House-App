@@ -1054,7 +1054,17 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                   title={channelId() === DM_CALL ? "Back to the messages" : "Videochat with them"}
                   onClick={() => pickChannel(channelId() === DM_CALL ? DM_CHAT : DM_CALL)}
                 >
-                  {channelId() === DM_CALL ? "Messages" : "📞 Call"}
+                  {channelId() === DM_CALL ? (
+                    "Messages"
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="2.5" y="6" width="13" height="12" rx="3" />
+                        <path d="m15.5 10.5 6-3.5v10l-6-3.5" />
+                      </svg>{" "}
+                      Call
+                    </>
+                  )}
                 </button>
               </>
             )}

@@ -109,7 +109,7 @@ export function FindServer(props: { uid: string; name: string; username: string;
       <Show when={loaded() && !failed() && !shown().length}>
         <p class="find-empty">{search().trim() ? "No server has that name." : "There are no servers to join yet."}</p>
       </Show>
-      <ul class="find-list">
+      <ul class="srv-list">
         <For each={shown()}>
           {(entry) => (
             <li class="find-row">

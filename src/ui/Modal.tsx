@@ -17,13 +17,15 @@ function ModalBody(props: { title: string; class?: string; onClose: () => void; 
   const onKey = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
   onMount(() => {
     window.addEventListener("keydown", onKey);
-    panel?.querySelector<HTMLElement>("input, textarea, button")?.focus();
+    // focus the first field of the dialog's content; with none, the dialog itself (not the close button)
+    const field = panel?.querySelector<HTMLElement>(":scope > :not(.modal-head) input:not([type=radio]):not([type=checkbox]), :scope > :not(.modal-head) textarea");
+    (field ?? panel)?.focus();
   });
   onCleanup(() => window.removeEventListener("keydown", onKey));
 
   return (
     <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-      <div class={`modal ${props.class ?? ""}`} role="dialog" aria-modal="true" aria-label={props.title} ref={panel}>
+      <div class={`modal ${props.class ?? ""}`} role="dialog" aria-modal="true" aria-label={props.title} tabindex="-1" ref={panel}>
         <header class="modal-head">
           <h2>{props.title}</h2>
           <button class="icon-btn" type="button" aria-label="Close" onClick={props.onClose}>

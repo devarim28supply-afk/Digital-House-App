@@ -34,7 +34,7 @@ export function JoinRequestList(props: { serverId: string }) {
         </p>
       </Show>
       <Show when={requests().length} fallback={<p class="find-empty">No one is waiting.</p>}>
-        <ul class="find-list">
+        <ul class="srv-list">
           <For each={requests()}>
             {(request) => (
               <li class="find-row">

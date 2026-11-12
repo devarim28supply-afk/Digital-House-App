@@ -10,5 +10,6 @@ import "./data/mobileViewport";
 import "./data/noZoom";
 import "./data/appStyle";
 import "./ui/style-noir.css";
+import "./ui/dialogs.css";
 
 render(() => <App />, document.getElementById("root")!);

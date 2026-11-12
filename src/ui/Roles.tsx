@@ -143,20 +143,22 @@ function RolesBody(props: { uid: string; profiles: Map<string, Profile> }) {
                 <span class="member-name">
                   {nameOf(r)} <small>@{r.username || "member"}</small>
                 </span>
-                <For each={["staff", "admin", "develop"] as Role[]}>
-                  {(role) => (
-                    <button
-                      class="btn role-toggle"
-                      type="button"
-                      aria-pressed={Boolean(r.roles?.[role])}
-                      disabled={busy().has(r.uid) || r.uid === props.uid}
-                      title={r.uid === props.uid ? "You cannot change your own roles" : undefined}
-                      onClick={() => toggle(r, role)}
-                    >
-                      {LABEL[role]}
-                    </button>
-                  )}
-                </For>
+                <div class="role-buttons">
+                  <For each={["staff", "admin", "develop"] as Role[]}>
+                    {(role) => (
+                      <button
+                        class="btn role-toggle"
+                        type="button"
+                        aria-pressed={Boolean(r.roles?.[role])}
+                        disabled={busy().has(r.uid) || r.uid === props.uid}
+                        title={r.uid === props.uid ? "You cannot change your own roles" : undefined}
+                        onClick={() => toggle(r, role)}
+                      >
+                        {LABEL[role]}
+                      </button>
+                    )}
+                  </For>
+                </div>
               </div>
             )}
           </For>
