@@ -1,0 +1,75 @@
+/* Terminal Noir: the app's own black and green, finished. STYLE ONLY: colours, type, corners and glow.
+   Nothing here changes a size, a position or a layout. Switched on by data-style="noir" (src/data/appStyle.ts). */
+
+:root[data-style="noir"] {
+  --bg: #000;
+  --panel: #050807;
+  --panel-2: #0a0f0c;
+  --panel-3: #0f1612;
+  --line: #17211b;
+  --line-2: #213028;
+  --text: #e8eee9;
+  --muted: #8a968e;
+  --dim: #56635b;
+  --green: #4ade80;
+}
+
+/* a very fine green grid under the working areas */
+:root[data-style="noir"] .main,
+:root[data-style="noir"] .side,
+:root[data-style="noir"] .members,
+:root[data-style="noir"] .rail {
+  background-image:
+    linear-gradient(rgba(74, 222, 128, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74, 222, 128, 0.028) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* headings and labels in the mono face, with the terminal prompt */
+:root[data-style="noir"] .side-title,
+:root[data-style="noir"] .main-title,
+:root[data-style="noir"] .group-label,
+:root[data-style="noir"] .modal-title,
+:root[data-style="noir"] .modal h2 {
+  font-family: var(--mono);
+}
+:root[data-style="noir"] .side-title::before {
+  content: "› ";
+  color: var(--green);
+}
+
+/* whatever is active or speaking glows */
+:root[data-style="noir"] .rail-server.active,
+:root[data-style="noir"] .tile-row.active .room-tile,
+:root[data-style="noir"] .tile.speaking,
+:root[data-style="noir"] .voice .dock .dock-btn[aria-pressed="true"],
+:root[data-style="noir"] .dock-btn.on {
+  border-color: var(--green);
+  box-shadow: 0 0 0 1px var(--green), 0 0 18px rgba(74, 222, 128, 0.28);
+}
+
+/* sharper corners */
+:root[data-style="noir"] .tile,
+:root[data-style="noir"] .room-tile,
+:root[data-style="noir"] .rail-server,
+:root[data-style="noir"] .btn,
+:root[data-style="noir"] .dock-btn,
+:root[data-style="noir"] .side-tool,
+:root[data-style="noir"] .modal,
+:root[data-style="noir"] .modal-card {
+  border-radius: 8px;
+}
+
+/* fields: a green edge when you are typing in one */
+:root[data-style="noir"] input:focus,
+:root[data-style="noir"] textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.14);
+}
+
+:root[data-style="noir"] ::selection {
+  background: rgba(74, 222, 128, 0.3);
+}
+:root[data-style="noir"] ::-webkit-scrollbar-thumb {
+  background: #1e2b24;
+}
