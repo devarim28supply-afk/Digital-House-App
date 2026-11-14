@@ -5,7 +5,7 @@ import { Room, RoomEvent } from "livekit-client";
 
 import { type Profile, displayName } from "../data/store";
 import { deafened } from "../data/callControls";
-import { askTvObs, tvObs, tvObsBusy, tvObsCall } from "../data/tvObs";
+import { askTvObs, askTvShared, tvObs, tvObsBusy, tvObsCall, tvShared } from "../data/tvObs";
 import { inRoom } from "../data/where";
 import { auth } from "../firebase";
 import { captionVideo } from "../room/livecaptions";
@@ -73,8 +73,13 @@ function rememberPicked(next: Picked | undefined) {
 /**
  * The TV screen at the top of the right side bar, above the people and the
  * chat (Kaalob). It is always there. A click on it lists every channel to
- * choose from; the one you choose plays here, for you alone, and is still
- * on next time. Hovering shows CC (captions), OBS and Off. There is no big
+ * choose from. The TV is the same for everyone (Kaalob: they see what I
+ * see): the channel one person picks plays on the TV of everyone in this
+ * channel's videochat, and Off turns it off for everyone (data/tvObs.ts,
+ * tvShared). Each browser plays the channel itself; only which channel it
+ * is travels. Captions, sound, pop out and full screen stay your own.
+ * (Outside the videochat there is nobody to share with: the TV is then your
+ * own, on the channel you last picked there.) Hovering shows CC (captions), OBS and Off. There is no big
  * view for now (Kaalob: not needed right now).
  *
  * OBS (data/tvObs.ts): anyone in this channel's videochat can put their OBS
@@ -96,12 +101,25 @@ function rememberPicked(next: Picked | undefined) {
 export function SideTv(props: { serverId: string; channelId: string; profiles: Map<string, Profile>; room: boolean }) {
   const [tv, setTv] = createSignal<Tv | undefined>();
   // your own channel, and the list it is chosen from
-  const [picked, setPicked] = createSignal<Picked | undefined>(recallPicked());
+  // Outside the videochat: your own channel, kept in this browser.
+  const [ownPick, setOwnPick] = createSignal<Picked | undefined>(recallPicked());
+  // In the videochat: the one channel everyone is on (or none: off).
+  const sharedPick = () => {
+    const s = tvShared();
+    return s && s.channelKey === `${props.serverId}/${props.channelId}` && !s.off ? { name: s.name, url: s.url } : undefined;
+  };
+  const sharing = () => tvObsCall() === `${props.serverId}/${props.channelId}`;
+  const picked = (): Picked | undefined => (sharing() ? sharedPick() : ownPick());
   const [picking, setPicking] = createSignal(false);
   function choose(next: Picked | undefined) {
-    setPicked(next);
-    rememberPicked(next);
     setPicking(false);
+    if (sharing()) {
+      // for everyone in the videochat: the call tells them (and this TV follows it too)
+      askTvShared(`${props.serverId}/${props.channelId}`, next ?? null);
+      return;
+    }
+    setOwnPick(next);
+    rememberPicked(next);
   }
   const [sound, setSound] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
@@ -364,7 +382,7 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
       <button
         type="button"
         class="side-tv-screen"
-        title="Click to choose a channel"
+        title={sharing() ? "Click to choose a channel for everyone" : "Click to choose a channel"}
         aria-label={obs() ? `TV: ${obsName()}. Choose a channel` : playing() ? `TV: ${playing()!.name}. Choose a channel` : "TV is off. Choose a channel"}
         onClick={() => void openList()}
       >
@@ -479,7 +497,7 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
               </button>
             }
           >
-            <button type="button" class="side-tv-hide" title="Turn your TV off" onClick={() => choose(undefined)}>
+            <button type="button" class="side-tv-hide" title={sharing() ? "Turn the TV off for everyone" : "Turn your TV off"} onClick={() => choose(undefined)}>
               Off
             </button>
           </Show>

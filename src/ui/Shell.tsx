@@ -55,6 +55,8 @@ import {
 } from "../data/store";
 import { uploadPicture } from "../data/files";
 import { ACCENTS, accent, mode, saveAccent, saveMode } from "../data/layoutTheme";
+import { LEFT_WIDTH, RIGHT_WIDTH, access, setAccess } from "../data/access";
+import { AccessibilityDialog } from "./Accessibility";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
@@ -243,7 +245,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
   }
-  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "find" | "rename" | "people" | "new-channel" | "me">("");
+  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "find" | "rename" | "people" | "new-channel" | "me" | "access">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
@@ -629,7 +631,52 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const widenRight = (on: boolean) => {
     setRightWide(on);
     remember(RIGHT_WIDE_KEY, on ? "1" : "0");
+    // the button is "a third of the screen" or "normal": either way a dragged width goes
+    setAccess({ rightWidth: 0 });
   };
+  // Sidebars sized to your liking (Accessibility): drag a sidebar's inner
+  // edge. The width is kept (data/access.ts) and given to the layout as a
+  // variable on the shell; a double-click on the edge puts it back.
+  const [sizing, setSizing] = createSignal<"left" | "right" | undefined>();
+  function startSizing(which: "left" | "right", e: PointerEvent) {
+    if (e.button !== 0) return;
+    const handle = e.currentTarget as HTMLElement;
+    const panel = handle.parentElement;
+    const shell = handle.closest<HTMLElement>(".shell");
+    if (!panel || !shell) return;
+    e.preventDefault();
+    // the shell is drawn zoomed: the pointer moves in screen pixels, the width is in the shell's own
+    const zoom = parseFloat(getComputedStyle(shell).zoom) || 1;
+    const startX = e.clientX;
+    const startW = panel.getBoundingClientRect().width / zoom;
+    const maxRight = Math.min(RIGHT_WIDTH.max, (window.innerWidth / zoom) * 0.6);
+    setSizing(which);
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - startX) / zoom;
+      if (which === "left") setAccess({ leftWidth: Math.round(Math.min(LEFT_WIDTH.max, Math.max(LEFT_WIDTH.min, startW + dx))) });
+      else setAccess({ rightWidth: Math.round(Math.min(maxRight, Math.max(RIGHT_WIDTH.min, startW - dx))) });
+    };
+    const done = () => {
+      setSizing(undefined);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", done);
+      window.removeEventListener("pointercancel", done);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", done);
+    window.addEventListener("pointercancel", done);
+  }
+  const Sizer = (p: { side: "left" | "right" }) => (
+    <div
+      class={`side-sizer ${p.side}`}
+      classList={{ dragging: sizing() === p.side }}
+      role="separator"
+      aria-orientation="vertical"
+      title="Drag to resize this sidebar. Double-click to put it back."
+      onPointerDown={(e) => startSizing(p.side, e)}
+      onDblClick={() => setAccess(p.side === "left" ? { leftWidth: 0 } : { rightWidth: 0 })}
+    />
+  );
   function chooseRightMode(mode: SidebarMode) {
     window.clearTimeout(leaveTimer); leaveTimer = 0; window.clearTimeout(pingTimer);
     setRightMode(mode); setEdgeHover(false); setChatPing(false); setSideChatOpen(false);
@@ -807,6 +854,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   return (
     <div
       class="shell"
+      // the sidebars' dragged widths (Accessibility), for the layout in app.css
+      style={{ "--side-w": access().leftWidth ? `${access().leftWidth}px` : undefined, "--right-wide": access().rightWidth ? `${access().rightWidth}px` : undefined }}
       on:click={(event:MouseEvent) => {if(Date.now()<panelSwipeClickBlockedUntil){event.preventDefault();event.stopPropagation();}}}
       onTouchStart={startPanelSwipe} on:touchmove={movePanelSwipe} onTouchEnd={endPanelSwipe} onTouchCancel={() => {panelSwipe=undefined;}}
       onMouseMove={e => {
@@ -829,7 +878,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         else if (edgeHover()) leaveRight();
       }}
       onMouseLeave={() => { leaveLeft(); leaveRight(); }}
-      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "right-wide": rightWide(), "right-hover-only": rightMode() === "hover" && !TOUCH, "left-slide": leftSlides(), "left-open": leftSlides() && (leftHover() || Boolean(card()?.keepLeftOpen)) }}
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "right-wide": rightWide() || Boolean(access().rightWidth), sizing: Boolean(sizing()), "right-hover-only": rightMode() === "hover" && !TOUCH, "left-slide": leftSlides(), "left-open": leftSlides() && (leftHover() || Boolean(card()?.keepLeftOpen)) }}
     >
       {/* ---- servers ---- */}
       {/* in a call: the strip at the left edge brings the left side in */}
@@ -887,6 +936,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
 
       {/* ---- channels ---- */}
       <aside class="side" onMouseEnter={e => { if (leftHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterLeft(); }} onMouseLeave={leaveLeft}>
+        <Sizer side="left" />
         {/* the banner on its own, the name in the row under it */}
         <Show when={!dmMode() && server()?.banner}>
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
@@ -1323,11 +1373,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }}
             onMouseLeave={leaveRight}
           >
+            <Sizer side="right" />
             <header class="side-chat-head">
               <span>
                 <span class="hash">#</span> {chat().name}
               </span>
-              <WideButton wide={rightWide()} onWide={widenRight} />
+              <WideButton wide={rightWide() || Boolean(access().rightWidth)} onWide={widenRight} />
               <PinButton pinned={rightPinned()} onPin={pinRight} />
               <button
                 class="icon-btn side-chat-close"
@@ -1400,8 +1451,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         onMouseEnter={e => { if (edgeHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterRight(); }}
         onMouseLeave={leaveRight}
       >
+        <Sizer side="right" />
         <div class="members-head">
-          <WideButton wide={rightWide()} onWide={widenRight} />
+          <WideButton wide={rightWide() || Boolean(access().rightWidth)} onWide={widenRight} />
           <PinButton pinned={rightPinned()} onPin={pinRight} />
         </div>
         <Show when={server()}>
@@ -1577,6 +1629,10 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         </fieldset>
         <FaceUnlockSetting />
         <div class="modal-actions">
+          {/* text size, zoom, contrast, motion and the rest: its own page */}
+          <button class="btn" type="button" onClick={() => setModal("access")}>
+            Accessibility
+          </button>
           <Show when={isOwnerAccount()}>
             <button
               class="btn"
@@ -1594,6 +1650,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           </button>
         </div>
       </Modal>
+      <AccessibilityDialog open={modal() === "access"} onClose={() => setModal("")} />
     </div>
   );
 }

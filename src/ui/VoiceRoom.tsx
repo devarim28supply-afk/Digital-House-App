@@ -21,7 +21,7 @@ import {
 import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
-import { setTvObs, setTvObsBusy, setTvObsCall, tvObsAsk } from "../data/tvObs";
+import { setTvObs, setTvObsBusy, setTvObsCall, setTvShared, tvObsAsk, tvSharedAsk } from "../data/tvObs";
 import { audit } from "../data/audit";
 import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
@@ -967,6 +967,59 @@ export function VoiceRoom(props: {
     bump();
   }
 
+  // ---- the sidebar TV's channel, the same for everyone (Kaalob) ------------
+  // Each person in the call carries the TV's current choice in their own
+  // LiveKit attribute ("dh-tv": the channel, or off, and when it was chosen).
+  // The newest one is what everyone's TV shows. Everyone copies the newest
+  // into their own attribute, so it is still there when the person who chose
+  // it leaves, and someone joining later gets it at once.
+  const TV_ATTR = "dh-tv";
+  type TvChoice = { name: string; url: string; off: boolean; at: number };
+  const tvChoiceOf = (p: Participant): TvChoice | undefined => {
+    try {
+      const v = JSON.parse(p.attributes[TV_ATTR] || "null") as Partial<TvChoice> | null;
+      if (!v || typeof v.at !== "number" || !Number.isFinite(v.at)) return undefined;
+      if (v.off === true) return { name: "", url: "", off: true, at: v.at };
+      if (typeof v.name !== "string" || typeof v.url !== "string" || !/^https:\/\//.test(v.url)) return undefined;
+      return { name: v.name.slice(0, 120), url: v.url, off: false, at: v.at };
+    } catch {
+      return undefined;
+    }
+  };
+  let tvNewest = 0; // when the choice everyone is on was made
+  createEffect(() => {
+    version();
+    const current = room();
+    if (!current || props.viewOnly) return;
+    let newest: TvChoice | undefined;
+    for (const p of [current.localParticipant, ...current.remoteParticipants.values()]) {
+      const choice = tvChoiceOf(p);
+      if (choice && (!newest || choice.at > newest.at)) newest = choice;
+    }
+    tvNewest = newest?.at ?? 0;
+    setTvShared(newest ? { channelKey: `${props.serverId}/${props.channel.id}`, ...newest } : undefined);
+    // carry it too, so it does not leave with the person who chose it
+    if (newest && tvChoiceOf(current.localParticipant)?.at !== newest.at) {
+      void current.localParticipant.setAttributes({ [TV_ATTR]: JSON.stringify(newest) }).catch(() => {});
+    }
+  });
+  // a channel picked (or the TV turned off) on your TV: for everyone
+  createEffect(
+    on(
+      tvSharedAsk,
+      (ask) => {
+        const me = room()?.localParticipant;
+        if (!ask || !me || props.viewOnly || ask.channelKey !== `${props.serverId}/${props.channel.id}`) return;
+        // newer than whatever is on now, even if this computer's clock runs behind someone else's
+        const at = Math.max(Date.now(), tvNewest + 1);
+        const choice: TvChoice = ask.pick ? { name: ask.pick.name, url: ask.pick.url, off: false, at } : { name: "", url: "", off: true, at };
+        void me.setAttributes({ [TV_ATTR]: JSON.stringify(choice) }).catch(() => setError("The TV could not be changed for everyone. Try again."));
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => setTvShared(undefined));
+
   // ---- OBS on the sidebar TV (Kaalob) --------------------------------------
   // The TV's OBS button (SideTv) asks; this call publishes your OBS for
   // everyone in it, and tells the TV whose OBS is on (data/tvObs.ts).
@@ -1209,17 +1262,10 @@ export function VoiceRoom(props: {
   }
 
   // ---- remove someone from the call (the server's owner and admins) -----------
-  const [removeMenu, setRemoveMenu] = createSignal(false);
+  // The Remove button is on the person's own tile (it shows under the pointer),
+  // not in the row of call buttons (Kaalob): it asks first, then removes.
   const [removeAsk, setRemoveAsk] = createSignal<{ uid: string; name: string } | undefined>();
   const [removing, setRemoving] = createSignal(false);
-  createEffect(() => {
-    if (!removeMenu()) return;
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.(".remove-wrap")) setRemoveMenu(false);
-    };
-    window.addEventListener("pointerdown", close);
-    onCleanup(() => window.removeEventListener("pointerdown", close));
-  });
   async function confirmRemove() {
     const who = removeAsk();
     if (!who || removing()) return;
@@ -2387,6 +2433,11 @@ export function VoiceRoom(props: {
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
+                onRemove={
+                  canRemoveFromCall() && !props.viewOnly && !tile.screen && !tile.participant.isLocal
+                    ? () => setRemoveAsk({ uid: tile.participant.identity, name: nameOf(tile.participant) })
+                    : undefined
+                }
                 stream={
                   tile.screen || inTeam().has(tile.participant.identity) || isBroadcastRoom(tvKey())
                     ? undefined
@@ -2445,10 +2496,12 @@ export function VoiceRoom(props: {
       >
         <button
           type="button"
-          class="dock-btn"
+          class="dock-btn icon-only"
           aria-pressed={streamCamOn()}
           aria-haspopup="menu"
           aria-expanded={streamMenu()}
+          title={streamCamBusy() ? "Starting…" : streamCamOn() ? "Stream is on" : "Stream: show another webcam as its own screen"}
+          aria-label="Stream"
           onClick={() => openStreamMenu()}
         >
           <DockFace kind="stream" word={streamCamBusy() ? "Starting" : "Stream"} full={streamCamBusy() ? "Starting…" : "Stream ▴"} />
@@ -2584,14 +2637,22 @@ export function VoiceRoom(props: {
           <p class="form-error voice-error">{error()}</p>
         </Show>
         <div class="dock" classList={{ hidden: Boolean(props.viewOnly) }}>
-          <button type="button" class="dock-btn" aria-pressed={micOn()} onClick={() => void toggle("mic")}>
+          {/* mic and camera: an icon, not words (Kaalob). The words are the tooltip. */}
+          <button type="button" class="dock-btn icon-only onoff" aria-pressed={micOn()} title={micOn() ? "Mic on" : "Mic off"} aria-label={micOn() ? "Mic on" : "Mic off"} onClick={() => void toggle("mic")}>
             <DockFace kind={micOn() ? "mic" : "mic-off"} word={micOn() ? "Mic" : "Muted"} full={micOn() ? "Mic on" : "Mic off"} />
           </button>
           <Show
             when={props.camera}
             fallback={
               <>
-                <button type="button" class="dock-btn" aria-pressed={camShown()} onClick={() => void toggle("cam")}>
+                <button
+                  type="button"
+                  class="dock-btn icon-only onoff"
+                  aria-pressed={camShown()}
+                  title={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
+                  aria-label={camWant() === true && !camOn() ? "Starting camera" : camShown() ? "Camera on" : "Camera off"}
+                  onClick={() => void toggle("cam")}
+                >
                   <DockFace
                     kind={camShown() ? "cam" : "cam-off"}
                     word={camWant() === true && !camOn() ? "Starting" : "Camera"}
@@ -2605,7 +2666,7 @@ export function VoiceRoom(props: {
             }
           >
             {(cam) => (
-              <button type="button" class="dock-btn" aria-pressed={cam().on} onClick={() => cam().toggle()}>
+              <button type="button" class="dock-btn icon-only onoff" aria-pressed={cam().on} title={cam().on ? "Camera on" : "Camera off"} aria-label={cam().on ? "Camera on" : "Camera off"} onClick={() => cam().toggle()}>
                 <DockFace kind={cam().on ? "cam" : "cam-off"} word="Camera" full={cam().on ? "Camera on" : "Camera off"} />
               </button>
             )}
@@ -2624,10 +2685,12 @@ export function VoiceRoom(props: {
           >
             <button
               type="button"
-              class="dock-btn"
+              class="dock-btn icon-only"
               aria-pressed={sharedCount() > 0}
               aria-haspopup="menu"
               aria-expanded={shareMenu()}
+              title={sharedCount() === 0 ? "Share screen" : `Sharing ${sharedCount()}`}
+              aria-label="Share screen"
               onClick={() => setShareMenu(!shareMenu())}
             >
               <DockFace
@@ -2685,8 +2748,9 @@ export function VoiceRoom(props: {
           >
             <button
               type="button"
-              class="dock-btn attention-btn"
-              title="Make your tile flash white (3 s)"
+              class="dock-btn icon-only attention-btn"
+              title="Attention: make your tile flash white (3 s)"
+              aria-label="Attention"
               aria-haspopup="menu"
               aria-expanded={attentionMenu()}
               onClick={() => setAttentionMenu(!attentionMenu())}
@@ -2708,46 +2772,6 @@ export function VoiceRoom(props: {
               </div>
             </Show>
           </div>
-          <Show when={canRemoveFromCall() && !props.viewOnly && others().length > 0}>
-            <div
-              class="share-wrap remove-wrap"
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && removeMenu()) {
-                  setRemoveMenu(false);
-                  e.preventDefault();
-                }
-              }}
-            >
-              <button
-                type="button"
-                class="dock-btn"
-                title="Remove someone from this call"
-                aria-haspopup="menu"
-                aria-expanded={removeMenu()}
-                onClick={() => setRemoveMenu(!removeMenu())}
-              >
-                <DockFace kind="remove" word="Remove" full="Remove ▴" />
-              </button>
-              <Show when={removeMenu()}>
-                <div class="dock-menu" role="menu" aria-label="Remove from call">
-                  <For each={others()}>
-                    {(p) => (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setRemoveMenu(false);
-                          setRemoveAsk({ uid: p.identity, name: nameOf(p) });
-                        }}
-                      >
-                        <span>{nameOf(p)}</span>
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-            </div>
-          </Show>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile && !layout().phone}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
@@ -2874,25 +2898,29 @@ function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "shar
   }
   if (kind === "stream") {
     return (
+      // Stream (Kaalob): a screen with a small tile inside it, which is what a stream looks like here
       <svg {...pen}>
-        <circle cx="12" cy="12" r="2.2" />
-        <path d="M7.6 8.3a6 6 0 0 0 0 7.4M16.4 8.3a6 6 0 0 1 0 7.4" />
-        <path d="M4.8 5.5a10 10 0 0 0 0 13M19.2 5.5a10 10 0 0 1 0 13" />
+        <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+        <rect x="11.5" y="7.5" width="7" height="5.5" rx="1" />
       </svg>
     );
   }
   if (kind === "share") {
     return (
+      // Share screen (Kaalob): two screens, one over the other
       <svg {...pen}>
-        <rect x="3" y="4" width="18" height="12" rx="2" />
-        <path d="M8 20h8M12 16v4" />
+        <path d="M7 8.5V6.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2" />
+        <rect x="3" y="8.5" width="14" height="11" rx="2" />
       </svg>
     );
   }
   if (kind === "look") {
     return (
+      // Attention (Kaalob): a screen that is flashing, which is what it does to your tile
       <svg {...pen}>
-        <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+        <rect x="6.5" y="8" width="11" height="8" rx="1.5" />
+        <path d="M12 2.8v2.4M12 18.8v2.4M2.6 12h1.9M19.5 12h1.9" />
+        <path d="M4.6 5.2l1.7 1.5M19.4 5.2l-1.7 1.5M4.6 18.8l1.7-1.5M19.4 18.8l-1.7-1.5" />
       </svg>
     );
   }
@@ -3109,6 +3137,8 @@ function Tile(props: {
   roomFace?: RemoteTrack;
   /** your own camera, already switched off (it is still stopping) */
   forceOff?: boolean;
+  /** you run this server: a Remove button on this person's tile (it asks first) */
+  onRemove?: () => void;
   /** they asked for attention: a white strobe around the tile */
   flashing?: boolean;
   /** their phone is turning: keep the last good frame on screen for a moment */
@@ -3401,6 +3431,22 @@ function Tile(props: {
             onDblClick={(e) => e.stopPropagation()}
           />
         </div>
+      </Show>
+      <Show when={props.onRemove}>
+        <button
+          type="button"
+          class="tile-remove"
+          title={`Remove ${props.name} from this call`}
+          aria-label={`Remove ${props.name} from this call`}
+          onClick={(e) => {
+            e.stopPropagation();
+            props.onRemove?.();
+          }}
+          onDblClick={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+        >
+          Remove
+        </button>
       </Show>
       <span class="tile-name">
         <Show when={props.stream}>

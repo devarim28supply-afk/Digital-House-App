@@ -19,6 +19,8 @@ import {
   MESSAGE_PAGE,
 } from "../data/store";
 import { audit } from "../data/audit";
+import { access } from "../data/access";
+import { Formatted } from "./Markdown";
 import { EmojiPicker, ImageViewer } from "./Emoji";
 import { faceStyle, faceText } from "./Shell";
 
@@ -90,7 +92,7 @@ function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
     >
       <Show when={kind() === "image"}>
         <button type="button" class="msg-media" title="Open" onClick={() => props.onOpen(props.file)}>
-          <img src={props.file.url} alt={props.file.name} loading="lazy" decoding="async" />
+          <Still src={props.file.url} animated={isGif(props.file.url, props.file.type)} alt={props.file.name} lazy />
         </button>
       </Show>
       <Show when={kind() === "video"}>
@@ -104,8 +106,54 @@ function FileView(props: { file: ChatFile; onOpen: (file: ChatFile) => void }) {
 }
 
 /**
- * Plain text with links made clickable and :name: shown as the server's
- * emoji. Nothing is parsed as HTML.
+ * A picture that may move (a GIF, an animated emoji or sticker), shown the way
+ * Accessibility says: playing, playing only under the pointer, or kept still.
+ * Still means its first frame, drawn once and kept. A picture whose first
+ * frame cannot be read (its server does not allow it) just plays.
+ */
+function Still(props: { src: string; animated: boolean; class?: string; alt: string; title?: string; lazy?: boolean }) {
+  const [frame, setFrame] = createSignal<string>();
+  const [over, setOver] = createSignal(false);
+  const mode = () => access().animations;
+  createEffect(() => {
+    if (!props.animated || mode() === "always" || frame()) return;
+    const src = props.src;
+    if (!/^https?:/.test(src)) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")?.drawImage(img, 0, 0);
+        setFrame(canvas.toDataURL("image/png"));
+      } catch {
+        /* not readable from here: it plays */
+      }
+    };
+    // its own address, so the browser asks again with permission to read the picture
+    img.src = src + (src.includes("?") ? "&" : "?") + "still=1";
+  });
+  const still = () => props.animated && Boolean(frame()) && (mode() === "never" || (mode() === "hover" && !over()));
+  return (
+    <img
+      class={props.class}
+      src={still() ? frame() : props.src}
+      alt={props.alt}
+      title={props.title}
+      loading={props.lazy ? "lazy" : undefined}
+      decoding="async"
+      onPointerEnter={() => setOver(true)}
+      onPointerLeave={() => setOver(false)}
+    />
+  );
+}
+const isGif = (url: string, type = "") => type === "image/gif" || /\.gif(\?|#|$)/i.test(url);
+
+/**
+ * A message's text: formatting (Markdown.tsx), links made clickable, and
+ * :name: shown as the server's emoji. Nothing is parsed as HTML.
  */
 const MENTION = /(@[A-Za-z0-9_.-]{2,32})/g;
 
@@ -115,7 +163,7 @@ function Bits(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<
     <For each={props.text.split(EMOJI_TOKEN)}>
       {(bit) => {
         const emoji = /^:[a-z0-9_]{2,32}:$/.test(bit) ? props.emojis.get(bit.slice(1, -1)) : undefined;
-        if (emoji) return <img class="emoji" src={emoji.url} alt={bit} title={bit} decoding="async" />;
+        if (emoji) return <Still class="emoji" src={emoji.url} animated={Boolean(emoji.animated) || isGif(emoji.url)} alt={bit} title={bit} />;
         return (
           <For each={bit.split(MENTION)}>
             {(word) => {
@@ -136,20 +184,9 @@ function Bits(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<
 }
 
 function Text(props: { text: string; emojis: Map<string, Emoji>; usernames: Set<string>; me: string }) {
-  const parts = () => props.text.split(URL_RE);
-  return (
-    <For each={parts()}>
-      {(part, i) =>
-        i() % 2 === 1 ? (
-          <a href={part} target="_blank" rel="noopener noreferrer">
-            {part}
-          </a>
-        ) : (
-          <Bits text={part} emojis={props.emojis} usernames={props.usernames} me={props.me} />
-        )
-      }
-    </For>
-  );
+  // bold, italic, code, quotes, spoilers, lists and links are cut out by
+  // Formatted; each plain run in between comes back here for emojis and @mentions
+  return <Formatted text={props.text} plain={(run) => <Bits text={run} emojis={props.emojis} usernames={props.usernames} me={props.me} />} />;
 }
 
 export function Chat(props: {
@@ -651,7 +688,7 @@ export function Chat(props: {
                       </Show>
                       <Show when={m.sticker}>
                         {(sticker) => (
-                          <img class="msg-sticker" src={sticker().url} alt={sticker().name} title={sticker().name} loading="lazy" decoding="async" />
+                          <Still class="msg-sticker" src={sticker().url} animated={isGif(sticker().url)} alt={sticker().name} title={sticker().name} lazy />
                         )}
                       </Show>
                       <Show when={Object.values(m.reactions).some((who) => who.length)}>

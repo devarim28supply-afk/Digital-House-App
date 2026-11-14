@@ -1,0 +1,365 @@
+/* Accessibility (src/data/access.ts): what each setting does. Each rule is
+   behind a switch on <html> that is only there when the setting is moved off
+   its default, so the app as it comes is untouched by this file. */
+
+/* ---- Chat font scaling ---- */
+html[data-chat-size] .chat :is(.msg-text, .msg-head, .composer textarea, .edit-box textarea) {
+  font-size: var(--chat-size);
+}
+html[data-chat-size] .chat .msg-head time,
+html[data-chat-size] .chat .msg-side-time,
+html[data-chat-size] .chat .edited {
+  font-size: calc(var(--chat-size) * 0.75);
+}
+html[data-chat-size] .chat .msg-text img.emoji {
+  width: calc(var(--chat-size) * 1.45);
+  height: calc(var(--chat-size) * 1.45);
+}
+
+/* ---- Space between message groups ---- */
+html[data-group-gap] .chat .msg:not(.grouped) {
+  margin-top: var(--group-gap);
+  padding-top: 2px;
+}
+
+/* ---- Message display: Compact (no avatars; time, name and message on one line) ---- */
+html[data-msg="compact"] .chat .msg,
+html[data-msg="compact"] .chat .msg.grouped {
+  gap: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+html[data-msg="compact"] .chat .msg .avatar-btn,
+html[data-msg="compact"] .chat .msg .msg-side-time {
+  display: none;
+}
+html[data-msg="compact"] .chat .msg-head {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  margin-right: 8px;
+  vertical-align: baseline;
+}
+html[data-msg="compact"] .chat .msg-head .msg-author::after {
+  content: ":";
+  font-weight: 400;
+}
+html[data-msg="compact"] .chat .msg-text {
+  display: inline;
+}
+/* a message under another from the same person lines up under the first one's text */
+html[data-msg="compact"] .chat .msg.grouped .msg-text {
+  display: block;
+  margin: 0;
+}
+
+/* ---- Saturation: the app's colors, not the pictures (webcams, TV, photos stay as they are) ---- */
+html[data-sat] .shell :is(
+  .rail,
+  .side-head,
+  .side-scroll .side-tools,
+  .me,
+  .call-bar,
+  .main-head,
+  .dock,
+  .side-chat-head,
+  .mobile-panel-switch,
+  .composer,
+  .msg-head,
+  .msg-text,
+  .msg-reactions,
+  .msg-tools,
+  .modal-head,
+  .modal-form,
+  .modal-actions,
+  .members-head,
+  .group-label,
+  .announcement,
+  .side-tool
+) {
+  filter: saturate(var(--sat));
+}
+
+/* ---- Contrast: stronger text and lines ---- */
+html[data-contrast="high"]:not([data-mode="light"]) .shell {
+  --text: #ffffff;
+  --muted: #c4cdc7;
+  --dim: #98a39c;
+  --line: #34423a;
+  --line-2: #4d5f54;
+}
+html[data-contrast="high"][data-mode="light"] .shell {
+  --text: #000000;
+  --muted: #222a25;
+  --dim: #3f4a43;
+  --line: #8b958f;
+  --line-2: #5f6a63;
+}
+html[data-contrast="high"] .shell :is(.btn, .dock-btn, .field input, .composer textarea, .side-tool, .rail-server, .rail-add) {
+  border-width: 2px;
+}
+html[data-contrast="high"] .shell :focus-visible {
+  outline-width: 3px;
+}
+
+/* ---- Always underline links ---- */
+html[data-links="underline"] .shell :is(a, .dashboard-link, .announcement-edit, .announcement-add) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- Reduced motion: nothing slides, fades, pulses or scrolls by itself ---- */
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ---- the Send button ---- */
+html[data-send="off"] .chat .composer .send {
+  display: none;
+}
+
+/* ---- message formatting (src/ui/Markdown.tsx): **bold**, *italic*, `code`, > quote, ||spoiler||, lists, headings ---- */
+.md-code {
+  padding: 1px 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+}
+.md-pre {
+  display: block;
+  margin: 4px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  line-height: 1.45;
+  white-space: pre;
+}
+.md-quote {
+  display: block;
+  padding-left: 10px;
+  border-left: 4px solid var(--line-2);
+  color: var(--muted);
+}
+.md-h {
+  display: block;
+  margin: 6px 0 2px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.md-h1 { font-size: 1.5em; }
+.md-h2 { font-size: 1.25em; }
+.md-h3 { font-size: 1.1em; }
+.md-item {
+  display: block;
+  position: relative;
+  padding-left: 1.3em;
+}
+.md-item::before {
+  content: "•";
+  position: absolute;
+  left: 0.35em;
+}
+.md-item.numbered::before {
+  content: attr(data-n) ".";
+  left: 0;
+}
+/* a spoiler is a black bar until you click it */
+.md-spoiler {
+  border-radius: 4px;
+  background: var(--panel-3);
+  box-shadow: 0 0 0 1px var(--line-2);
+  color: transparent;
+  cursor: pointer;
+}
+.md-spoiler * {
+  visibility: hidden;
+}
+.md-spoiler.open {
+  background: var(--panel-2);
+  color: inherit;
+  cursor: text;
+}
+.md-spoiler.open * {
+  visibility: visible;
+}
+
+/* ---- sidebars sized to your liking: drag a sidebar's inner edge ---- */
+.side-sizer {
+  display: none;
+}
+@media (min-width: 761px) {
+  .side-sizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .side-sizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
+    background: transparent;
+    transition: background 120ms ease;
+  }
+  .side-sizer:hover::after,
+  .side-sizer.dragging::after {
+    left: 2px;
+    width: 3px;
+    background: var(--green);
+  }
+  .side-sizer.left {
+    right: 0;
+  }
+  .side-sizer.right {
+    left: 0;
+  }
+  /* the handle is placed against its sidebar: a sidebar that is a plain column
+     (not sliding, which is already its own frame) is made the frame for it */
+  .shell:not(.left-slide) .side {
+    position: relative;
+  }
+  /* dragging: no text gets selected, nothing animates behind the pointer */
+  .shell.sizing,
+  .shell.sizing * {
+    user-select: none !important;
+    cursor: col-resize !important;
+    transition: none !important;
+  }
+}
+
+@media (min-width: 1101px) {
+  .shell.right-pinned :is(.side-chat, .members) {
+    position: relative;
+  }
+}
+
+/* ---- the Accessibility dialog ---- */
+.modal.access {
+  width: min(620px, calc(100vw - 24px));
+  max-width: 620px;
+}
+.access-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(68vh, 640px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.access-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.access-group > legend {
+  padding: 0 0 6px;
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.access-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.access-row > b {
+  font-size: 14px;
+}
+.access-row > small,
+.access-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.access-slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 12px;
+}
+.access-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--green);
+}
+.access-slider output {
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: right;
+}
+.access-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.access-choices button {
+  flex: 1 1 120px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.access-choices button:hover {
+  border-color: var(--hover-line, #404040);
+}
+.access-choices button[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+.access-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.access-toggle input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--green);
+}
+.access-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.access-toggle small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+/* a live sample of the chat, under the chat settings */
+.access-sample {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 6px 0;
+  pointer-events: none;
+}
