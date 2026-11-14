@@ -51,6 +51,9 @@ function recallCcMode(): CcMode {
   }
 }
 
+// a phone or tablet: a touch screen with no pointer to hover with
+const TOUCH_ONLY = matchMedia("(hover: none)").matches;
+
 // your own channel, kept in this browser so the TV is still on it next time
 const PICKED_KEY = "dh_side_tv";
 function recallPicked(): Picked | undefined {
@@ -368,6 +371,22 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
     setPicking(true);
   }
+  // A touch screen has no pointer to hover with (Kaalob: tap to show). The
+  // first tap on the TV shows its buttons and the channel's title for a few
+  // seconds; a tap on the picture while they show opens the channel list.
+  // A TV that is off has nothing to show first: a tap opens the list.
+  const [tapped, setTapped] = createSignal(false);
+  let tapTimer = 0;
+  const showTools = () => {
+    setTapped(true);
+    window.clearTimeout(tapTimer);
+    tapTimer = window.setTimeout(() => setTapped(false), 5000);
+  };
+  onCleanup(() => window.clearTimeout(tapTimer));
+  function tapScreen() {
+    if (TOUCH_ONLY && (playing() || obs()) && !tapped()) return showTools();
+    void openList();
+  }
 
   return (
     <>
@@ -378,13 +397,13 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
         Bring it back
       </button>
     </div>
-    <div class="side-tv" ref={tvEl} classList={{ off: !playing() && !obs(), "cc-on": Boolean(onChannel()) && ccMode() !== 0, popped: popped() || full() }}>
+    <div class="side-tv" ref={tvEl} classList={{ off: !playing() && !obs(), "cc-on": Boolean(onChannel()) && ccMode() !== 0, popped: popped() || full(), tapped: tapped() }}>
       <button
         type="button"
         class="side-tv-screen"
         title={sharing() ? "Click to choose a channel for everyone" : "Click to choose a channel"}
         aria-label={obs() ? `TV: ${obsName()}. Choose a channel` : playing() ? `TV: ${playing()!.name}. Choose a channel` : "TV is off. Choose a channel"}
-        onClick={() => void openList()}
+        onClick={tapScreen}
       >
         <Show
           when={obs()}
@@ -445,7 +464,7 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
         </button>
       </Show>
       {/* over the screen while the pointer is on the TV: CC, OBS, and Off (or Hide) */}
-      <div class="side-tv-tools">
+      <div class="side-tv-tools" onClick={() => TOUCH_ONLY && showTools()}>
         <Show when={onChannel()}>
           <CcButton mode={ccMode()} onNext={nextCc} />
         </Show>
@@ -475,7 +494,7 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
           </button>
         </Show>
         {/* Pop out: the TV in a small window of its own, on top of everything */}
-        <Show when={(playing() || obs()) && !full()}>
+        <Show when={(playing() || obs()) && !full() && !TOUCH_ONLY}>
           <button type="button" class="side-tv-hide" title={popped() ? "Put the TV back in the sidebar" : "Open the TV in its own small window, on top of everything"} onClick={() => void popOut()}>
             {popped() ? "Pop in" : "Pop out"}
           </button>

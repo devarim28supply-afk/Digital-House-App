@@ -88,13 +88,23 @@ export function ServerSettings(props: {
   /** the page it opens on: "+ People" in the sidebar opens it on Members */
   startOn?: "profile" | "members";
 }) {
-  const [page, setPage] = createSignal<Page>("profile");
+  const [page, setPageNow] = createSignal<Page>("profile");
   const [error, setError] = createSignal("");
+  // On a phone: the list of sections first, then the picked page with a Back
+  // button (see Settings.tsx). inPage: a page is open. Picking a section opens it.
+  const [inPage, setInPage] = createSignal(false);
+  const setPage = (next: Page) => {
+    setPageNow(next);
+    setInPage(true);
+  };
   createEffect(
     on(
       () => props.open,
       (open) => {
-        if (open) setPage(props.startOn ?? "profile");
+        if (!open) return;
+        setPageNow(props.startOn ?? "profile");
+        // "+ People" opens straight on Members; the gear opens on the list (on a phone)
+        setInPage(props.startOn === "members");
       },
     ),
   );
@@ -437,7 +447,7 @@ export function ServerSettings(props: {
 
   return (
     <Modal title="Server settings" class="settings" open={props.open} onClose={close}>
-      <div class="set">
+      <div class="set" classList={{ "in-page": inPage() }}>
         <nav class="set-nav" aria-label="Server settings sections">
           <For each={groups()}>
             {(group) => (
@@ -465,6 +475,10 @@ export function ServerSettings(props: {
         </nav>
 
         <section class="set-page" aria-label={titleOf(page())}>
+          {/* a phone only: back to the list of sections */}
+          <button type="button" class="set-back" onClick={() => setInPage(false)}>
+            ‹ Server settings
+          </button>
           <h3 class="set-title">{titleOf(page())}</h3>
           <Show when={error()}>
             <p class="form-error">{error()}</p>
