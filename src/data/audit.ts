@@ -38,6 +38,7 @@ export type AuditAction =
   | "tile.picture"
   | "channel.create"
   | "channel.rename"
+  | "channel.order"
   | "channel.delete"
   | "message.delete"
   | "call.remove"
@@ -78,6 +79,7 @@ export const ACTION_LABEL: Record<AuditAction, string> = {
   "tile.picture": "changed a tile's picture",
   "channel.create": "made a channel",
   "channel.rename": "renamed a channel",
+  "channel.order": "put the channels in a new order",
   "channel.delete": "deleted a channel",
   "message.delete": "deleted a message",
   "call.remove": "removed someone from a call",

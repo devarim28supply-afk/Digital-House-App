@@ -1,7 +1,6 @@
 import { For, type JSX } from "solid-js";
 
 import { ACCESS_DEFAULTS, type Access, access, resetAccess, setAccess } from "../data/access";
-import { Modal } from "./Modal";
 import "./accessibility.css";
 
 /**
@@ -9,10 +8,11 @@ import "./accessibility.css";
  * Appearance pages): text size and spacing, zoom, cozy or compact messages,
  * colors and contrast, links, motion, animated pictures, the Send button,
  * and the right sidebar's size. Every change shows at once and is kept in this
- * browser (data/access.ts); the chat sample in the dialog shows the chat
- * settings as you move them.
+ * browser (data/access.ts); the chat sample on the page shows the chat
+ * settings as you move them. It is a page of the Settings window
+ * (Settings.tsx).
  */
-export function AccessibilityDialog(props: { open: boolean; onClose: () => void }) {
+export function AccessibilityPage() {
   const a = access;
   const changed = () => JSON.stringify(a()) !== JSON.stringify(ACCESS_DEFAULTS);
 
@@ -60,7 +60,7 @@ export function AccessibilityDialog(props: { open: boolean; onClose: () => void 
   );
 
   return (
-    <Modal title="Accessibility" class="access" open={props.open} onClose={props.onClose}>
+    <>
       <div class="access-scroll">
         <fieldset class="access-group">
           <legend>Chat text</legend>
@@ -174,12 +174,9 @@ export function AccessibilityDialog(props: { open: boolean; onClose: () => void 
       </div>
       <div class="modal-actions">
         <button class="btn danger" type="button" disabled={!changed()} onClick={() => resetAccess()}>
-          Reset everything
-        </button>
-        <button class="btn primary" type="button" onClick={props.onClose}>
-          Done
+          Reset everything on this page
         </button>
       </div>
-    </Modal>
+    </>
   );
 }
