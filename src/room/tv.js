@@ -92,9 +92,12 @@ function parseM3u(text) {
  * (then hasCaptions() is true); a channel without them never calls it.
  * @param {HTMLVideoElement} video
  * @param {string} url
- * @param {{ muted?: boolean, onFail?: (why: string) => void, onCaptions?: () => void }} [options]
+ * overlay: false keeps the channel's captions off the picture; the caller
+ * reads them with getCaptionText() and shows them where it wants (the side
+ * TV puts them under the screen). The room's TVs leave it on.
+ * @param {{ muted?: boolean, overlay?: boolean, onFail?: (why: string) => void, onCaptions?: () => void }} [options]
  */
-export function playChannel(video, url, { muted = true, onFail, onCaptions } = {}) {
+export function playChannel(video, url, { muted = true, overlay = true, onFail, onCaptions } = {}) {
   let failed = false;
   const fail = (why) => {
     if (failed) return;
@@ -113,6 +116,8 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
   let captionSource = false;
   let activeTrack = null;
   let ccOn = true;
+  // "hidden" still loads the cues (so they can be read), it only does not draw them
+  const drawn = () => ccOn && overlay;
   const cueSeen = (e) => {
     if (captioned || !e.target.activeCues?.length) return;
     captioned = true;
@@ -124,7 +129,7 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
       if (track.kind === "captions" || track.kind === "subtitles") {
         captionSource = true;
         activeTrack = track;
-        track.mode = ccOn ? "showing" : "hidden";
+        track.mode = drawn() ? "showing" : "hidden";
         track.addEventListener("cuechange", cueSeen);
         return;
       }
@@ -145,7 +150,7 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
       if (!captionSource && hls.subtitleTracks.length && hls.subtitleTrack < 0) {
         captionSource = true;
         hls.subtitleTrack = 0;
-        hls.subtitleDisplay = ccOn;
+        hls.subtitleDisplay = drawn();
       }
     });
     hls.loadSource(url);
@@ -165,15 +170,26 @@ export function playChannel(video, url, { muted = true, onFail, onCaptions } = {
     ccEnabled: () => ccOn,
     setCaptions(on) {
       ccOn = Boolean(on);
-      if (activeTrack) activeTrack.mode = ccOn ? "showing" : "hidden";
-      if (hls && hls.subtitleTrack >= 0) hls.subtitleDisplay = ccOn;
+      if (activeTrack) activeTrack.mode = drawn() ? "showing" : "hidden";
+      if (hls && hls.subtitleTrack >= 0) hls.subtitleDisplay = drawn();
     },
     /** The line on screen right now, or "". */
     getCaptionText() {
-      if (!ccOn || !activeTrack) return "";
-      const cues = activeTrack.activeCues;
-      if (!cues || !cues.length) return "";
-      return [...cues].map((c) => c.text ?? "").join("\n");
+      if (!ccOn) return "";
+      // the one caption track, or (subtitles listed in the playlist, which
+      // hls.js adds itself) whichever track has a line on right now
+      const tracks = activeTrack
+        ? [activeTrack]
+        : [...video.textTracks].filter((t) => (t.kind === "captions" || t.kind === "subtitles") && t.mode !== "disabled");
+      const text = tracks
+        .flatMap((t) => [...(t.activeCues ?? [])])
+        .map((c) => c.text ?? "")
+        .join("\n");
+      if (text && !captioned) {
+        captioned = true;
+        onCaptions?.();
+      }
+      return text;
     },
     destroy() {
       video.textTracks.removeEventListener("addtrack", showCaptions);

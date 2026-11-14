@@ -1,0 +1,290 @@
+/* Light mode (Account > Appearance). Dark is the app as it was: nothing here
+   touches it. Switched on by data-mode="light" on <html> (src/data/layoutTheme.ts).
+
+   How it works: the app's colours are variables, so light mode gives the
+   shell its own set. They are set on .shell, not on :root, so the login page
+   and the waiting page (outside the shell) stay as they are, and so these
+   win over the style and colour-theme rules, which are set on :root.
+
+   Pictures stay dark: a webcam tile, a TV screen, a room picture, the picture
+   viewer and the profile editor keep the dark colours (the "dark islands"
+   below), the way a video player stays black on a white page. */
+
+/* Not white: a soft grey, easier on the eyes (Kaalob: less bright). */
+html[data-mode="light"] body:has(.shell) {
+  background: #d9ddda;
+}
+
+html[data-mode="light"] .shell {
+  color-scheme: light;
+  --bg: #d9ddda;
+  --panel: #ced3cf;
+  --panel-2: #c3c9c5;
+  --panel-3: #b5bcb7;
+  --line: #bcc3be;
+  --line-2: #a2aba5;
+  --text: #121713;
+  --muted: #414b45;
+  --dim: #66716a;
+  /* the theme colour, darker so it reads on white (green here; the others below) */
+  --green: #116b33;
+  --green-rgb: 17, 107, 51;
+  --focus: var(--green);
+  --ok: #15803d;
+  --on-accent: #ffffff;
+  --amber: #92400e;
+  --red: #b91c1c;
+  /* the few places the dark design used a fixed colour */
+  --card: #e2e5e3; /* a dialog, a menu, a card over the page: a little lighter than the page */
+  --inv-bg: #141a16; /* the main button: the page's opposite */
+  --inv-fg: #ffffff;
+  --inv-hover: #2c3731;
+  --hover-line: #76827b; /* a border under the pointer */
+  --danger-bg: #e8cfcd;
+  --danger-line: #d39b98;
+  --shade: rgba(20, 26, 22, 0.5); /* behind a dialog */
+  --shadow: rgba(20, 26, 22, 0.24);
+  color: var(--text);
+}
+
+/* the eight colour themes, each darker for white */
+html[data-mode="light"][data-accent="blue"] .shell   { --green: #1a50b8; --green-rgb: 26, 80, 184; }
+html[data-mode="light"][data-accent="orange"] .shell { --green: #a8380a; --green-rgb: 168, 56, 10; }
+html[data-mode="light"][data-accent="red"] .shell    { --green: #b92020; --green-rgb: 185, 32, 32; }
+html[data-mode="light"][data-accent="purple"] .shell { --green: #6a2fd0; --green-rgb: 106, 47, 208; }
+html[data-mode="light"][data-accent="pink"] .shell   { --green: #b31c5e; --green-rgb: 179, 28, 94; }
+html[data-mode="light"][data-accent="yellow"] .shell { --green: #855006; --green-rgb: 133, 80, 6; }
+html[data-mode="light"][data-accent="teal"] .shell   { --green: #0c645d; --green-rgb: 12, 100, 93; }
+
+/* ---- dark islands: pictures and screens keep the dark colours ---- */
+html[data-mode="light"] .shell :is(
+  .tile,
+  .strip-tile,
+  .live-tile,
+  .room-tile,
+  .tile-pic,
+  .tile-del,
+  .side-tv-screen,
+  .side-tv-name,
+  .side-tv-tools,
+  .side-tv-sound,
+  .side-tv-cc,
+  .broadcast-big,
+  .living-room-3d,
+  .lr-remote,
+  .tile-inset,
+  .team-players,
+  .viewer,
+  .msg-media,
+  .wall,
+  .room-pane .room-layer,
+  .operation-stage,
+  .activity-window,
+  .dashboard-watch-tile,
+  .banner-preview,
+  .modal:has(.customize-layout),
+  .profile-banner
+) {
+  color-scheme: dark;
+  --bg: #000;
+  --panel: #050807;
+  --panel-2: #0a0f0c;
+  --panel-3: #0f1612;
+  --line: #17211b;
+  --line-2: #213028;
+  --text: #e8eee9;
+  --muted: #8a968e;
+  --dim: #56635b;
+  /* the bright theme colour again (kept on :root as --bright, layout-themes.css) */
+  --green: var(--bright);
+  --green-rgb: var(--bright-rgb);
+  --focus: var(--bright);
+  --ok: #4ade80;
+  --on-accent: #042;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --card: #050505;
+  --inv-bg: #fafafa;
+  --inv-fg: #000;
+  --inv-hover: #d4d4d4;
+  --hover-line: #404040;
+  --danger-bg: #2a0d0d;
+  --danger-line: #5a1d1d;
+  --shade: rgba(0, 0, 0, 0.7);
+  --shadow: rgba(0, 0, 0, 0.6);
+  color: var(--text);
+}
+/* the profile editor is one of them: its own dark card */
+html[data-mode="light"] .shell .modal:has(.customize-layout) {
+  border-color: #262626;
+  background: #050505;
+}
+
+/* ---- the places with a fixed dark colour, now from the variables ---- */
+
+/* columns */
+html[data-mode="light"] .shell .rail,
+html[data-mode="light"] .shell .me,
+html[data-mode="light"] .shell .room-blocked,
+html[data-mode="light"] .shell .voice.phone .dock,
+html[data-mode="light"] .shell .voice .dock:not(.hidden) {
+  background-color: var(--panel);
+}
+html[data-mode="light"] .shell .voice.phone .dock,
+html[data-mode="light"] .shell .voice .dock:not(.hidden) {
+  border-top-color: var(--line);
+}
+html[data-mode="light"] .shell .chan-row.active {
+  background: var(--panel-3);
+}
+html[data-mode="light"] .shell .msg:hover {
+  background: var(--panel);
+}
+html[data-mode="light"] .shell .call-bar {
+  background: rgba(var(--green-rgb), 0.1);
+}
+html[data-mode="light"] .shell .scrim {
+  background: var(--shade);
+}
+html[data-mode="light"] .shell :is(.side-chat, .members, .left-slide .side) {
+  box-shadow: none;
+}
+html[data-mode="light"] .shell ::-webkit-scrollbar-thumb {
+  background: #98a29c;
+  background-clip: padding-box;
+}
+
+/* borders under the pointer */
+html[data-mode="light"] .shell :is(.rail-server:hover, .btn:hover, .channel-kind:hover, .accent-choice:hover, .reaction:hover),
+html[data-mode="light"] .shell .composer textarea:focus {
+  border-color: var(--hover-line);
+}
+html[data-mode="light"] .shell .rail-server.active {
+  border-color: var(--green);
+}
+
+/* the main button, and the picked side of the Videochat | Room switch */
+html[data-mode="light"] .shell .btn.primary,
+html[data-mode="light"] #root .shell .pane-switch-track button[aria-pressed="true"] {
+  background: var(--inv-bg);
+  color: var(--inv-fg);
+}
+html[data-mode="light"] .shell .btn.primary:hover {
+  background: var(--inv-hover);
+}
+
+/* dialogs, menus, cards */
+html[data-mode="light"] .shell .modal-backdrop {
+  background: var(--shade);
+}
+html[data-mode="light"] .shell .modal {
+  border-color: var(--line-2);
+  background: var(--card);
+  box-shadow: 0 24px 70px var(--shadow);
+}
+html[data-mode="light"] .shell :is(.modal-text, .kind-pick) {
+  color: var(--muted);
+}
+html[data-mode="light"] .shell :is(.emoji-picker, .mention-list, .profile-card, .viewer-close) {
+  background: var(--card);
+  box-shadow: 0 16px 48px var(--shadow);
+}
+html[data-mode="light"] .shell .avatar.profile-avatar,
+html[data-mode="light"] .shell .avatar.profile-avatar .dot {
+  border-color: var(--card);
+}
+html[data-mode="light"] .shell .avatar .dot.off {
+  background: #838e87;
+}
+html[data-mode="light"] .shell .drop-hint {
+  background: rgba(226, 229, 227, 0.94);
+}
+html[data-mode="light"] .shell .dock-menu {
+  box-shadow: 0 10px 24px var(--shadow);
+}
+
+/* red things: leaving a call, removing, a failed file */
+html[data-mode="light"] .shell :is(.dock-btn.leave, .emoji-del) {
+  border-color: var(--danger-line);
+  background: var(--danger-bg);
+  color: var(--red);
+}
+html[data-mode="light"] .shell .pending-file.failed {
+  border-color: var(--danger-line);
+  color: var(--red);
+}
+html[data-mode="light"] .shell .call-bar-leave {
+  color: var(--red);
+}
+
+/* chat details */
+html[data-mode="light"] .shell :is(.msg-file-icon, .reaction.mine) {
+  background: rgba(var(--green-rgb), 0.14);
+}
+html[data-mode="light"] .shell .mention {
+  color: #3640c4;
+}
+html[data-mode="light"] .shell .mention.me {
+  color: #854d0e;
+}
+html[data-mode="light"] .shell .msg.mentions-me {
+  border-left-color: #ca8a04;
+  background: rgba(250, 204, 21, 0.14);
+}
+html[data-mode="light"] .shell .msg.mentions-me:hover {
+  background: rgba(250, 204, 21, 0.22);
+}
+html[data-mode="light"] .shell .dm-row.unread .member-name {
+  color: #000;
+}
+html[data-mode="light"] .shell .fb-badge {
+  color: #fff;
+}
+html[data-mode="light"] .shell .fb-status.working {
+  color: var(--amber);
+}
+html[data-mode="light"] .shell .fb-reply {
+  background: rgba(var(--green-rgb), 0.08);
+}
+
+/* the server announcement */
+html[data-mode="light"] .shell .announcement {
+  border-color: var(--green);
+  background: rgba(var(--green-rgb), 0.1);
+  color: var(--text);
+}
+html[data-mode="light"] .shell :is(.announcement-edit, .announcement-add) {
+  color: var(--green);
+}
+html[data-mode="light"] .shell .announcement-input {
+  border-color: var(--green);
+  background: var(--card);
+}
+
+/* the call's connection chip */
+html[data-mode="light"] .shell .call-chip {
+  color: #92400e;
+}
+html[data-mode="light"] .shell .call-chip.bad {
+  color: #b91c1c;
+}
+
+/* the "+N" face on a room picture keeps its light number */
+html[data-mode="light"] .shell .avatar.tile-face.more {
+  color: #e8eee9;
+}
+/* the TV while it is off: a dark screen, so its words stay light */
+html[data-mode="light"] .shell .side-tv-off small {
+  color: #8a968e;
+}
+/* captions: always white on black */
+html[data-mode="light"] .shell .side-tv-cc {
+  color: #fff;
+}
+
+/* Terminal Noir's grid is drawn in the theme colour: a touch stronger on white */
+html[data-mode="light"][data-style="noir"] .shell :is(.main, .members) {
+  background-image:
+    linear-gradient(rgba(var(--green-rgb), 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--green-rgb), 0.14) 1px, transparent 1px);
+}

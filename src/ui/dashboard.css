@@ -19,7 +19,7 @@
 .dashboard-jump{padding:5px 10px;border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
 .dashboard-jump:hover{background:var(--panel-2);color:var(--text);border-color:var(--line-2)}
 .dashboard-badge{flex:none;min-width:17px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;line-height:17px;text-align:center}
-.dashboard-badge.soft{background:var(--green);color:#042}
+.dashboard-badge.soft{background:var(--green);color:var(--on-accent)}
 
 /* ---- content: fills the window, no side gaps - every section, column and
    row runs edge to edge inside one small, consistent --dash-gap ---- */
@@ -71,7 +71,7 @@
 .dashboard-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 6px}
 .dashboard-tile{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-left:3px solid var(--line-2);border-radius:9px;background:var(--panel);transition:transform .12s ease,border-color .12s ease}
 .dashboard-tile:hover{transform:translateY(-1px);border-color:var(--line-2)}
-.dashboard-tile.accent-green{border-left-color:var(--green)}
+.dashboard-tile.accent-green{border-left-color:var(--ok)}
 .dashboard-tile.accent-amber{border-left-color:var(--amber)}
 .dashboard-tile.accent-red{border-left-color:var(--red)}
 .dashboard-tile-value{font-size:23px;font-weight:600;line-height:1.1;font-family:var(--mono)}
@@ -104,7 +104,7 @@
 .dashboard-audit{display:flex;flex-direction:column;gap:2px}
 .dashboard-audit-row{display:flex;gap:10px;align-items:baseline;padding:6px 8px;border-radius:6px;border-left:2px solid var(--line-2)}
 .dashboard-audit-row:hover{background:var(--panel-2)}
-.dashboard-audit-row.accent-green{border-left-color:var(--green)}
+.dashboard-audit-row.accent-green{border-left-color:var(--ok)}
 .dashboard-audit-row.accent-amber{border-left-color:var(--amber)}
 .dashboard-audit-row time{flex:none;font-size:10px;color:var(--muted);font-family:var(--mono);width:52px}
 .dashboard-audit-row span{font-size:13px;overflow-wrap:anywhere}
@@ -118,7 +118,7 @@
 .dashboard-room-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .dashboard-room-head .member-name{flex:1}
 .dashboard-room-head small{margin-left:6px;color:var(--muted);font-family:var(--mono);font-size:11px}
-.quality-excellent,.quality-good{color:var(--green);border-color:var(--green)}
+.quality-excellent,.quality-good{color:var(--ok);border-color:var(--ok)}
 .quality-poor{color:var(--red);border-color:var(--red)}
 .quality-unknown{color:var(--dim)}
 

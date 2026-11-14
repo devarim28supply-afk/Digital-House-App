@@ -11,5 +11,6 @@ import "./data/mobileViewport";
 import "./data/noZoom";
 import "./ui/style-noir.css";
 import "./ui/dialogs.css";
+import "./ui/light-mode.css"; // last: light mode's colours over everything above
 
 render(() => <App />, document.getElementById("root")!);
