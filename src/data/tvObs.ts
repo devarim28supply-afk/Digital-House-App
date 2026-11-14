@@ -38,3 +38,20 @@ export { setTvObsBusy, tvObsBusy };
 const [tvObsAsk, setTvObsAsk] = createSignal<{ channelKey: string; n: number } | undefined>();
 export { tvObsAsk };
 export const askTvObs = (channelKey: string) => setTvObsAsk({ channelKey, n: Date.now() });
+
+/**
+ * The sidebar TV's channel is the same for everyone (Kaalob: they see what I
+ * see). Whoever picks a channel, or turns the TV off, does it for everyone in
+ * that channel's videochat. The call carries it (VoiceRoom: each person's
+ * LiveKit attribute "dh-tv" holds the newest choice, so it is still there for
+ * someone who joins later and outlives the person who made it); the TV reads
+ * it here. off: the TV was turned off for everyone.
+ */
+export type TvShared = { channelKey: string; name: string; url: string; off: boolean; at: number };
+const [tvShared, setTvShared] = createSignal<TvShared | undefined>();
+export { setTvShared, tvShared };
+
+/** A channel was picked on the TV (null: turned off): the call tells everyone. */
+const [tvSharedAsk, setTvSharedAsk] = createSignal<{ channelKey: string; pick: { name: string; url: string } | null; n: number } | undefined>();
+export { tvSharedAsk };
+export const askTvShared = (channelKey: string, pick: { name: string; url: string } | null) => setTvSharedAsk({ channelKey, pick, n: Date.now() });

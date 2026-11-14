@@ -4,7 +4,8 @@
    root font size that a single html{font-size} change could lever instead. */
 @media (min-width: 761px) {
   .shell {
-    zoom: 1.15;
+    /* Accessibility > Zoom level multiplies this (--app-zoom, data/access.ts) */
+    zoom: var(--app-zoom, 1.15);
   }
 }
 
@@ -12,7 +13,7 @@
 
 .shell {
   display: grid;
-  grid-template-columns: 72px 248px minmax(0, 1fr);
+  grid-template-columns: 72px var(--side-w, 248px) minmax(0, 1fr);
   height: 100%;
   background: var(--bg);
 }
@@ -540,7 +541,7 @@
 /* A mouse still has the channel list. Touch uses the drawer, opened by a swipe. */
 @media (max-width: 760px) and (pointer: fine) {
   .shell.shell {
-    grid-template-columns: 72px 248px minmax(0, 1fr);
+    grid-template-columns: 72px var(--side-w, 248px) minmax(0, 1fr);
   }
   .shell > :is(.rail, .side) {
     position: static;
@@ -1876,10 +1877,10 @@ video.msg-media {
    windows keep the slide-in (there is no room for a fourth column). */
 @media (min-width: 1101px) {
   .shell.right-pinned {
-    grid-template-columns: 72px 248px minmax(0, 1fr) 260px;
+    grid-template-columns: 72px var(--side-w, 248px) minmax(0, 1fr) 260px;
   }
   .shell.right-pinned.with-side-chat {
-    grid-template-columns: 72px 248px minmax(0, 1fr) 340px;
+    grid-template-columns: 72px var(--side-w, 248px) minmax(0, 1fr) 340px;
   }
   .right-pinned .side-chat,
   .right-pinned .members {
@@ -3058,7 +3059,7 @@ img.live-tile-still {
   }
   .left-slide .side {
     left: 72px;
-    width: 248px;
+    width: var(--side-w, 248px);
     box-shadow: 20px 0 60px rgba(0, 0, 0, 0.6);
   }
   .left-open .rail,
@@ -3408,7 +3409,7 @@ img.live-tile-still {
     transition: margin 240ms ease;
   }
   .left-open .main {
-    margin-left: 320px; /* rail 72 + channels 248 */
+    margin-left: calc(72px + var(--side-w, 248px)); /* rail 72 + channels 248 (or its dragged width) */
   }
   .shell.right-open .main,
   .shell:has(.members input:focus) .main {
@@ -4304,7 +4305,7 @@ img.live-tile-still {
     margin-left: 0;
   }
   .shell.right-wide {
-    --right-wide: calc(100vw / 3 / 1.15);
+    --right-wide: calc(100vw / 3 / var(--app-zoom, 1.15));
   }
   .side-chat,
   .members {
@@ -4326,7 +4327,7 @@ img.live-tile-still {
 @media (min-width: 1101px) {
   .shell.right-wide.right-pinned,
   .shell.right-wide.right-pinned.with-side-chat {
-    grid-template-columns: 72px 248px minmax(0, 1fr) var(--right-wide);
+    grid-template-columns: 72px var(--side-w, 248px) minmax(0, 1fr) var(--right-wide);
   }
   .shell.right-wide.left-slide.right-pinned,
   .shell.right-wide.left-slide.right-pinned.with-side-chat {
@@ -4525,4 +4526,69 @@ body.side-tv-window {
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: calc(100% - 12px);
+}
+
+/* ---- mic and camera in the call's button row: an icon, not words (Kaalob) ----
+   On a computer (a phone already shows icons). A line through the icon and
+   red mean off; the theme color means on. The words are the tooltip. */
+@media (min-width: 761px) {
+  .dock .dock-btn.icon-only {
+    display: inline-grid;
+    place-items: center;
+    min-width: 56px;
+    padding: 0 14px;
+  }
+  .dock .dock-btn.icon-only .dock-glyph {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+  }
+  .dock .dock-btn.icon-only .dock-glyph svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+  }
+  .dock .dock-btn.icon-only .dock-full,
+  .dock .dock-btn.icon-only .dock-word {
+    display: none;
+  }
+  /* mic and camera: off is red. Stream, Share and Attention are not "off", only not in use. */
+  .dock .dock-btn.icon-only.onoff[aria-pressed="false"] {
+    border-color: color-mix(in srgb, var(--red) 45%, var(--line-2));
+    color: var(--red);
+  }
+}
+
+/* ---- Remove from the call: on the person's own tile, for whoever runs the server ----
+   Top right of the tile, under the pointer (always there on a touch screen). It asks first. */
+.tile-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #5a1d1d;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #f87171;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tile:hover .tile-remove,
+.tile-remove:focus-visible {
+  opacity: 1;
+}
+.tile-remove:hover {
+  border-color: #f87171;
+  background: #2a0d0d;
+}
+@media (hover: none) {
+  .tile-remove {
+    opacity: 1;
+  }
 }
