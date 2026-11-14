@@ -15,7 +15,6 @@ import {
   type Profile,
   type Server,
   addServerMembers,
-  createChannel,
   createRoomTile,
   createServer,
   deleteRoomTile,
@@ -26,7 +25,11 @@ import {
   syncDirectoryEntry,
   watchJoinRequests,
   type JoinRequest,
-  ensureHomeTiles,
+  ensureServerTiles,
+  isHomeServer,
+  isTvChannel,
+  TV_TILE_IMAGE,
+  VIDEOCHAT_TILE_IMAGE,
   restoreHomeMembers,
   lookupInvite,
   redeemInvite,
@@ -51,6 +54,7 @@ import {
   hasDarkwoodRoom,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
+import { ACCENTS, accent, mode, saveAccent, saveMode } from "../data/layoutTheme";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
@@ -68,11 +72,16 @@ import { setCanRemoveFromCall, setTvRemoteOpen, setWatchRequest, streamingIn, tv
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
 
+import { CallPopup, type IncomingCall } from "./CallPopup";
+import { buzz, desktopNotify, pushAlert } from "../data/alerts";
 import "./app.css";
 
 const LAST_SERVER_KEY = "dh_last_server";
 const lastChannelKey = (sid: string) => `dh_last_channel_${sid}`;
+// near the top and bottom of the screen, a side bar slides in only from this close to the side edge
+const EDGE_REACH_NARROW = 28;
 const RIGHT_MODE_KEY = "dh_right_mode";
+const RIGHT_WIDE_KEY = "dh_right_wide";
 const LEFT_MODE_KEY = "dh_left_mode";
 type SidebarMode = "slide" | "pinned" | "hover";
 // a tile shows up to this many faces, then "+N"
@@ -318,7 +327,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     })();
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
-    createEffect(() => me.setWhere(whereNow()));
+    // (and in which server: every server has a Node Lounge and a Living Room)
+    createEffect(() => me.setWhere(whereNow(), call()?.serverId ?? ""));
     // the open call shows its Remove button to the server's owner and to admins
     createEffect(() => {
       const c = call();
@@ -326,6 +336,13 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       setCanRemoveFromCall(Boolean(s && s.kind !== "dm" && (props.admin || s.ownerUid === props.uid)));
     });
     onCleanup(() => setCanRemoveFromCall(false));
+    // in a videochat: the people it is for get an incoming-call popup
+    const callSince = createMemo(() => (call() ? Date.now() : 0));
+    createEffect(() => {
+      const c = call();
+      const sv = c && servers().find((x) => x.id === c.serverId);
+      me.setCalling(c && sv ? { serverId: c.serverId, channelId: c.channel.id, channelName: c.channel.name, serverName: isDm(sv) ? "" : sv.name, at: callSince() } : null);
+    });
     // stream mode on: everyone in that server gets a LIVE tile
     createEffect(() => me.setStreaming(streamingIn() ?? null));
     const stops = [
@@ -349,7 +366,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const [dmHome, setDmHome] = createSignal(false);
   const [newDm, setNewDm] = createSignal(false);
   // the newest message in each DM, and when you last read each one here
-  const [latest, setLatest] = createSignal(new Map<string, { at: number; author: string }>());
+  const [latest, setLatest] = createSignal(new Map<string, { at: number; author: string; text: string }>());
   const [readAt, setReadAt] = createSignal(readTimes());
   createEffect(
     on(
@@ -458,19 +475,19 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     if (!sid) return;
     remember(LAST_SERVER_KEY, sid);
     let tileChecked = false;
-    const stop = watchChannels(sid, (list) => {
+    const stop = watchChannels(sid, (list, early) => {
       setChannels(list);
-      // The home server's built-in tiles, added once for servers made before
-      // them. The home server is the one with the Living Room tile (its name
-      // can be changed), or a "Digital House" without tiles yet.
+      // Every server's built-in tiles, added once for servers made before
+      // them: Node Lounge and Living Room. Its owner adds them; an admin
+      // does too on any server but the home one (isHomeServer). Never from
+      // the browser's early copy of the list, which can be missing channels.
       const s = servers().find((x) => x.id === sid);
-      const isHome =
-        list.some((c) => c.kind === "room" && c.roomKey === "gestr-living") || s?.name.startsWith("Digital House");
-      if (!tileChecked && isHome && s?.ownerUid === props.uid) {
+      const isHome = isHomeServer(s, list);
+      if (!tileChecked && !early && s && !isDm(s) && (s.ownerUid === props.uid || (props.admin && !isHome))) {
         tileChecked = true;
-        void ensureHomeTiles(sid, list).catch(() => {});
+        void ensureServerTiles(sid, list, isHome).catch(() => {});
         // Approved members who were already in Digital House go back on the list.
-        if (props.admin || s.ownerUid === props.uid) void restoreHomeMembers(sid).catch(() => {});
+        if (isHome) void restoreHomeMembers(sid).catch(() => {});
       }
       const current = channelId();
       if (current && list.some((c) => c.id === current)) return;
@@ -575,7 +592,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // in your videochat or room, to give it the room (Kaalob). The cursor at
   // the left edge brings it in; it stays 5 s after the mouse leaves; the pin
   // keeps it always showing. Outside a call it stays as it is.
-  const savedLeftMode = recall("dh_sidebar_mode") ?? recall(RIGHT_MODE_KEY) ?? recall(LEFT_MODE_KEY);
+  // Each side keeps its own mode (its pin pins only that side, Kaalob); the
+  // Account setting, which sets both at once, is what a side starts from.
+  const savedLeftMode = recall(LEFT_MODE_KEY) ?? recall("dh_sidebar_mode");
   const [leftMode, setLeftMode] = createSignal<SidebarMode>(savedLeftMode === "pinned" || savedLeftMode === "hover" ? savedLeftMode : "slide");
   const leftPinned = () => leftMode() === "pinned";
   function chooseLeftMode(mode: SidebarMode) {
@@ -583,7 +602,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setLeftMode(mode); setLeftHover(false);
     remember(LEFT_MODE_KEY, mode);
   }
-  const pinLeft = (on: boolean) => chooseSidebarMode(on ? "pinned" : "slide");
+  // unpinned, a side goes back to sliding (or to hover-only, if that is the Account setting)
+  const unpinnedMode = (): SidebarMode => (recall("dh_sidebar_mode") === "hover" ? "hover" : "slide");
+  const pinLeft = (on: boolean) => chooseLeftMode(on ? "pinned" : unpinnedMode());
   const [leftHover, setLeftHover] = createSignal(false);
   let leftTimer = 0;
   function enterLeft() {
@@ -599,9 +620,16 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH);
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.
-  const savedRightMode = savedLeftMode;
+  const savedRightMode = recall(RIGHT_MODE_KEY) ?? recall("dh_sidebar_mode");
   const [rightMode, setRightMode] = createSignal<SidebarMode>(savedRightMode === "pinned" || savedRightMode === "hover" ? savedRightMode : "slide");
   const rightPinned = () => rightMode() === "pinned";
+  // The right sidebar can be made bigger toward the left: a third of the
+  // screen (Kaalob). The button beside the pin; remembered in this browser.
+  const [rightWide, setRightWide] = createSignal(recall(RIGHT_WIDE_KEY) === "1");
+  const widenRight = (on: boolean) => {
+    setRightWide(on);
+    remember(RIGHT_WIDE_KEY, on ? "1" : "0");
+  };
   function chooseRightMode(mode: SidebarMode) {
     window.clearTimeout(leaveTimer); leaveTimer = 0; window.clearTimeout(pingTimer);
     setRightMode(mode); setEdgeHover(false); setChatPing(false); setSideChatOpen(false);
@@ -612,7 +640,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     chooseRightMode(mode);
     remember("dh_sidebar_mode", mode);
   }
-  const pinRight = (on: boolean) => chooseSidebarMode(on ? "pinned" : "slide");
+  const pinRight = (on: boolean) => chooseRightMode(on ? "pinned" : unpinnedMode());
 
   const isOnline = (uid: string) => availabilityStatus(profiles().get(uid)?.availability) !== "invisible" && now() - (presence().get(uid)?.lastSeen ?? 0) < ONLINE_WINDOW_MS;
   // where an online person is; a place older than the window has expired
@@ -622,6 +650,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
   };
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
+  const offlineHere = () => server()?.memberUids.filter((uid) => !isOnline(uid)) ?? [];
   // Who is streaming in this server right now (stream mode): their LIVE tiles.
   // Kept as plain text keys ("uid|channel"): a key stays the same string while
   // the stream goes on, so its LIVE tile stays put. Rebuilt objects would make
@@ -670,9 +699,100 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const peopleIn = (tile: Channel) => {
     const names = [tile.name, ...(TILE_ALIASES[tile.roomKey ?? ""] ?? [])];
     const places = new Set(names.flatMap((n) => [`In ${n}`, `Videochat · ${n}`]));
-    return onlineHere().filter((uid) => places.has(whereOf(uid)));
+    // every server has a Node Lounge and a Living Room: only the people in
+    // this server's (a 3D room's own page names no server, and still counts)
+    const here = (uid: string) => {
+      const sid = presence().get(uid)?.whereSid;
+      return !sid || sid === serverId();
+    };
+    return onlineHere().filter((uid) => here(uid) && places.has(whereOf(uid)));
   };
   const nameOf = (uid: string) => displayName(profiles().get(uid), uid === props.uid ? props.name : "Member");
+
+  // ---- alerts: a new direct message, someone asking to join, and incoming calls ----
+  const dnd = () => availabilityStatus(profiles().get(props.uid)?.availability) === "dnd";
+  const appStart = Date.now();
+  const notifiedAt = new Map<string, number>();
+  createEffect(() => {
+    for (const [id, l] of latest()) {
+      if (l.author === props.uid || l.at <= appStart || (notifiedAt.get(id) ?? 0) >= l.at) continue;
+      notifiedAt.set(id, l.at);
+      if (dnd() || (serverId() === id && channelId() === DM_CHAT && document.visibilityState === "visible")) continue;
+      const open = () => {
+        setDmHome(true);
+        remember(lastChannelKey(id), DM_CHAT);
+        setServerId(id);
+      };
+      pushAlert({ id: `dm-${id}`, title: nameOf(l.author), detail: l.text || "New message", onClick: open });
+      desktopNotify(nameOf(l.author), l.text || "New message", open);
+      buzz([200]);
+    }
+  });
+  const askedBefore = new Set<string>();
+  let askedFirst = true;
+  createEffect(() => {
+    const all = waiting();
+    for (const [sid, list] of Object.entries(all)) {
+      for (const r of list) {
+        const key = `${sid}:${r.uid}`;
+        if (askedBefore.has(key)) continue;
+        askedBefore.add(key);
+        if (askedFirst || dnd()) continue;
+        const sv = servers().find((x) => x.id === sid);
+        pushAlert({ id: `join-${key}`, title: `${r.name} wants to join`, detail: sv?.name ?? "your server" }, 10000);
+        desktopNotify(`${r.name} wants to join`, sv?.name ?? "your server");
+      }
+    }
+    if (Object.keys(all).length) askedFirst = false;
+  });
+  const [dismissedCalls, setDismissedCalls] = createSignal(new Set<string>());
+  const incomingCalls = createMemo<IncomingCall[]>(() => {
+    const out: IncomingCall[] = [];
+    const here = call();
+    for (const [uid, p] of presence()) {
+      const c = p.calling;
+      if (!c || uid === props.uid || now() - p.lastSeen > ONLINE_WINDOW_MS) continue;
+      const sv = servers().find((x) => x.id === c.serverId);
+      if (!sv || (here?.serverId === c.serverId && here.channel.id === c.channelId)) continue;
+      const key = `${uid}:${c.at}`;
+      if (dismissedCalls().has(key)) continue;
+      const direct = isDm(sv);
+      if (!direct) {
+        // a server call: only tell people when its first person starts it, and not while you are set to Do not disturb
+        let inIt = 0;
+        for (const q of presence().values()) if (q.calling?.serverId === c.serverId && q.calling.channelId === c.channelId && now() - q.lastSeen <= ONLINE_WINDOW_MS) inIt++;
+        if (inIt > 1 || dnd()) continue;
+      }
+      const prof = profiles().get(uid);
+      out.push({
+        key,
+        serverId: c.serverId,
+        channelId: c.channelId,
+        name: nameOf(uid),
+        face: faceStyle(prof),
+        faceText: faceText(prof, nameOf(uid)),
+        line: direct ? "is calling you" : `started a call in ${sv.name} · ${c.channelName}`,
+        ringing: direct && !dnd(),
+      });
+    }
+    return out;
+  });
+  const [pendingAnswer, setPendingAnswer] = createSignal<{ serverId: string; channelId: string } | undefined>();
+  function answerCall(c: { key: string; serverId: string; channelId: string }) {
+    setDismissedCalls((prev) => new Set(prev).add(c.key));
+    setDmHome(isDm(servers().find((x) => x.id === c.serverId)));
+    remember(lastChannelKey(c.serverId), c.channelId);
+    setServerId(c.serverId);
+    setPendingAnswer({ serverId: c.serverId, channelId: c.channelId });
+    setNavOpen(false);
+  }
+  // join once the server (and its channel) has loaded
+  createEffect(() => {
+    const want = pendingAnswer();
+    if (!want || serverId() !== want.serverId || !channels().some((c) => c.id === want.channelId)) return;
+    setPendingAnswer(undefined);
+    pickChannel(want.channelId);
+  });
 
   // Picture tiles all the way (Kaalob): # text and voice channels are no
   // longer listed (their data stays). A tile's chat lives in the right sidebar.
@@ -694,16 +814,22 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         const target = e.target instanceof Element ? e.target : undefined;
         // Coordinate-based activation preserves the wide hover zones without
         // placing an invisible click target above Activity or other controls.
-        // Both edges open only in the middle 28–80% height band.
         // Once open, the entire panel remains hoverable.
+        // How near the screen's side edge brings a side bar in. The whole
+        // height works now (Kaalob: the top part of the edge did nothing).
+        // In the middle the reach is wide (144); near the top and the bottom
+        // it is the edge itself (EDGE_REACH_NARROW), so the buttons in the
+        // corners up there and the call's buttons down there stay easy to
+        // reach without the side bar jumping in.
         const inOpeningBand = e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80;
-        if (leftSlides() && (e.clientX <= 144 && inOpeningBand || leftHover() && target?.closest(".rail, .side"))) enterLeft();
+        const reach = inOpeningBand ? 144 : EDGE_REACH_NARROW;
+        if (leftSlides() && (e.clientX <= reach || leftHover() && target?.closest(".rail, .side"))) enterLeft();
         else if (leftHover()) leaveLeft();
-        if (!rightPinned() && (e.clientX >= window.innerWidth - 144 && inOpeningBand || edgeHover() && target?.closest(".side-chat, .members"))) enterRight();
+        if (!rightPinned() && (e.clientX >= window.innerWidth - reach || edgeHover() && target?.closest(".side-chat, .members"))) enterRight();
         else if (edgeHover()) leaveRight();
       }}
       onMouseLeave={() => { leaveLeft(); leaveRight(); }}
-      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "right-hover-only": rightMode() === "hover" && !TOUCH, "left-slide": leftSlides(), "left-open": leftSlides() && (leftHover() || Boolean(card()?.keepLeftOpen)) }}
+      classList={{ "nav-open": navOpen(), "with-side-chat": Boolean(tileChat()), "side-chat-open": sideChatOpen(), "right-open": rightOpen(), "right-pinned": rightPinned(), "right-wide": rightWide(), "right-hover-only": rightMode() === "hover" && !TOUCH, "left-slide": leftSlides(), "left-open": leftSlides() && (leftHover() || Boolean(card()?.keepLeftOpen)) }}
     >
       {/* ---- servers ---- */}
       {/* in a call: the strip at the left edge brings the left side in */}
@@ -729,13 +855,16 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             <button
               type="button"
               class="rail-server"
-              classList={{ active: !dmMode() && s.id === serverId() }}
+              classList={{ active: !dmMode() && s.id === serverId(), "has-icon": Boolean(s.icon) }}
               title={s.name}
               aria-label={s.name}
               aria-current={!dmMode() && s.id === serverId() ? "true" : undefined}
               onClick={() => openServer(s.id)}
             >
-              {initials(s.name)}
+              {/* the server's own picture or GIF (Server settings), else its initials */}
+              <Show when={s.icon} fallback={initials(s.name)}>
+                {(icon) => <img class="rail-icon" src={icon()} alt="" draggable={false} />}
+              </Show>
               <Show when={waitingCount(s.id)}>
                 <span class="rail-badge" title="People waiting to join">{waitingCount(s.id)}</span>
               </Show>
@@ -769,10 +898,10 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               +
             </button>
           </Show>
-          {/* in a call: keep the left side showing, or let it slide away */}
-          <Show when={inThisCall()}>
-            <PinButton pinned={leftPinned()} onPin={pinLeft} />
-          </Show>
+          {/* the left side has its own pin, apart from the right one: keep it
+              showing in a call, or let it slide away. Always here, so it can
+              be set before the call starts. */}
+          <PinButton pinned={leftPinned()} onPin={pinLeft} />
           <Show when={runsServer()}>
             <button
               class="icon-btn"
@@ -1074,6 +1203,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               TV remote
             </button>
           </Show>
+          <CallPopup calls={incomingCalls()} onAnswer={answerCall} onDecline={(c) => setDismissedCalls((prev) => new Set(prev).add(c.key))} />
           <Notifications uid={props.uid} staff={props.staff} unreadInbox={unreadDms()} latestInboxAt={Math.max(0,...dms().filter(d => dmUnread(d.id)).map(d => latest().get(d.id)?.at ?? 0))} onOpen={() => openFeedback()} onItems={setNotificationItems} onError={setNotificationError} />
           {/* stats, approvals, who's online, servers, oversight, feedback, activity and the audit log in one place (staff only) */}
           <Show when={props.staff}>
@@ -1197,6 +1327,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               <span>
                 <span class="hash">#</span> {chat().name}
               </span>
+              <WideButton wide={rightWide()} onWide={widenRight} />
               <PinButton pinned={rightPinned()} onPin={pinRight} />
               <button
                 class="icon-btn side-chat-close"
@@ -1213,17 +1344,14 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                 <button type="button" aria-pressed={mobilePanel() === "people"} onClick={() => setMobilePanel("people")}>People <span>{onlineHere().length}</span></button>
               </div>
             </div>
-            {/* the first TV on in this tile's Darkwood Room, above everything (Kaalob) */}
-            <Show when={channel() && hasDarkwoodRoom(channel()!) ? channel()!.id : undefined}>
-              {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} profiles={profiles()} />}
+            {/* the TV screen, above the people and the chat (Kaalob): a click lists
+                the channels; with none chosen it follows this tile's Darkwood Room TV.
+                Not on a Television channel: that one already has the big screen. */}
+            <Show when={channel() && !isTvChannel(channel()!) ? channel()!.id : undefined}>
+              {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} profiles={profiles()} room={hasDarkwoodRoom(channel()!)} />}
             </Show>
             {/* who is online stays visible with a tile open, above its chat */}
             <div class="side-online">
-              <Show when={runsServer()}>
-                <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
-                  + People
-                </button>
-              </Show>
               <MemberGroup
                 label={`Online — ${onlineHere().length}`}
                 uids={onlineHere()}
@@ -1233,6 +1361,20 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                 online
                 onPick={openCard}
               />
+              {/* the People tab lists everyone in the server: offline members under the online ones (Kaalob) */}
+              <MemberGroup
+                label={`Offline — ${offlineHere().length}`}
+                uids={offlineHere()}
+                profiles={profiles()}
+                nameOf={nameOf}
+                onPick={openCard}
+              />
+              {/* + People sits under the people, not above them (Kaalob) */}
+              <Show when={runsServer()}>
+                <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
+                  + People
+                </button>
+              </Show>
             </div>
             <Chat
               serverId={server()!.id}
@@ -1259,6 +1401,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         onMouseLeave={leaveRight}
       >
         <div class="members-head">
+          <WideButton wide={rightWide()} onWide={widenRight} />
           <PinButton pinned={rightPinned()} onPin={pinRight} />
         </div>
         <Show when={server()}>
@@ -1267,11 +1410,6 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             const offline = () => s().memberUids.filter((u) => !isOnline(u));
             return (
               <>
-                <Show when={runsServer()}>
-                  <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
-                    + People
-                  </button>
-                </Show>
                 <MemberGroup
                   label={`Online — ${online().length}`}
                   uids={online()}
@@ -1288,6 +1426,11 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                   nameOf={nameOf}
                   onPick={openCard}
                 />
+                <Show when={runsServer()}>
+                  <button class="side-tool people-btn" type="button" onClick={() => setModal("people")}>
+                    + People
+                  </button>
+                </Show>
               </>
             );
           }}
@@ -1344,18 +1487,14 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       <ServerSettingsDialog
         open={modal() === "rename"}
         server={server()}
-        // the owner may delete a server, never the home server (Living Room tile)
-        canDelete={Boolean(server() && server()!.ownerUid === props.uid && !roomTiles().some((c) => c.roomKey === "gestr-living"))}
+        // the owner may delete a server, never the home server (its first Node Lounge tile)
+        canDelete={Boolean(server() && server()!.ownerUid === props.uid && !isHomeServer(server(), channels()))}
         onClose={() => setModal("")}
       />
       <NewChannelDialog
         open={modal() === "new-channel"}
         onClose={() => setModal("")}
-        onSubmit={(name, kind, extra) =>
-          kind === "room"
-            ? createRoomTile(serverId()!, name, channels().length, { image: extra.image!, url: extra.url! })
-            : createChannel(serverId()!, name, kind, channels().length)
-        }
+        onSubmit={(name, extra) => createRoomTile(serverId()!, name, channels().length, extra)}
       />
       <PeopleDialog
         open={modal() === "people"}
@@ -1408,11 +1547,33 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         </p>
         <fieldset class="field sidebar-mode"><legend>Sidebar behavior · left &amp; right</legend>
           <div class="kind-pick">
-            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "slide"} onChange={() => chooseSidebarMode("slide")} />Slides in and out</label>
-            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "hover"} onChange={() => chooseSidebarMode("hover")} />Show only on hover</label>
-            <label><input type="radio" name="sidebar-mode" checked={rightMode() === "pinned"} onChange={() => chooseSidebarMode("pinned")} />Always show</label>
+            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "slide" && rightMode() === "slide"} onChange={() => chooseSidebarMode("slide")} />Slides in and out</label>
+            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "hover" && rightMode() === "hover"} onChange={() => chooseSidebarMode("hover")} />Show only on hover</label>
+            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "pinned" && rightMode() === "pinned"} onChange={() => chooseSidebarMode("pinned")} />Always show</label>
           </div>
-          <small class="call-name-note">Applies to both sides. Hover-only closes when the pointer leaves; slides in and out stays open briefly. Touch devices keep their tap controls.</small>
+          <small class="call-name-note">Sets both sides at once. The pin on each side pins only that side. Hover-only closes when the pointer leaves; slides in and out stays open briefly. Touch devices keep their tap controls.</small>
+        </fieldset>
+        {/* dark (the app as it was) or light: picked here, kept in this browser */}
+        <fieldset class="field sidebar-mode"><legend>Appearance</legend>
+          <div class="kind-pick">
+            <label><input type="radio" name="app-mode" checked={mode() === "dark"} onChange={() => saveMode("dark")} />Dark</label>
+            <label><input type="radio" name="app-mode" checked={mode() === "light"} onChange={() => saveMode("light")} />Light</label>
+          </div>
+          <small class="call-name-note">Webcams, TV screens and the 3D rooms stay dark in light mode. So does the login page.</small>
+        </fieldset>
+        {/* the same design in another color: picked here, kept in this browser */}
+        <fieldset class="field sidebar-mode"><legend>Color theme</legend>
+          <div class="accent-pick">
+            <For each={ACCENTS}>
+              {(a) => (
+                <button type="button" class="accent-choice" style={{ "--swatch": a.color }} aria-pressed={accent() === a.id} onClick={() => saveAccent(a.id)}>
+                  <i aria-hidden="true" />
+                  {a.label}
+                </button>
+              )}
+            </For>
+          </div>
+          <small class="call-name-note">Changes right away and stays in this browser. The 3D rooms keep their own colors.</small>
         </fieldset>
         <FaceUnlockSetting />
         <div class="modal-actions">
@@ -1434,6 +1595,21 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         </div>
       </Modal>
     </div>
+  );
+}
+
+/** Make the right sidebar bigger toward the left (a third of the screen), or its normal size again. */
+function WideButton(props: { wide: boolean; onWide: (on: boolean) => void }) {
+  const label = () => (props.wide ? "Make the sidebar its normal size" : "Make the sidebar bigger (a third of the screen)");
+  return (
+    <button type="button" class="icon-btn wide-btn" classList={{ on: props.wide }} aria-pressed={props.wide} title={label()} aria-label={label()} onClick={() => props.onWide(!props.wide)}>
+      {/* an arrow toward the edge it will move to: left to grow, right to shrink */}
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <Show when={props.wide} fallback={<path d="M4 4v16M20 12H9M13 7l-5 5 5 5" />}>
+          <path d="M20 4v16M4 12h11M11 7l5 5-5 5" />
+        </Show>
+      </svg>
+    </button>
   );
 }
 
@@ -1670,15 +1846,24 @@ function NameDialog(props: {
   );
 }
 
+/** What + Channel can make. Every one is a picture tile with its own chat. */
+type NewTile = "video" | "tv" | "link";
+const NEW_TILES: { id: NewTile; label: string; text: string; image: string }[] = [
+  { id: "video", label: "Videochat", text: "Everyone's webcams together, with a chat.", image: VIDEOCHAT_TILE_IMAGE },
+  { id: "tv", label: "Television", text: "A big TV to watch a Stream together, like Living Room.", image: TV_TILE_IMAGE },
+  { id: "link", label: "Room link", text: "A videochat with a page (a game, a site) on its Room side.", image: "/link-tile.svg" },
+];
+
 function NewChannelDialog(props: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (name: string, kind: Channel["kind"], extra: { image?: string; url?: string }) => Promise<unknown>;
+  onSubmit: (name: string, extra: { image: string; url?: string; tv?: true }) => Promise<unknown>;
 }) {
-  // Picture tiles all the way: a new channel is a tile.
-  const [kind, setKind] = createSignal<Channel["kind"]>("room");
+  // Picture tiles all the way: a new channel is a tile. Which kind is picked here.
+  const [kind, setKind] = createSignal<NewTile>("video");
   const [image, setImage] = createSignal("");
   const [error, setError] = createSignal("");
+  const picked = () => NEW_TILES.find((t) => t.id === kind())!;
 
   async function pickImage(e: Event) {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -1693,7 +1878,7 @@ function NewChannelDialog(props: {
   }
 
   const close = () => {
-    setKind("room");
+    setKind("video");
     setImage("");
     setError("");
     props.onClose();
@@ -1708,42 +1893,50 @@ function NewChannelDialog(props: {
           const form = new FormData(e.currentTarget);
           const name = String(form.get("name") ?? "").trim().slice(0, 40);
           if (!name) return;
-          const extra: { image?: string; url?: string } = {};
-          if (kind() === "room") {
+          // no picture chosen: the kind's own picture
+          const extra: { image: string; url?: string; tv?: true } = { image: image() || picked().image };
+          if (kind() === "tv") extra.tv = true;
+          if (kind() === "link") {
             const url = String(form.get("url") ?? "").trim();
             if (!/^https?:\/\//i.test(url)) return setError("Use a full link, starting with https://");
-            if (!image()) return setError("Choose a picture for the tile");
             extra.url = url;
-            extra.image = image();
           }
           try {
-            await props.onSubmit(name, kind(), extra);
+            await props.onSubmit(name, extra);
             close();
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not create that.");
           }
         }}
       >
+        <fieldset class="channel-kinds">
+          <legend>What kind of channel?</legend>
+          <For each={NEW_TILES}>
+            {(t) => (
+              <label class="channel-kind">
+                <input type="radio" name="tile-kind" checked={kind() === t.id} onChange={() => { setKind(t.id); setError(""); }} />
+                <img src={imageSrc(t.image)} alt="" draggable={false} />
+                <b>{t.label}</b>
+                <small>{t.text}</small>
+              </label>
+            )}
+          </For>
+        </fieldset>
         <label class="field">
           <span>Channel name</span>
           <input name="name" maxLength={40} required />
         </label>
-        <Show when={kind() === "room"}>
-          <p class="modal-text">
-            A picture in the channel list. Clicking it opens a video chat, with a toggle to the room page at this link.
-          </p>
+        <Show when={kind() === "link"}>
           <label class="field">
             <span>Room link</span>
             <input name="url" type="url" placeholder="https://" />
           </label>
-          <label class="field">
-            <span>Picture</span>
-            <input type="file" accept="image/*" onChange={pickImage} />
-          </label>
-          <Show when={image()}>
-            <img class="tile-preview" src={image()} alt="" />
-          </Show>
         </Show>
+        <label class="field">
+          <span>Picture (you can skip this)</span>
+          <input type="file" accept="image/*" onChange={pickImage} />
+        </label>
+        <img class="tile-preview" src={image() || imageSrc(picked().image)} alt="" />
         <Show when={error()}>
           <p class="form-error">{error()}</p>
         </Show>
@@ -1877,10 +2070,14 @@ function InviteCodeField(props: { server?: Server }) {
   );
 }
 
-/** The server's name and banner (the picture across the top of its channels). */
+/** The server's name, icon (its button in the rail) and banner (the picture across the top of its channels). */
 function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete: boolean; onClose: () => void }) {
   // undefined = banner untouched, null = remove it, string = the new picture
   const [banner, setBanner] = createSignal<string | null | undefined>();
+  // the icon, the same three ways
+  const [icon, setIcon] = createSignal<string | null | undefined>();
+  const [iconUploading, setIconUploading] = createSignal(false);
+  const shownIcon = () => (icon() === undefined ? props.server?.icon : icon() ?? undefined);
   const [error, setError] = createSignal("");
   const [saving, setSaving] = createSignal(false);
   const [uploading, setUploading] = createSignal(false);
@@ -1891,10 +2088,27 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
 
   const close = () => {
     setBanner(undefined);
+    setIcon(undefined);
     setError("");
     setDeleteArmed(false);
     props.onClose();
   };
+
+  async function pickIcon(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || !props.server) return;
+    setIconUploading(true);
+    setError("");
+    try {
+      setIcon(await uploadPicture(file, { kind: "icon", serverId: props.server.id }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not use that picture");
+    } finally {
+      setIconUploading(false);
+    }
+  }
 
   async function removeServer() {
     if (!props.server) return;
@@ -1941,7 +2155,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           if (!name || !props.server) return;
           setSaving(true);
           try {
-            await saveServerSettings(props.server.id, name, banner(), false); // servers are never open: people ask to join
+            await saveServerSettings(props.server.id, name, banner(), false, icon()); // servers are never open: people ask to join
             close();
           } catch (err) {
             setError(err instanceof Error ? err.message : "Could not save that.");
@@ -1955,6 +2169,28 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
         </label>
         <InviteCodeField server={props.server} />
+        <div class="field">
+          <span>Icon</span>
+          <div class="icon-row">
+            <div class="icon-preview">
+              <Show when={shownIcon()} fallback={initials(props.server?.name ?? "")}>
+                {(src) => <img src={src()} alt="" />}
+              </Show>
+            </div>
+            <div class="banner-actions">
+              <label class="btn banner-upload">
+                {iconUploading() ? "Uploading…" : shownIcon() ? "Change picture or GIF" : "Upload picture or GIF"}
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={iconUploading()} onChange={pickIcon} />
+              </label>
+              <Show when={shownIcon()}>
+                <button class="btn danger" type="button" onClick={() => setIcon(null)}>
+                  Remove
+                </button>
+              </Show>
+            </div>
+          </div>
+          <small class="field-hint">The server's button on the left. A square picture works best. A GIF keeps moving.</small>
+        </div>
         <div class="field">
           <span>Banner</span>
           <div class="banner-preview">
@@ -1993,7 +2229,7 @@ function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete
           <button class="btn" type="button" onClick={close}>
             Cancel
           </button>
-          <button class="btn primary" type="submit" disabled={saving()}>
+          <button class="btn primary" type="submit" disabled={saving() || uploading() || iconUploading()}>
             {saving() ? "Saving…" : "Save"}
           </button>
         </div>

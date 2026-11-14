@@ -71,27 +71,33 @@ async function shrinkStill(file: File, maxWidth: number): Promise<Blob> {
 }
 
 /**
- * Put a picture on the server banner or on your profile card. A GIF is
- * uploaded byte for byte, so it keeps moving; a still is shrunk first. The
- * name is the file it lands as, inside the banner or profile folder.
+ * Put a picture on the server banner, the server icon or your profile card.
+ * A GIF is uploaded byte for byte, so it keeps moving; a still is shrunk
+ * first. The name is the file it lands as, inside the banner or profile
+ * folder. The icon sits beside the banner, in the server's banner folder,
+ * so the upload pass (api/upload.ts) checks it the same way.
  */
 export async function uploadPicture(
   file: File,
-  where: { kind: "banner"; serverId: string } | { kind: "profile"; name: ProfilePicture },
+  where: { kind: "banner" | "icon"; serverId: string } | { kind: "profile"; name: ProfilePicture },
 ): Promise<string> {
   if (!/^image\/(png|gif|webp|jpeg)$/.test(file.type)) throw new Error("Use a PNG, GIF, WebP or JPG picture");
   if (file.size > MAX_PICTURE_BYTES) throw new Error("A picture can be up to 10 MB");
   const gif = file.type === "image/gif";
-  const body = gif ? file : await shrinkStill(file, where.kind === "banner" || where.name === "cameraoff" ? 960 : 512);
+  const body = gif ? file : await shrinkStill(file, where.kind === "icon" ? 256 : where.kind === "banner" || (where.kind === "profile" && where.name === "cameraoff") ? 960 : 512);
   if (body.size > MAX_PICTURE_BYTES) throw new Error("That picture is too big");
   const idToken = await auth.currentUser?.getIdToken();
   if (!idToken) throw new Error("Log in first.");
-  const folder = where.kind === "banner" ? `banner/${where.serverId}/` : `profile/${auth.currentUser!.uid}/`;
-  const name = where.kind === "banner" ? "banner" : where.name;
+  const folder = where.kind === "profile" ? `profile/${auth.currentUser!.uid}/` : `banner/${where.serverId}/`;
+  const name = where.kind === "profile" ? where.name : where.kind;
   const blob = await upload(`${folder}${name}.${gif ? "gif" : "jpg"}`, body, {
     access: "public",
     handleUploadUrl: "/api/upload",
-    clientPayload: JSON.stringify({ idToken, kind: where.kind, serverId: where.kind === "banner" ? where.serverId : undefined }),
+    clientPayload: JSON.stringify({
+      idToken,
+      kind: where.kind === "profile" ? "profile" : "banner",
+      serverId: where.kind === "profile" ? undefined : where.serverId,
+    }),
     contentType: gif ? "image/gif" : "image/jpeg",
   });
   return blob.url;

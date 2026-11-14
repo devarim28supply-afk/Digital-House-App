@@ -14,14 +14,13 @@
   --green: #4ade80;
 }
 
-/* a very fine green grid under the working areas */
+/* a fine grid under the working areas, in the theme color (Kaalob: easy to see) */
+/* not the left side (servers and room tiles): that stays plain (Kaalob) */
 :root[data-style="noir"] .main,
-:root[data-style="noir"] .side,
-:root[data-style="noir"] .members,
-:root[data-style="noir"] .rail {
+:root[data-style="noir"] .members {
   background-image:
-    linear-gradient(rgba(74, 222, 128, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 222, 128, 0.028) 1px, transparent 1px);
+    linear-gradient(rgba(var(--green-rgb), 0.17) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--green-rgb), 0.17) 1px, transparent 1px);
   background-size: 28px 28px;
 }
 
@@ -45,7 +44,7 @@
 :root[data-style="noir"] .voice .dock .dock-btn[aria-pressed="true"],
 :root[data-style="noir"] .dock-btn.on {
   border-color: var(--green);
-  box-shadow: 0 0 0 1px var(--green), 0 0 18px rgba(74, 222, 128, 0.28);
+  box-shadow: 0 0 0 1px var(--green), 0 0 18px rgba(var(--green-rgb), 0.28);
 }
 
 /* sharper corners */
@@ -64,11 +63,11 @@
 :root[data-style="noir"] input:focus,
 :root[data-style="noir"] textarea:focus {
   border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.14);
+  box-shadow: 0 0 0 3px rgba(var(--green-rgb), 0.14);
 }
 
 :root[data-style="noir"] ::selection {
-  background: rgba(74, 222, 128, 0.3);
+  background: rgba(var(--green-rgb), 0.3);
 }
 :root[data-style="noir"] ::-webkit-scrollbar-thumb {
   background: #1e2b24;

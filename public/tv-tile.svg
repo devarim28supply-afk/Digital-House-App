@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180">
+  <defs>
+    <linearGradient id="tvWall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1b1d22"/>
+      <stop offset="100%" stop-color="#0b0c0f"/>
+    </linearGradient>
+    <radialGradient id="tvGlow" cx="50%" cy="42%" r="60%">
+      <stop offset="0%" stop-color="#66aaff66"/>
+      <stop offset="100%" stop-color="#66aaff00"/>
+    </radialGradient>
+    <linearGradient id="tvScreen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2b4f7a"/>
+      <stop offset="100%" stop-color="#101c2e"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#tvWall)"/>
+  <!-- the backlight behind the TV -->
+  <rect width="320" height="180" fill="url(#tvGlow)"/>
+  <!-- floor -->
+  <rect x="0" y="142" width="320" height="38" fill="#08090b"/>
+  <!-- the TV on the wall -->
+  <rect x="66" y="22" width="188" height="108" rx="5" fill="#050608" stroke="#2c3038" stroke-width="2"/>
+  <rect x="72" y="28" width="176" height="96" rx="2" fill="url(#tvScreen)"/>
+  <!-- play mark -->
+  <path d="M150 60 L150 92 L178 76 Z" fill="#dbe9ff" opacity="0.9"/>
+  <!-- webcams in a row under it -->
+  <g fill="#1d2228" stroke="#3a444e" stroke-width="1.2">
+    <rect x="96" y="146" width="38" height="21.4" rx="3"/>
+    <rect x="141" y="146" width="38" height="21.4" rx="3"/>
+    <rect x="186" y="146" width="38" height="21.4" rx="3"/>
+  </g>
+  <g fill="#6b7783">
+    <circle cx="115" cy="154" r="3.6"/><path d="M108 165 a7 6 0 0 1 14 0 z"/>
+    <circle cx="160" cy="154" r="3.6"/><path d="M153 165 a7 6 0 0 1 14 0 z"/>
+    <circle cx="205" cy="154" r="3.6"/><path d="M198 165 a7 6 0 0 1 14 0 z"/>
+  </g>
+</svg>

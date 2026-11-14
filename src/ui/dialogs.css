@@ -148,11 +148,11 @@ fieldset.field > .btn {
 /* find a server and the requests list: green, like everything that can be pressed here */
 .find-row .btn.primary {
   border: 1px solid var(--green);
-  background: rgba(74, 222, 128, 0.1);
+  background: rgba(var(--green-rgb), 0.1);
   color: var(--green);
 }
 .find-row .btn.primary:hover:not(:disabled) {
-  background: rgba(74, 222, 128, 0.2);
+  background: rgba(var(--green-rgb), 0.2);
 }
 .find-row .btn:disabled {
   opacity: 0.55;
@@ -193,7 +193,7 @@ fieldset.field > .btn {
 }
 :root:not([data-layout-theme="smoky"]) .customize-preview-indicator.changed {
   background: var(--green);
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+  box-shadow: 0 0 8px rgba(var(--green-rgb), 0.6);
 }
 :root:not([data-layout-theme="smoky"]) .customize-nameplate-row {
   background: var(--panel-3);
@@ -211,7 +211,7 @@ fieldset.field > .btn {
 }
 :root:not([data-layout-theme="smoky"]) .customize-banner-edit:hover {
   border-color: var(--green);
-  background: rgba(74, 222, 128, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
 }
 
 /* tabs: one clean row of mono buttons, the open one green */
@@ -233,7 +233,7 @@ fieldset.field > .btn {
   border-color: var(--dim);
 }
 :root:not([data-layout-theme="smoky"]) .customize-tabs button[aria-pressed="true"] {
-  background: rgba(74, 222, 128, 0.1);
+  background: rgba(var(--green-rgb), 0.1);
   color: var(--green);
   border-color: var(--green);
   box-shadow: 0 0 0 1px var(--green) inset;
@@ -277,7 +277,7 @@ fieldset.field > .btn {
 :root:not([data-layout-theme="smoky"]) .layout-theme-choice[aria-pressed="true"] {
   outline: 0;
   border-color: var(--green);
-  box-shadow: 0 0 0 1px var(--green) inset, 0 0 18px rgba(74, 222, 128, 0.18);
+  box-shadow: 0 0 0 1px var(--green) inset, 0 0 18px rgba(var(--green-rgb), 0.18);
 }
 :root:not([data-layout-theme="smoky"]) .layout-theme-choice[aria-pressed="true"] strong {
   color: var(--green);
@@ -290,7 +290,7 @@ fieldset.field > .btn {
 /* focus rings, the name field, the footer buttons */
 .customize-display-name-row .customize-name-input:focus {
   border-color: var(--green);
-  outline-color: rgba(74, 222, 128, 0.3);
+  outline-color: rgba(var(--green-rgb), 0.3);
 }
 button.avatar.big.customize-avatar:focus-visible,
 .customize-banner-edit:focus-visible,
@@ -308,11 +308,11 @@ button.avatar.big.customize-avatar:focus-visible,
 }
 :root:not([data-layout-theme="smoky"]) .customize-footer .btn.primary {
   border: 1px solid var(--green);
-  background: rgba(74, 222, 128, 0.12);
+  background: rgba(var(--green-rgb), 0.12);
   color: var(--green);
 }
 :root:not([data-layout-theme="smoky"]) .customize-footer .btn.primary:hover:not(:disabled) {
-  background: rgba(74, 222, 128, 0.22);
+  background: rgba(var(--green-rgb), 0.22);
 }
 :root:not([data-layout-theme="smoky"]) .cosmetic-choice[aria-pressed="true"],
 :root:not([data-layout-theme="smoky"]) .customize-tabs button[aria-pressed="true"] {

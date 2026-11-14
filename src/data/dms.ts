@@ -42,13 +42,13 @@ export async function openDm(me: string, other: string, existing: Server[]): Pro
 }
 
 /** The newest message in a DM (when, and who wrote it), for unread dots and order. */
-export function watchLatest(dmId: string, cb: (latest: { at: number; author: string } | null) => void): Unsubscribe {
+export function watchLatest(dmId: string, cb: (latest: { at: number; author: string; text: string } | null) => void): Unsubscribe {
   const q = query(collection(db, "servers", dmId, "channels", DM_CHAT, "messages"), orderBy("createdAt", "desc"), limit(1));
   return onSnapshot(
     q,
     (snap) => {
       const d = snap.docs[0]?.data();
-      cb(d ? { at: d.createdAt?.toMillis?.() ?? Date.now(), author: String(d.authorUid ?? "") } : null);
+      cb(d ? { at: d.createdAt?.toMillis?.() ?? Date.now(), author: String(d.authorUid ?? ""), text: String(d.text ?? (d.files?.length ? "sent a file" : d.sticker ? "sent a sticker" : "")) } : null);
     },
     () => cb(null),
   );

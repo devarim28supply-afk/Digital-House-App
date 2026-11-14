@@ -420,3 +420,36 @@
   color:#151518;
   font-weight:700;
 }
+
+/* ---- Color themes (Account > Color theme): the same design, another color
+   where the green is. Green is the design as it was: no rule here touches it.
+   --ok (styles.css) stays green in every theme: online, done, good connection. */
+:root[data-layout-theme="smoky"] { --ok:#59ff47; }
+:root:root[data-accent="blue"]   { --green:#5aa9ff; --green-rgb:90,169,255; --focus:#5aa9ff; --on-accent:#04121f; }
+:root:root[data-accent="orange"] { --green:#fb923c; --green-rgb:251,146,60; --focus:#fb923c; --on-accent:#1f0d02; }
+:root:root[data-accent="red"]    { --green:#ff5a5a; --green-rgb:255,90,90; --focus:#ff5a5a; --on-accent:#1f0404; }
+:root:root[data-accent="purple"] { --green:#b08cff; --green-rgb:176,140,255; --focus:#b08cff; --on-accent:#0f0720; }
+:root:root[data-accent="pink"]   { --green:#f472b6; --green-rgb:244,114,182; --focus:#f472b6; --on-accent:#200612; }
+:root:root[data-accent="yellow"] { --green:#fde047; --green-rgb:253,224,71; --focus:#fde047; --on-accent:#1c1602; }
+:root:root[data-accent="teal"]   { --green:#2dd4bf; --green-rgb:45,212,191; --focus:#2dd4bf; --on-accent:#021a17; }
+/* Terminal Noir's panels and lines carry a little green: here, a little of the theme color */
+:root:root[data-style="noir"][data-accent]:not([data-accent="green"]) {
+  --panel:color-mix(in srgb,var(--green) 2.5%,#050606);
+  --panel-2:color-mix(in srgb,var(--green) 4%,#0a0b0b);
+  --panel-3:color-mix(in srgb,var(--green) 6%,#0f1010);
+  --line:color-mix(in srgb,var(--green) 9%,#171919);
+  --line-2:color-mix(in srgb,var(--green) 13%,#212424);
+  --text:color-mix(in srgb,var(--green) 5%,#e9ebea);
+  --muted:color-mix(in srgb,var(--green) 9%,#8a8f8c);
+  --dim:color-mix(in srgb,var(--green) 9%,#565c59);
+}
+/* The bright theme color, kept under another name: light mode (light-mode.css)
+   darkens --green for the white page, and hands this one back to the dark
+   pictures and screens inside it. */
+:root { --bright: var(--green); --bright-rgb: var(--green-rgb); }
+/* the profile editor's own soft greens follow the theme color too */
+:root[data-accent]:not([data-accent="green"]) .customize-tabs button[aria-pressed=true] { background:color-mix(in srgb,var(--green) 16%,#1c1c1c); color:var(--green); border-color:var(--green); }
+:root[data-accent]:not([data-accent="green"]) .cosmetic-choice[aria-pressed=true] { outline-color:var(--green); }
+:root[data-accent]:not([data-accent="green"]) .cosmetic-actions .btn[aria-pressed=true] { border-color:var(--green); color:var(--green); }
+:root[data-accent]:not([data-accent="green"]) :is(.customize-avatar-choice,.cosmetic-choice,.customize-tabs button,button.avatar.big.customize-avatar):focus-visible { outline-color:var(--green); }
+:root[data-accent]:not([data-accent="green"]) .customize-display-name-row .customize-name-input:focus { border-color:var(--green); outline-color:color-mix(in srgb,var(--green) 19%,transparent); }

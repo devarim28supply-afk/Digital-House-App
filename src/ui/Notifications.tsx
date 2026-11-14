@@ -2,7 +2,9 @@ import { Portal } from "solid-js/web";
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { watchAllFeedback, watchMyFeedback, type Feedback } from "../data/feedback";
 import { feedbackReceipt, unreadNotifications } from "../data/notifications";
+import { desktopSupported, enableDesktopAlerts, prefs, setPrefs } from "../data/alerts";
 import "./notifications.css";
+import "./alerts.css";
 
 export type Notice = { id: string; title: string; detail: string; at: number; target: "mine" | "inbox" };
 export function Notifications(props: { uid: string; staff?: boolean; unreadInbox: number; latestInboxAt?: number; onOpen: () => void; onItems: (items: Notice[]) => void; onError: (error: string) => void }) {
@@ -94,6 +96,10 @@ export function Notifications(props: { uid: string; staff?: boolean; unreadInbox
 export function NotificationList(props: {items: Notice[]; error: string; unreadInbox: number; onInbox: () => void; onFeedback: (tab: "mine" | "inbox") => void}) {
   return <section class="feedback-notifications" aria-label="Notifications">
     <button class="notification-inbox" type="button" onClick={props.onInbox}>Inbox <span>{props.unreadInbox ? `${props.unreadInbox} unread` : "Open messages"} →</span></button>
+    <div class="alert-prefs">
+      <Show when={desktopSupported()}><button type="button" aria-pressed={prefs().desktop} onClick={() => prefs().desktop ? setPrefs({desktop:false}) : void enableDesktopAlerts()}>Desktop alerts: {prefs().desktop ? "on" : "off"}</button></Show>
+      <button type="button" aria-pressed={prefs().ring} onClick={() => setPrefs({ring:!prefs().ring})}>Call ring sound: {prefs().ring ? "on" : "off"}</button>
+    </div>
     <Show when={props.error}><p class="notification-empty" role="status">{props.error}</p></Show>
     <div class="notification-list"><For each={props.items} fallback={<p class="notification-empty">You're all caught up. Feedback replies and sent confirmations appear here.</p>}>{item => <button type="button" class="notification-item" onClick={() => props.onFeedback(item.target)}><strong>{item.title}</strong><span>{item.detail}</span><time>{new Date(item.at).toLocaleString([], {dateStyle:"short",timeStyle:"short"})}</time></button>}</For></div>
   </section>;

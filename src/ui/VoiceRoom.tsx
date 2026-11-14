@@ -21,6 +21,7 @@ import {
 import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
+import { setTvObs, setTvObsBusy, setTvObsCall, tvObsAsk } from "../data/tvObs";
 import { audit } from "../data/audit";
 import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
@@ -78,6 +79,8 @@ type TileInfo = {
   screen: boolean;
   /** the sharer's 2nd screen */
   second?: boolean;
+  /** OBS, shared as a screen */
+  obs?: boolean;
   /** the Stream menu: a second webcam, shown as its own screen */
   streamCam?: boolean;
 };
@@ -85,6 +88,19 @@ type TileInfo = {
 // A 2nd shared screen rides its own named track: LiveKit keeps one
 // "screen share" per person, so this one is published beside it.
 const SECOND_SCREEN = "screen-2";
+// OBS shared as a screen (the Share screen menu): OBS's Virtual Camera on its
+// own named track, shown as a screen share like the two above.
+const OBS_SCREEN = "screen-obs";
+// OBS on the sidebar TV (data/tvObs.ts): the same Virtual Camera, on another
+// named track. Not a screen share and not a tile: the sidebar TV shows it.
+// The sound that goes with screen 2 and with OBS shared as a screen. The
+// call plays these like any other sound in it.
+const SECOND_SCREEN_AUDIO = "screen-2-audio";
+const OBS_SCREEN_AUDIO = "screen-obs-audio";
+const TV_OBS = "tv-obs";
+// Its sound, when the person adds one. The sidebar TV plays it (with its own
+// speaker button), so the call does not play it the way it plays voices.
+const TV_OBS_AUDIO = "tv-obs-audio";
 // The Stream menu. A second webcam, shown on the primary webcam tile. Not a screen share.
 const STREAM_CAM = "webcam-2";
 // Stream mode (Kaalob): still a screen share, but it rides on the sharer's
@@ -305,8 +321,13 @@ function primaryCameraId(devices: MediaDeviceInfo[]) {
   return real?.deviceId ?? "";
 }
 
-function screenLabel(tile: { second?: boolean; streamCam?: boolean }) {
+/** OBS went on without sound: how to give it sound, once. */
+const OBS_NO_SOUND =
+  'OBS is on, without sound: no "CABLE Output" sound device was found on this computer. To send OBS\'s sound too, install the free VB-CABLE (vb-audio.com/Cable) once, then in OBS open Settings > Audio > Advanced and set Monitoring Device to "CABLE Input". In Edit > Advanced Audio Properties, set your source\'s Audio Monitoring to "Monitor and Output". Then press OBS again.';
+
+function screenLabel(tile: { second?: boolean; obs?: boolean; streamCam?: boolean }) {
   if (tile.streamCam) return "stream";
+  if (tile.obs) return "OBS";
   if (tile.second) return "2nd screen";
   return "screen";
 }
@@ -347,10 +368,13 @@ export function VoiceRoom(props: {
   seats?: boolean;
 }) {
   const [room, setRoom] = createSignal<Room | undefined>();
+  // A Television channel (made with + Channel) is a Living Room in every way
+  // here: the same big TV, the same row of webcams under it.
+  const tvKey = () => (props.channel.tv ? LIVING_ROOM_ROOMKEY : props.channel.roomKey);
   const [roomCamTrack, setRoomCamTrack] = createSignal<RemoteTrack | undefined>();
   // A broadcast room's layout is fixed (broadcastPlan, below) - a screen share
   // would have nowhere defined to go in it, so it's off there.
-  const noShare = () => isBroadcastRoom(props.channel.roomKey);
+  const noShare = () => isBroadcastRoom(tvKey());
   // Hide / show the Room view, remembered per tile.
   const hiddenKey = () => `dh_roomview_hidden_${props.channel.id}`;
   const readHidden = () => {
@@ -609,6 +633,17 @@ export function VoiceRoom(props: {
     secondScreen?.track?.stop();
     secondScreen = undefined;
     setSecondOn(false);
+    secondScreenAudio?.track?.stop();
+    secondScreenAudio = undefined;
+    obsScreen?.track?.stop();
+    obsScreen = undefined;
+    obsScreenAudio?.track?.stop();
+    obsScreenAudio = undefined;
+    setObsOn(false);
+    tvObsPub?.track?.stop();
+    tvObsPub = undefined;
+    tvObsAudioPub?.track?.stop();
+    tvObsAudioPub = undefined;
     streamCamGen++;
     const streamCam = streamCamPub;
     streamCamPub = undefined;
@@ -683,8 +718,9 @@ export function VoiceRoom(props: {
         ...(phoneCap ? { videoCaptureDefaults: phoneCap } : {}),
       });
       next
-        .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-          if (track.kind === Track.Kind.Audio) {
+        .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub) => {
+          // the sidebar TV's OBS sound is the TV's to play (SideTv), not the call's
+          if (track.kind === Track.Kind.Audio && pub.trackName !== TV_OBS_AUDIO) {
             const element = track.attach(); element.muted = deafened(); audioHost.appendChild(element);
           }
           bump();
@@ -801,8 +837,16 @@ export function VoiceRoom(props: {
   const camOn = () => Boolean(local()?.isCameraEnabled);
   const screenOn = () => Boolean(local()?.isScreenShareEnabled);
   let secondScreen: LocalTrackPublication | undefined;
+  let secondScreenAudio: LocalTrackPublication | undefined;
   const [secondOn, setSecondOn] = createSignal(false);
-  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0);
+  // OBS (Kaalob): one more shared screen, beside screen 1 and 2. It is a
+  // screen share in every way (its own tile, the same layout and zoom); only
+  // its picture comes from OBS's Virtual Camera instead of the browser's
+  // screen picker. Nothing to do with Stream, which stays as it is.
+  let obsScreen: LocalTrackPublication | undefined;
+  let obsScreenAudio: LocalTrackPublication | undefined;
+  const [obsOn, setObsOn] = createSignal(false);
+  const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0) + (obsOn() ? 1 : 0);
   const [shareMenu, setShareMenu] = createSignal(false);
   // a click anywhere else closes the share menu
   createEffect(() => {
@@ -812,6 +856,220 @@ export function VoiceRoom(props: {
     };
     window.addEventListener("pointerdown", close);
     onCleanup(() => window.removeEventListener("pointerdown", close));
+  });
+
+  async function stopObs() {
+    const pub = obsScreen;
+    const sound = obsScreenAudio;
+    obsScreen = undefined;
+    obsScreenAudio = undefined;
+    setObsOn(false);
+    for (const one of [pub, sound]) {
+      if (one?.track) await room()?.localParticipant.unpublishTrack(one.track).catch(() => {});
+      one?.track?.stop();
+    }
+    bump();
+  }
+
+  // ---- OBS's sound (Kaalob: sound in everything, the proper way) -----------
+  // OBS's Virtual Camera is a picture only: OBS never puts sound in it. The
+  // proper way streamers get OBS's sound into another app is a virtual audio
+  // cable: OBS plays its sound into the cable ("CABLE Input", set once in OBS
+  // as the Monitoring Device), and the other end ("CABLE Output") is a sound
+  // input this page can open. So wherever OBS's picture goes, this opens that
+  // input and sends it along: exactly what OBS plays, nothing else from the
+  // computer, so nobody hears their own voice back. Nothing to press.
+  /** OBS's sound from the virtual cable, or undefined when there is no cable on this computer. */
+  async function openObsSound(): Promise<MediaStreamTrack | undefined> {
+    try {
+      const cable = (list: MediaDeviceInfo[]) =>
+        list.find((d) => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications" && /cable output|vb-audio virtual cable/i.test(d.label));
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      // the browser hides sound device names until it has allowed a microphone once
+      if (!devices.some((d) => d.kind === "audioinput" && d.label)) {
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        probe.getTracks().forEach((track) => track.stop());
+        devices = await navigator.mediaDevices.enumerateDevices();
+      }
+      const device = cable(devices);
+      if (!device) return undefined;
+      // a film's or a game's sound as it is: none of the voice clean-up a microphone gets
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: device.deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 },
+        video: false,
+      });
+      return stream.getAudioTracks()[0];
+    } catch {
+      return undefined;
+    }
+  }
+  /** OBS's sound, sent under `name` beside its picture. Says how to set it up when the cable is not there. */
+  async function publishObsSound(me: LocalParticipant, name: string) {
+    const sound = await openObsSound();
+    if (!sound) {
+      setError(OBS_NO_SOUND);
+      return undefined;
+    }
+    try {
+      return await me.publishTrack(sound, { name, source: Track.Source.Unknown, dtx: false, forceStereo: true });
+    } catch {
+      sound.stop();
+      return undefined;
+    }
+  }
+  /** OBS's Virtual Camera among this computer's cameras, or undefined. */
+  async function findObs() {
+    const obs = (list: MediaDeviceInfo[]) => list.find((d) => d.kind === "videoinput" && d.deviceId && /\bobs\b/i.test(d.label));
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    // the browser hides camera names until it has allowed a camera once
+    if (!devices.some((d) => d.kind === "videoinput" && d.label)) {
+      const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      probe.getTracks().forEach((track) => track.stop());
+      devices = await navigator.mediaDevices.enumerateDevices();
+    }
+    return obs(devices);
+  }
+  /** Share (or stop) OBS as a screen, next to screen 1 and 2. */
+  async function toggleObs() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    if (obsScreen) {
+      await stopObs();
+      return;
+    }
+    let media: MediaStreamTrack | undefined;
+    try {
+      const device = await findObs();
+      if (!device) {
+        setError("OBS was not found. In OBS, press Start Virtual Camera, then try again.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: device.deviceId }, frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      media = stream.getVideoTracks()[0];
+      if (!media) return;
+      // OBS closed, or its Virtual Camera stopped: the share ends too
+      media.addEventListener("ended", () => void stopObs());
+      obsScreen = await me.publishTrack(media, { name: OBS_SCREEN, source: Track.Source.Unknown, simulcast: false });
+      setObsOn(true);
+      // its sound with it, automatically
+      obsScreenAudio = await publishObsSound(me, OBS_SCREEN_AUDIO);
+    } catch (err) {
+      media?.stop();
+      if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the camera, so OBS could not be read.");
+      else if (err instanceof DOMException && (err.name === "NotReadableError" || err.name === "OverconstrainedError" || err.name === "NotFoundError")) {
+        setError("OBS could not be shared. In OBS, press Start Virtual Camera, then try again.");
+      } else setError(err instanceof Error ? err.message : "OBS could not be shared.");
+    }
+    bump();
+  }
+
+  // ---- OBS on the sidebar TV (Kaalob) --------------------------------------
+  // The TV's OBS button (SideTv) asks; this call publishes your OBS for
+  // everyone in it, and tells the TV whose OBS is on (data/tvObs.ts).
+  let tvObsPub: LocalTrackPublication | undefined;
+  // its sound, sent with it automatically (openObsSound, above)
+  let tvObsAudioPub: LocalTrackPublication | undefined;
+  const callKey = () => `${props.serverId}/${props.channel.id}`;
+  async function stopTvObs() {
+    const pub = tvObsPub;
+    const sound = tvObsAudioPub;
+    tvObsPub = undefined;
+    tvObsAudioPub = undefined;
+    // the sound goes with the picture
+    for (const one of [pub, sound]) {
+      if (one?.track) await room()?.localParticipant.unpublishTrack(one.track).catch(() => {});
+      one?.track?.stop();
+    }
+    bump();
+  }
+  async function toggleTvObs() {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    setError("");
+    if (tvObsPub) {
+      await stopTvObs();
+      return;
+    }
+    let media: MediaStreamTrack | undefined;
+    setTvObsBusy(true);
+    try {
+      const device = await findObs();
+      if (!device) {
+        setError("OBS was not found. In OBS, press Start Virtual Camera, then try again.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: device.deviceId }, frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      media = stream.getVideoTracks()[0];
+      if (!media) return;
+      media.contentHint = "motion";
+      // OBS closed, or its Virtual Camera stopped: it comes off the TV
+      media.addEventListener("ended", () => void stopTvObs());
+      tvObsPub = await me.publishTrack(media, { name: TV_OBS, source: Track.Source.Unknown, simulcast: false });
+      // its sound with it, automatically: the TVs play it (each with its own speaker button)
+      tvObsAudioPub = await publishObsSound(me, TV_OBS_AUDIO);
+    } catch (err) {
+      media?.stop();
+      if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the camera, so OBS could not be read.");
+      else if (err instanceof DOMException && (err.name === "NotReadableError" || err.name === "OverconstrainedError" || err.name === "NotFoundError")) {
+        setError("OBS could not go on the TV. In OBS, press Start Virtual Camera, then try again.");
+      } else setError(err instanceof Error ? err.message : "OBS could not go on the TV.");
+    } finally {
+      setTvObsBusy(false);
+    }
+    bump();
+  }
+  // the TV's OBS button, for this call's channel
+  createEffect(
+    on(
+      tvObsAsk,
+      (ask) => {
+        if (ask && ask.channelKey === callKey() && !props.viewOnly) void toggleTvObs();
+      },
+      { defer: true },
+    ),
+  );
+  // whose OBS is on the TV: someone else's first (a second person putting
+  // theirs on takes over: yours comes off just below), else your own
+  createEffect(() => {
+    version();
+    const current = room();
+    if (!current || props.viewOnly) return;
+    let found: { track: Track; by: string; mine: boolean; audio?: Track; sound: boolean } | undefined;
+    for (const p of current.remoteParticipants.values()) {
+      let picture: Track | undefined;
+      let audio: Track | undefined;
+      for (const pub of p.trackPublications.values()) {
+        if (pub.isMuted || !pub.track) continue;
+        if (pub.trackName === TV_OBS && pub.kind === Track.Kind.Video) picture = pub.track;
+        if (pub.trackName === TV_OBS_AUDIO && pub.kind === Track.Kind.Audio) audio = pub.track;
+      }
+      if (picture) found = { track: picture, by: p.identity, mine: false, audio, sound: Boolean(audio) };
+    }
+    if (!found && tvObsPub?.track) found = { track: tvObsPub.track, by: current.localParticipant.identity, mine: true, sound: Boolean(tvObsAudioPub) };
+    setTvObs(found ? { channelKey: callKey(), ...found } : undefined);
+  });
+  createEffect(() => {
+    const current = room();
+    if (!current || props.viewOnly) return;
+    setTvObsCall(callKey());
+    // someone else puts their OBS on while yours is on: theirs takes over
+    const taken = (pub: TrackPublication) => {
+      if (pub.trackName === TV_OBS && tvObsPub) void stopTvObs();
+    };
+    current.on(RoomEvent.TrackPublished, taken);
+    onCleanup(() => {
+      current.off(RoomEvent.TrackPublished, taken);
+      setTvObsCall("");
+      setTvObs(undefined);
+      setTvObsBusy(false);
+    });
   });
 
   /** Share (or stop) a 2nd screen, next to the first. */
@@ -824,13 +1082,19 @@ export function VoiceRoom(props: {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      // with its sound, the same as screen 1: the tick box in the browser's share box
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       const media = stream.getVideoTracks()[0];
-      if (!media) return;
+      if (!media) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       // the browser's own "Stop sharing" ends it too
       media.addEventListener("ended", () => void stopSecondScreen());
       secondScreen = await me.publishTrack(media, { name: SECOND_SCREEN, source: Track.Source.Unknown, simulcast: false });
       setSecondOn(true);
+      const sound = stream.getAudioTracks()[0];
+      if (sound) secondScreenAudio = await me.publishTrack(sound, { name: SECOND_SCREEN_AUDIO, source: Track.Source.Unknown, dtx: false }).catch(() => undefined);
     } catch (err) {
       // picking nothing in the browser's dialog is not an error
       if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
@@ -1059,7 +1323,7 @@ export function VoiceRoom(props: {
   // now - a real webcam, or an OBS virtual camera through Stream's picker,
   // same as everywhere else Stream already works. Nobody streaming: empty.
   const broadcastTrack = createMemo(() => {
-    if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
+    if (!isBroadcastRoom(tvKey())) return undefined;
     void version();
     const current = room();
     if (!current) return undefined;
@@ -1092,10 +1356,14 @@ export function VoiceRoom(props: {
 
   async function stopSecondScreen() {
     const pub = secondScreen;
+    const sound = secondScreenAudio;
     secondScreen = undefined;
+    secondScreenAudio = undefined;
     setSecondOn(false);
-    if (pub?.track) await room()?.localParticipant.unpublishTrack(pub.track).catch(() => {});
-    pub?.track?.stop();
+    for (const one of [pub, sound]) {
+      if (one?.track) await room()?.localParticipant.unpublishTrack(one.track).catch(() => {});
+      one?.track?.stop();
+    }
     bump();
   }
 
@@ -1430,8 +1698,9 @@ export function VoiceRoom(props: {
       for (const pub of p.trackPublications.values()) {
         if (pub.trackName === STREAM || pub.trackName === STREAM_AUDIO || pub.trackName === STREAM_CAM) continue;
         const second = pub.trackName === SECOND_SCREEN;
-        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second)) continue;
-        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second });
+        const obs = pub.trackName === OBS_SCREEN;
+        if (pub.kind !== Track.Kind.Video || pub.isMuted || (pub.source !== Track.Source.ScreenShare && !second && !obs)) continue;
+        screens.push({ key: `${p.identity}:${pub.trackSid}`, participant: p, publication: pub, screen: true, second, obs });
       }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
@@ -1610,7 +1879,7 @@ export function VoiceRoom(props: {
   // the tiles whose picture really is tall (measured), for layouts that keep each tile the shape of its picture
   const tallKeys = () => tiles().filter((t) => !t.screen && isTall(t.key, frameWide())).map((t) => t.key);
   const broadcastBig = createMemo<JSX.CSSProperties | undefined>(() => {
-    if (!isBroadcastRoom(props.channel.roomKey)) return undefined;
+    if (!isBroadcastRoom(tvKey())) return undefined;
     const { w, h } = box();
     if (w <= 0 || h <= 0) return undefined;
     const keys = tiles()
@@ -1625,9 +1894,9 @@ export function VoiceRoom(props: {
       keys,
       width: w,
       height: h,
-      stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
-      rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
-      tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
+      stripHeight: tvKey() === LIVING_ROOM_ROOMKEY ? 150 : undefined,
+      rowWidthRatio: tvKey() === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+      tvBottomRatio: tvKey() === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
     }).big as JSX.CSSProperties;
   });
   const layout = createMemo(() => {
@@ -1637,7 +1906,7 @@ export function VoiceRoom(props: {
     let rows: number;
     let small = false;
     const { w: boxW, h: boxH } = box();
-    const phone = phoneNow() && n > 0 && !isBroadcastRoom(props.channel.roomKey);
+    const phone = phoneNow() && n > 0 && !isBroadcastRoom(tvKey());
     if (phone) {
       const cams = tiles().filter((t) => !t.screen);
       const screens = tiles().filter((t) => t.screen);
@@ -1694,7 +1963,7 @@ export function VoiceRoom(props: {
     // screen - whoever's Stream is on, below) plus a webcam-only row, on
     // its own layout entirely - never the narrow/grid/deskPlan branches
     // below, any size.
-    if (isBroadcastRoom(props.channel.roomKey) && boxW > 0 && boxH > 0) {
+    if (isBroadcastRoom(tvKey()) && boxW > 0 && boxH > 0) {
       // webcams only here - a screen share has nowhere to go in this layout
       const cams = tiles().filter((t) => !t.screen);
       const keys = [
@@ -1710,9 +1979,9 @@ export function VoiceRoom(props: {
             keys,
             width: boxW,
             height: boxH,
-            stripHeight: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 150 : undefined,
-            rowWidthRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
-            tvBottomRatio: props.channel.roomKey === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
+            stripHeight: tvKey() === LIVING_ROOM_ROOMKEY ? 150 : undefined,
+            rowWidthRatio: tvKey() === LIVING_ROOM_ROOMKEY ? 0.53 : undefined,
+            tvBottomRatio: tvKey() === LIVING_ROOM_ROOMKEY ? livingRoomTvBottom() : undefined,
           });
       return {
         n: keys.length,
@@ -2119,7 +2388,7 @@ export function VoiceRoom(props: {
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
                 stream={
-                  tile.screen || inTeam().has(tile.participant.identity) || isBroadcastRoom(props.channel.roomKey)
+                  tile.screen || inTeam().has(tile.participant.identity) || isBroadcastRoom(tvKey())
                     ? undefined
                     : (streamOf(tile.participant) ?? streamCamOf(tile.participant))
                 }
@@ -2388,6 +2657,17 @@ export function VoiceRoom(props: {
                   }}
                 >
                   <span>{secondOn() ? "Stop screen 2" : "Share screen 2"}</span>
+                </button>
+                {/* OBS: one more shared screen, from its Virtual Camera (OBS must have Start Virtual Camera on) */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenu(false);
+                    void toggleObs();
+                  }}
+                >
+                  <span>{obsOn() ? "Stop OBS" : "Share OBS"}</span>
                 </button>
               </div>
             </Show>

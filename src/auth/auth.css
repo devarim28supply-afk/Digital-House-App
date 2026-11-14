@@ -465,9 +465,9 @@
   justify-content: center;
   gap: 12px;
   height: 64px;
-  border: 1px solid rgba(74, 222, 128, 0.55);
+  border: 1px solid rgba(var(--green-rgb), 0.55);
   border-radius: 12px;
-  background: rgba(74, 222, 128, 0.08);
+  background: rgba(var(--green-rgb), 0.08);
   color: var(--green);
   font-family: var(--mono);
   font-size: 1rem;

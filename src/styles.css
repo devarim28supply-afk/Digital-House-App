@@ -16,6 +16,12 @@ html {
   --muted: #8a8a8a;
   --dim: #5c5c5c;
   --green: #4ade80;
+  /* the same color as numbers, for the see-through greens: rgba(var(--green-rgb), 0.2) */
+  --green-rgb: 74, 222, 128;
+  /* stays green in every color theme: online, done, a good connection */
+  --ok: #4ade80;
+  /* text on top of the theme color */
+  --on-accent: #042;
   --amber: #fbbf24;
   --red: #f87171;
   --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, Consolas, monospace;

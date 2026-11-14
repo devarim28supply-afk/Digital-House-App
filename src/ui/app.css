@@ -852,6 +852,7 @@
   font-size: 24px;
 }
 
+/* online stays green in every color theme */
 .avatar .dot {
   position: absolute;
   right: -2px;
@@ -860,7 +861,7 @@
   height: 11px;
   border: 2px solid var(--bg);
   border-radius: 50%;
-  background: var(--green);
+  background: var(--ok);
 }
 
 /* ---- main ---------------------------------------------------------------- */
@@ -3279,7 +3280,7 @@ img.live-tile-still {
   color: #facc15;
 }
 .fb-status.done {
-  color: var(--green);
+  color: var(--ok);
 }
 .fb-body {
   margin: 0;
@@ -3462,7 +3463,7 @@ img.live-tile-still {
   width: 100%;
 }
 .dm-row.active {
-  background: rgba(74, 222, 128, 0.12);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
 }
 .dm-row.unread .member-name {
   color: #fff;
@@ -3612,10 +3613,10 @@ img.live-tile-still {
   aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
-  border: 1px solid #23ff9a55;
+  border: 1px solid rgba(var(--green-rgb), 0.4);
   border-radius: 8px;
   background: #000;
-  cursor: zoom-in;
+  cursor: pointer;
 }
 
 .side-tv-screen video {
@@ -3862,4 +3863,666 @@ img.live-tile-still {
 .chat-older:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* ---- a server's own icon on its button in the rail (Server settings) ---- */
+.rail-server.has-icon {
+  padding: 0;
+  overflow: hidden;
+}
+.rail-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.icon-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.icon-preview {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--panel-2);
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 600;
+}
+.icon-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.icon-row .banner-actions {
+  margin-top: 0;
+  flex-wrap: wrap;
+}
+
+/* ---- New channel: Videochat, Television or Room link ---- */
+.channel-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.channel-kinds legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.channel-kind {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.channel-kind:hover {
+  border-color: #404040;
+}
+.channel-kind input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.channel-kind img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+.channel-kind b {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.channel-kind small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.channel-kind:has(input:checked) {
+  border-color: var(--green);
+}
+.channel-kind:has(input:checked) b {
+  color: var(--green);
+}
+.channel-kind:has(input:focus-visible) {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+@media (max-width: 520px) {
+  .channel-kinds {
+    grid-template-columns: 1fr;
+  }
+  .channel-kind {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .channel-kind img {
+    width: 96px;
+  }
+  .channel-kind small {
+    flex-basis: 100%;
+  }
+}
+
+/* ---- Account: Color theme ---- */
+.accent-pick {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.accent-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.accent-choice:hover {
+  border-color: #404040;
+}
+.accent-choice i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: 0 0 8px -1px var(--swatch);
+}
+.accent-choice[aria-pressed="true"] {
+  border-color: var(--swatch);
+  color: var(--swatch);
+}
+@media (max-width: 520px) {
+  .accent-pick {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- the side TV: always there; a click lists the channels ---- */
+.side-tv-screen:hover,
+.side-tv-screen:focus-visible {
+  border-color: var(--green);
+}
+/* off: a dark screen with a faint glow, the word TV and what a click does */
+.side-tv-off {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(var(--green-rgb), 0.1), transparent 70%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    #030504;
+  font-family: var(--mono);
+}
+.side-tv-off b {
+  color: var(--green);
+  font-size: 18px;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
+}
+.side-tv-off small {
+  color: var(--muted);
+  font-size: 11px;
+}
+/* the channel's name: top left, clear of the captions along the bottom */
+.side-tv-name {
+  top: 6px;
+  bottom: auto;
+  max-width: calc(100% - 124px);
+  pointer-events: none;
+}
+/* Big and Off (or Hide): top right, while the pointer is over the TV */
+.side-tv-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+}
+.side-tv-tools .side-tv-hide {
+  position: static;
+}
+@media (hover: none) {
+  .side-tv-tools .side-tv-hide {
+    opacity: 1;
+  }
+}
+
+/* the channel list */
+.modal.tv-picker {
+  width: min(520px, calc(100vw - 24px));
+  max-width: 520px;
+}
+.tv-picker-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.tv-picker-tabs {
+  display: flex;
+  gap: 6px;
+}
+.tv-picker-tabs button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.tv-picker-tabs button[aria-selected="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+.tv-picker-top .emoji-search {
+  flex: 1 1 160px;
+}
+.tv-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: min(52vh, 460px);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.tv-picker-note {
+  margin: auto;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.tv-channel {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  min-height: 40px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.tv-channel:hover,
+.tv-channel:focus-visible {
+  background: var(--panel-3);
+  border-color: var(--line-2);
+}
+.tv-channel img,
+.tv-channel i {
+  width: 44px;
+  height: 28px;
+  object-fit: contain;
+}
+.tv-channel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tv-channel small {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tv-channel.now {
+  border-color: var(--green);
+}
+.tv-channel.now small {
+  color: var(--green);
+}
+.tv-channel.bad {
+  opacity: 0.5;
+}
+
+/* ---- side TV captions: a strip under the screen, never on the picture,
+   two lines at a time (the newest two; older text is cut off at the top) ---- */
+.side-tv-cc {
+  --cc-size: 16px;
+  --cc-line: 1.4;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  box-sizing: content-box;
+  height: calc(var(--cc-size) * var(--cc-line) * 2);
+  margin-top: 4px;
+  padding: 4px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #000;
+  color: #fff;
+  font: 600 var(--cc-size) / var(--cc-line) system-ui, sans-serif;
+  text-align: center;
+}
+.side-tv-cc-own {
+  flex: none;
+  max-width: 100%;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+/* live captions in the same strip: in the flow, not over the video */
+.side-tv-cc .live-cc {
+  position: static;
+  flex: none;
+  width: auto;
+  max-width: 100%;
+  transform: none;
+  gap: 0;
+}
+.side-tv-cc .live-cc span,
+.side-tv-cc .live-cc:not(:has(span)) {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+}
+.side-tv-cc .live-cc.big-cc span,
+.side-tv-cc .live-cc.big-cc:not(:has(span)) {
+  padding: 0;
+  font-size: inherit;
+}
+/* opened big: the picture, and the same two-line strip under it */
+.side-tv-stage {
+  display: flex;
+  flex-direction: column;
+}
+.side-tv-big .side-tv-stage video {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+.side-tv-cc.big {
+  --cc-size: clamp(24px, 3vw, 42px);
+  flex: none;
+  margin-top: 6px;
+  padding: 6px 14px;
+}
+
+/* Caption 1 (the television's own) | Caption 2 (live captions) */
+
+/* the CC button: with Big and Off, while the pointer is over the TV.
+   Each click: off -> CC 1 (the television's own) -> CC 2 (live captions) -> off */
+.side-tv-cc-btn {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.side-tv-cc-btn.on {
+  border-color: var(--green);
+  color: var(--green);
+}
+/* the channel's name leaves room for CC, Big and Off */
+.side-tv-name {
+  max-width: calc(100% - 176px);
+}
+/* captions on: the sound button stays on the screen, clear of the strip under it */
+.side-tv.cc-on .side-tv-sound {
+  bottom: calc(16px * 1.4 * 2 + 8px + 4px + 6px);
+}
+/* opened big: the button under the picture, always there (nothing to hover) */
+.side-tv-cc-row {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+  cursor: default;
+}
+.side-tv-cc-row .side-tv-cc-btn {
+  position: static;
+  opacity: 1;
+  padding: 5px 16px;
+  font-size: 13px;
+}
+.side-tv-cc.big.none {
+  display: none;
+}
+
+/* ---- right sidebar, made bigger toward the left: a third of the screen ----
+   (the button beside the pin; .shell.right-wide). Computers only: on a phone
+   the sidebar already fills the screen. The shell is drawn 1.15 times bigger
+   there (top of this file), so a third of the screen is 100vw / 3 / 1.15. */
+.wide-btn {
+  display: none;
+}
+.wide-btn.on {
+  color: var(--green);
+}
+@media (min-width: 761px) {
+  .wide-btn {
+    display: inline-grid;
+  }
+  .side-chat-head .wide-btn {
+    margin-left: auto;
+  }
+  .side-chat-head .wide-btn + .pin-btn {
+    margin-left: 0;
+  }
+  .shell.right-wide {
+    --right-wide: calc(100vw / 3 / 1.15);
+  }
+  .side-chat,
+  .members {
+    transition: transform 240ms ease, width 240ms ease;
+  }
+  .shell.right-wide .side-chat,
+  .shell.right-wide .members {
+    width: var(--right-wide);
+  }
+  /* the page moves over by the same amount, as it does for the normal size */
+  .shell.right-wide.right-open .main,
+  .shell.right-wide:has(.members input:focus) .main,
+  .shell.right-wide.with-side-chat.right-open .main,
+  .shell.right-wide:has(.side-chat textarea:focus) .main {
+    margin-right: var(--right-wide);
+  }
+}
+/* always showing (pinned): its own column, a third of the screen wide */
+@media (min-width: 1101px) {
+  .shell.right-wide.right-pinned,
+  .shell.right-wide.right-pinned.with-side-chat {
+    grid-template-columns: 72px 248px minmax(0, 1fr) var(--right-wide);
+  }
+  .shell.right-wide.left-slide.right-pinned,
+  .shell.right-wide.left-slide.right-pinned.with-side-chat {
+    grid-template-columns: minmax(0, 1fr) var(--right-wide);
+  }
+  .shell.right-wide.right-pinned .side-chat,
+  .shell.right-wide.right-pinned .members {
+    width: auto;
+    transition: none;
+  }
+  .shell.right-wide.right-pinned .main {
+    margin-right: 0 !important;
+  }
+}
+
+/* Side TV captions follow the sidebar's size: bigger text when the right
+   sidebar is made a third of the screen (.shell.right-wide), the regular
+   size otherwise. Still two lines. */
+@media (min-width: 761px) {
+  .shell.right-wide .side-tv {
+    --cc-wide: clamp(20px, 1.35vw, 26px);
+  }
+  .shell.right-wide .side-tv-cc {
+    --cc-size: var(--cc-wide);
+  }
+  .shell.right-wide .side-tv.cc-on .side-tv-sound {
+    bottom: calc(var(--cc-wide) * 1.4 * 2 + 8px + 4px + 6px);
+  }
+}
+
+/* The channel's name (its title and resolution, e.g. "NASA TV (720p)") is
+   hidden: it shows only while the pointer is over the TV, like CC and Off. */
+.side-tv-name {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.side-tv:hover .side-tv-name {
+  opacity: 1;
+}
+
+/* ---- right sidebar: Chat | People tabs on a computer too (Kaalob) ----
+   Not both at once any more: Chat shows first, People on its tab. The same
+   switch and state the phone layout already uses (mobile-layout.css). The TV
+   stays above the tabs on both. */
+@media (min-width: 601px) {
+  .side-chat > .side-chat-head {
+    order: -2;
+  }
+  .side-chat > .side-tv {
+    order: -1;
+  }
+  .side-chat .mobile-panel-switch {
+    display: block;
+    flex: none;
+    padding: 6px 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .side-chat .mobile-panel-track {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .side-chat .mobile-panel-track > button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    background: none;
+    box-shadow: none;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .side-chat .mobile-panel-track > button:hover {
+    background: var(--panel-3);
+    color: var(--text);
+  }
+  .side-chat .mobile-panel-track > button[aria-pressed="true"] {
+    border-bottom-color: var(--green);
+    color: var(--green);
+    font-weight: 700;
+  }
+  .side-chat .mobile-panel-track > button span {
+    font-size: 11px;
+    opacity: 0.75;
+  }
+  /* one at a time */
+  .side-chat[data-mobile-panel="chat"] > .side-online {
+    display: none;
+  }
+  .side-chat[data-mobile-panel="people"] > .chat {
+    display: none;
+  }
+  .side-chat[data-mobile-panel="people"] > .side-online {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    border-bottom: 0;
+  }
+}
+
+/* ---- OBS on the sidebar TV: its own button with CC and Off ---- */
+.side-tv-obs-btn {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.side-tv-obs-btn.on {
+  border-color: var(--green);
+  color: var(--green);
+}
+.side-tv-obs-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* the TV while it is off still shows the OBS button under the pointer */
+.side-tv.off:hover .side-tv-obs-btn,
+.side-tv.off .side-tv-obs-btn:focus-visible {
+  opacity: 1;
+}
+
+/* ---- the sidebar TV popped out into its own small window ---- */
+/* its place in the sidebar meanwhile */
+.side-tv-away {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.side-tv-away[hidden] {
+  display: none;
+}
+.side-tv-away .btn {
+  height: 30px;
+}
+/* the window itself: black, the TV filling it, captions under the picture */
+body.side-tv-window {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+}
+.side-tv.popped {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  margin: 0;
+}
+.side-tv.popped .side-tv-screen {
+  flex: 1 1 0;
+  min-height: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+  border-color: transparent;
+}
+.side-tv.popped .side-tv-cc {
+  --cc-size: clamp(15px, 3.4vw, 34px);
+  flex: none;
+  margin-top: 0;
+  border-radius: 0;
+}
+.side-tv.popped.cc-on .side-tv-sound {
+  bottom: calc(clamp(15px, 3.4vw, 34px) * 1.4 * 2 + 8px + 6px);
+}
+/* a small window has no room to hover around: its buttons show at once under the pointer */
+.side-tv.popped:hover .side-tv-hide,
+.side-tv.popped:hover .side-tv-name {
+  opacity: 1;
+}
+
+/* ---- the sidebar TV over the whole screen (Full): the same layout as its own window ---- */
+.side-tv:fullscreen {
+  width: 100vw;
+  background: #000;
+}
+.side-tv:fullscreen .side-tv-cc {
+  --cc-size: clamp(22px, 2.6vw, 44px);
+}
+.side-tv:fullscreen.cc-on .side-tv-sound {
+  bottom: calc(clamp(22px, 2.6vw, 44px) * 1.4 * 2 + 8px + 6px);
+}
+/* the row of buttons wraps instead of running off a narrow TV */
+.side-tv-tools {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100% - 12px);
 }

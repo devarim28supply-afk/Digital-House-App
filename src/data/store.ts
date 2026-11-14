@@ -79,6 +79,8 @@ export type Server = {
   ownerUid: string;
   memberUids: string[];
   banner?: string;
+  /** the picture on the server's button in the left rail (a GIF keeps moving) */
+  icon?: string;
   /** the one current announcement, shown under the server name (owner/admins edit it) */
   announcement?: string;
   /** everyone who gets in through M2A-access joins it on their own */
@@ -108,6 +110,10 @@ export type Channel = {
   roomKey?: string;
   url?: string;
   parentId?: string;
+  /** A Television channel (made with + Channel): it works the same as the
+   * Living Room tile - the big TV with everyone's webcams under it, and its
+   * own warm Darkwood Room on the Room side. */
+  tv?: boolean;
   /** Living Room's TV remote (backlight/room light) - shared live across
    * everyone in the call, written straight onto the channel doc so it
    * rides the same real-time listener (watchChannels) every client
@@ -179,10 +185,15 @@ export function imageSrc(image?: string) {
  */
 const DARKWOOD_ROOM_TILES: Record<string, string> = {
   "gestr-living": "matrix",
+  "darkwood-node-lounge": "matrix",
   "darkwood-living-room": "living",
 };
 
-export const hasDarkwoodRoom = (channel: Channel) => Object.hasOwn(DARKWOOD_ROOM_TILES, channel.roomKey ?? "");
+/** The look of this tile's Darkwood Room, or undefined when it has none. */
+const darkwoodThemeOf = (channel: Channel): string | undefined =>
+  channel.tv ? "living" : Object.hasOwn(DARKWOOD_ROOM_TILES, channel.roomKey ?? "") ? DARKWOOD_ROOM_TILES[channel.roomKey!] : undefined;
+
+export const hasDarkwoodRoom = (channel: Channel) => Boolean(darkwoodThemeOf(channel));
 
 /**
  * Link tiles whose Room side is on: their link opens there. Other link tiles
@@ -231,7 +242,7 @@ export function roomUrlOf(channel: Channel, serverId: string) {
     return channel.url!;
   }
   if (!hasDarkwoodRoom(channel)) return "";
-  const theme = DARKWOOD_ROOM_TILES[channel.roomKey ?? ""];
+  const theme = darkwoodThemeOf(channel);
   const q = new URLSearchParams({ s: serverId, c: channel.id, ...(theme && theme !== "matrix" ? { theme } : {}) });
   return `${import.meta.env.BASE_URL}room.html?${q}`;
 }
@@ -241,6 +252,20 @@ export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
   kind: "room",
   image: "/living.png",
   roomKey: "gestr-living",
+};
+
+/**
+ * Node Lounge on every server but the home one: the same Matrix-green
+ * Darkwood Room, each server its own. It has its own roomKey on purpose:
+ * "gestr-living" is how app versions before this one tell the home server
+ * (a tab still open on one would take a server with that tile for Digital
+ * House, and put every approved member on it).
+ */
+export const NODE_LOUNGE_TILE: Omit<Channel, "id" | "position"> = {
+  name: "Node Lounge",
+  kind: "room",
+  image: "/living.png",
+  roomKey: "darkwood-node-lounge",
 };
 
 /** A second, separate sitting room - its own Darkwood Room, warm instead of
@@ -258,8 +283,30 @@ const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
 ];
 
+/** Every other server starts with these two (Kaalob): Node Lounge and Living Room. */
+const DEFAULT_TILES: typeof HOME_TILES = [
+  { tile: NODE_LOUNGE_TILE, chat: tileChatName(NODE_LOUNGE_TILE.name) }, // #nodelounge-chat
+  { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
+];
+
 /** A built-in tile (it is re-made if removed, so it has no delete button). */
-export const isBuiltInTile = (c: Channel) => HOME_TILES.some((h) => h.tile.roomKey === c.roomKey);
+export const isBuiltInTile = (c: Channel) => [...HOME_TILES, ...DEFAULT_TILES].some((h) => h.tile.roomKey === c.roomKey);
+
+/**
+ * The home server (Digital House, whatever it is called now): the one with
+ * the first Node Lounge (LIVING_TILE), or a "Digital House" without tiles
+ * yet. Another server's Node Lounge (NODE_LOUNGE_TILE) has a different
+ * roomKey, so it never counts.
+ */
+export const isHomeServer = (server: Pick<Server, "name"> | undefined, channels: Channel[]) =>
+  channels.some((c) => c.kind === "room" && c.roomKey === LIVING_TILE.roomKey) || Boolean(server?.name.startsWith("Digital House"));
+
+/** A Television channel: Living Room, or one made with + Channel. It has the big TV in its videochat. */
+export const isTvChannel = (c: Pick<Channel, "roomKey" | "tv">) => c.tv === true || c.roomKey === LIVING_ROOM_TILE.roomKey;
+
+/** The pictures a new Videochat or Television channel gets when none is chosen. */
+export const VIDEOCHAT_TILE_IMAGE = "/videochat-tile.svg";
+export const TV_TILE_IMAGE = "/tv-tile.svg";
 /** A picture, video or file sent in a chat (stored in Vercel Blob). */
 export type ChatFile = { url: string; name: string; type: string; size: number };
 
@@ -351,30 +398,62 @@ export const ONLINE_WINDOW_MS = 3 * 60_000;
  * rotating between them every 10 s).
  */
 export type Streaming = { serverId: string; channelId: string; team?: string };
-export type Presence = { lastSeen: number; where: string; whereAt: number; streaming?: Streaming };
+/** The videochat someone is in right now, so the others can be told (an incoming call). at: when they joined it. */
+export type Calling = { serverId: string; channelId: string; channelName: string; serverName: string; at: number };
+export type Presence = {
+  lastSeen: number;
+  where: string;
+  whereAt: number;
+  /** the server that call or room is in: every server has a Node Lounge and a
+   * Living Room, so the name alone no longer says which one. Not set by the
+   * 3D rooms' own pages, which belong to no server. */
+  whereSid?: string;
+  streaming?: Streaming;
+  calling?: Calling;
+};
 
 /** Heartbeat for this app; setWhere("") when you are not in a call or room. */
 export function startPresence(uid: string) {
   let where = "";
+  let whereSid = "";
+  let calling: Calling | null = null;
   const ref = doc(db, "presence", uid);
   // With a place, say where; without one, only the heartbeat (merge), so a
   // 3D room tab of yours can still report that you stand in it.
   let lastBeat = 0;
   const beat = () => {
     lastBeat = Date.now();
-    return setDoc(ref, where ? { lastSeen: serverTimestamp(), where, whereAt: serverTimestamp() } : { lastSeen: serverTimestamp() }, {
-      merge: true,
-    }).catch(() => {});
+    return setDoc(
+      ref,
+      {
+        lastSeen: serverTimestamp(),
+        ...(where ? { where, whereAt: serverTimestamp(), whereSid: whereSid || deleteField() } : {}),
+        ...(calling ? { calling } : {}),
+      },
+      { merge: true },
+    ).catch(() => {});
   };
   beat();
   const timer = window.setInterval(beat, HEARTBEAT_MS);
   const onVisible = () => document.visibilityState === "visible" && Date.now() - lastBeat > MIN_BEAT_GAP_MS && beat();
   document.addEventListener("visibilitychange", onVisible);
   return {
-    setWhere(next: string) {
-      if (next === where) return;
+    setWhere(next: string, sid = "") {
+      if (next === where && sid === whereSid) return;
+      const left = Boolean(where) && !next;
       where = next;
-      beat();
+      whereSid = next ? sid : "";
+      // gone from that place: its server goes too, so a 3D room page of yours
+      // (which writes only the place) is not pinned to the server you just left
+      if (left) void setDoc(ref, { whereSid: deleteField(), lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
+      else beat();
+    },
+    /** In a videochat: the people it is for get a popup. null when you leave it. */
+    setCalling(next: Calling | null) {
+      if (!next && !calling) return;
+      calling = next;
+      if (next) beat();
+      else void setDoc(ref, { calling: deleteField(), lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
     },
     /** In stream mode: everyone in that server sees a LIVE tile. null when it ends. */
     setStreaming(streaming: Streaming | null) {
@@ -383,6 +462,7 @@ export function startPresence(uid: string) {
       void setDoc(ref, { streaming: value, lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
     },
     stop() {
+      if (calling) void setDoc(ref, { calling: deleteField() }, { merge: true }).catch(() => {});
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     },
@@ -401,12 +481,23 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
               lastSeen: toDate(data.lastSeen)?.getTime() ?? Date.now(),
               where: typeof data.where === "string" ? data.where : "",
               whereAt: toDate(data.whereAt)?.getTime() ?? 0,
+              whereSid: typeof data.whereSid === "string" && data.whereSid ? data.whereSid : undefined,
               streaming:
                 data.streaming?.serverId && data.streaming?.channelId
                   ? {
                       serverId: data.streaming.serverId as string,
                       channelId: data.streaming.channelId as string,
                       ...(typeof data.streaming.team === "string" ? { team: data.streaming.team as string } : {}),
+                    }
+                  : undefined,
+              calling:
+                data.calling?.serverId && data.calling?.channelId
+                  ? {
+                      serverId: String(data.calling.serverId),
+                      channelId: String(data.calling.channelId),
+                      channelName: String(data.calling.channelName ?? "call"),
+                      serverName: String(data.calling.serverName ?? ""),
+                      at: Number(data.calling.at) || 0,
                     }
                   : undefined,
             },
@@ -517,7 +608,7 @@ export function watchAllServers(cb: (servers: Server[]) => void, onError?: (err:
   );
 }
 
-/** A new server with a text and a voice channel to start. */
+/** A new server: Node Lounge and Living Room (each with its chat), a text and a voice channel. */
 export async function createServer(uid: string, name: string, channels?: Omit<Channel, "id">[], open = false) {
   const ref = doc(collection(db, "servers"));
   // The server first: the channel rules look the server up, and a write in
@@ -532,6 +623,17 @@ export async function createServer(uid: string, name: string, channels?: Omit<Ch
     { name: "Lounge", kind: "voice", position: 1 },
   ];
   for (const ch of start) batch.set(doc(collection(ref, "channels")), ch);
+  // Every server starts with Node Lounge and Living Room. The home server
+  // (it passes its own channels) gets its tiles from ensureServerTiles once
+  // the app watches it. Same ids and places as ensureServerTiles uses, so
+  // that pass finds them and changes nothing.
+  if (!channels) {
+    const top = Math.min(0, ...start.map((c) => c.position)) - DEFAULT_TILES.length;
+    for (const [i, { tile, chat }] of DEFAULT_TILES.entries()) {
+      batch.set(doc(ref, "channels", tile.roomKey!), { ...tile, position: top + i });
+      batch.set(doc(ref, "channels", `${tile.roomKey}-chat`), { name: chat, kind: "text", position: top + i, parentId: tile.roomKey });
+    }
+  }
   await batch.commit();
   audit("server.create", { serverId: ref.id, target: name });
   await syncDirectoryEntry(ref.id, name).catch(() => {});
@@ -621,7 +723,7 @@ export async function ensureHomeServer(uid: string) {
   }
   if (hasReal) return;
   // The Living Room tile and its chat are added by the app once it watches
-  // this server's channels (ensureHomeTiles), so they are made exactly once.
+  // this server's channels (ensureServerTiles), so they are made exactly once.
   await createServer(
     uid,
     "Digital House",
@@ -663,17 +765,20 @@ export async function restoreHomeMembers(sid: string) {
 }
 
 /**
- * The home server's built-in tiles, each with its chat, made once: the
- * Node Lounge (#nodelounge-chat) and Living Room (#livingroom-chat), in HOME_TILES order above the other channels. Also
+ * Every server's built-in tiles, each with its chat, made once: Node Lounge
+ * (#nodelounge-chat) and Living Room (#livingroom-chat), in that order above
+ * the other channels. The home server keeps its first Node Lounge
+ * (HOME_TILES); every other server gets its own (DEFAULT_TILES). Also
  * renames a tile whose name has drifted from its spec, and gives a tile
  * without one its chat.
  */
-export async function ensureHomeTiles(sid: string, channels: Channel[]) {
+export async function ensureServerTiles(sid: string, channels: Channel[], home: boolean) {
   const channelsRef = collection(db, "servers", sid, "channels");
-  // The built-in tiles sit above everything else, in HOME_TILES order.
+  const specs = home ? HOME_TILES : DEFAULT_TILES;
+  // The built-in tiles sit above everything else, in their own order.
   const others = channels.filter((c) => !isBuiltInTile(c) && !c.parentId);
-  const top = others.reduce((min, c) => Math.min(min, c.position), 0) - HOME_TILES.length;
-  for (const [i, { tile: spec, chat }] of HOME_TILES.entries()) {
+  const top = others.reduce((min, c) => Math.min(min, c.position), 0) - specs.length;
+  for (const [i, { tile: spec, chat }] of specs.entries()) {
     const position = top + i;
     // Two tabs loading the server at once can both see no tile yet and both
     // try to make one - keep whichever sorts first (lowest position, then
@@ -692,7 +797,10 @@ export async function ensureHomeTiles(sid: string, channels: Channel[]) {
     if (!tile) {
       // its own roomKey as the id, not addDoc's random one: two tabs racing
       // to create it both write the same document, never two.
-      await setDoc(doc(channelsRef, spec.roomKey!), { ...spec, position });
+      // The list this ran on can be an early, incomplete one: a tile that is
+      // already there keeps its picture and everything else.
+      const tileRef = doc(channelsRef, spec.roomKey!);
+      if (!(await getDoc(tileRef)).exists()) await setDoc(tileRef, { ...spec, position });
       tile = { id: spec.roomKey!, ...spec, position };
     } else if (tile.name !== spec.name || tile.position !== position) {
       await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position });
@@ -703,7 +811,8 @@ export async function ensureHomeTiles(sid: string, channels: Channel[]) {
     let text = textMatches[0];
     for (const dupe of textMatches.slice(1)) await deleteDoc(doc(channelsRef, dupe.id)).catch(() => {});
     if (!text) {
-      await setDoc(doc(channelsRef, `${tile.id}-chat`), { name: chat, kind: "text", position, parentId: tile.id });
+      const chatRef = doc(channelsRef, `${tile.id}-chat`);
+      if (!(await getDoc(chatRef)).exists()) await setDoc(chatRef, { name: chat, kind: "text", position, parentId: tile.id });
     } else if (text.name !== chat) {
       await updateDoc(doc(channelsRef, text.id), { name: chat });
     }
@@ -713,7 +822,12 @@ export async function ensureHomeTiles(sid: string, channels: Channel[]) {
 /** The first server of yours that has a tile for this Gestr room (the wall). */
 export async function findRoomTile(uid: string, roomKey: string) {
   const mine = await getDocs(query(collection(db, "servers"), where("memberUids", "array-contains", uid)));
-  for (const s of mine.docs) {
+  // Every server has a Living Room now: the home server's comes first
+  // (Digital House, then any open server).
+  const rank = (data: { name?: unknown; open?: unknown }) =>
+    typeof data.name === "string" && data.name.startsWith("Digital House") ? 0 : data.open === true ? 1 : 2;
+  const ordered = [...mine.docs].sort((a, b) => rank(a.data()) - rank(b.data()));
+  for (const s of ordered) {
     const tiles = await getDocs(query(collection(db, "servers", s.id, "channels"), where("roomKey", "==", roomKey)));
     const tile = tiles.docs[0];
     if (tile) return { serverId: s.id, channel: { id: tile.id, ...(tile.data() as Omit<Channel, "id">) } };
@@ -721,37 +835,47 @@ export async function findRoomTile(uid: string, roomKey: string) {
   return null;
 }
 
-/** A new room tile and its own chat channel. */
+/**
+ * A new tile and its own chat channel. With a link: a room tile (its Room
+ * side opens that page). tv: a Television channel. Neither: a Videochat.
+ */
 export async function createRoomTile(
   sid: string,
   name: string,
   position: number,
-  extra: { image: string; url: string },
+  extra: { image: string; url?: string; tv?: true },
 ) {
   const channelsRef = collection(db, "servers", sid, "channels");
   const tile = await addDoc(channelsRef, { name, kind: "room", position, ...extra });
   await addDoc(channelsRef, { name: tileChatName(name), kind: "text", position, parentId: tile.id });
-  audit("tile.create", { serverId: sid, target: name, detail: extra.url });
+  audit("tile.create", { serverId: sid, target: name, detail: extra.url ?? (extra.tv ? "television" : "videochat") });
   return tile.id;
 }
 
 export const renameServer = (sid: string, name: string) =>
   logged(updateDoc(doc(db, "servers", sid), { name }), "server.rename", { serverId: sid, target: name });
 
-/** Name and banner together (Server settings). banner null removes it. */
-export const saveServerSettings = (sid: string, name: string, banner: string | null | undefined, open: boolean) => {
+/** Name, banner and icon together (Server settings). banner or icon: undefined leaves it, null removes it. */
+export const saveServerSettings = (
+  sid: string,
+  name: string,
+  banner: string | null | undefined,
+  open: boolean,
+  icon?: string | null,
+) => {
   void syncDirectoryEntry(sid, name).catch(() => {});
   return logged(
     updateDoc(doc(db, "servers", sid), {
       name,
       open,
       ...(banner === undefined ? {} : { banner: banner === null ? deleteField() : banner }),
+      ...(icon === undefined ? {} : { icon: icon === null ? deleteField() : icon }),
     }),
     "server.settings",
     {
       serverId: sid,
       target: name,
-      detail: `${open ? "open to everyone" : "closed"}${banner === undefined ? "" : banner === null ? ", banner removed" : ", banner changed"}`,
+      detail: `${open ? "open to everyone" : "closed"}${banner === undefined ? "" : banner === null ? ", banner removed" : ", banner changed"}${icon === undefined ? "" : icon === null ? ", icon removed" : ", icon changed"}`,
     },
   );
 };
@@ -790,11 +914,12 @@ export const removeServerMember = (sid: string, uid: string) =>
  */
 const HIDDEN_ROOM_KEYS = new Set(["m2a-operation", "darkwood-wall-street"]);
 
-export function watchChannels(sid: string, cb: (channels: Channel[]) => void): Unsubscribe {
+/** early: the list is the browser's own copy so far, and can be missing channels. */
+export function watchChannels(sid: string, cb: (channels: Channel[], early: boolean) => void): Unsubscribe {
   return onSnapshot(query(collection(db, "servers", sid, "channels"), orderBy("position")), (snap) => {
     const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Channel, "id">) }));
     const hidden = new Set(all.filter((c) => c.roomKey && HIDDEN_ROOM_KEYS.has(c.roomKey)).map((c) => c.id));
-    cb(all.filter((c) => !hidden.has(c.id) && !(c.parentId && hidden.has(c.parentId))));
+    cb(all.filter((c) => !hidden.has(c.id) && !(c.parentId && hidden.has(c.parentId))), snap.metadata.fromCache);
   });
 }
 
