@@ -4074,9 +4074,28 @@ img.live-tile-still {
 .side-tv-tools .side-tv-hide {
   position: static;
 }
+/* a touch screen: the buttons and the title show for a few seconds after a tap on the TV (.tapped, SideTv) */
+.side-tv.tapped .side-tv-hide,
+.side-tv.tapped .side-tv-name {
+  opacity: 1;
+}
+/* a TV that is off has only the OBS button: it stays visible there, there is no picture to cover */
 @media (hover: none) {
-  .side-tv-tools .side-tv-hide {
+  .side-tv.off .side-tv-obs-btn {
     opacity: 1;
+  }
+  /* fingers need more to hit than a pointer does */
+  .side-tv-tools {
+    gap: 6px;
+  }
+  .side-tv-tools .side-tv-hide {
+    min-height: 34px;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+  /* hidden buttons must not catch a tap meant for the picture */
+  .side-tv:not(.tapped):not(.off) .side-tv-tools {
+    pointer-events: none;
   }
 }
 
@@ -4622,9 +4641,22 @@ body.side-tv-window {
 .tile-more-menu button:focus-visible {
   background: #2a0d0d;
 }
+/* a touch screen: it shows for a few seconds after a tap on the tile (.touched, VoiceRoom) */
+.tile.touched .tile-more-btn {
+  opacity: 1;
+}
 @media (hover: none) {
   .tile-more-btn {
-    opacity: 1;
+    width: 40px;
+    height: 34px;
+    font-size: 20px;
+  }
+  .tile:not(.touched) .tile-more-btn:not([aria-expanded="true"]) {
+    pointer-events: none;
+  }
+  .tile-more-menu button {
+    padding: 12px 12px;
+    font-size: 14px;
   }
 }
 

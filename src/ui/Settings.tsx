@@ -65,8 +65,14 @@ export function Settings(props: {
 }) {
   const [page, setPage] = createSignal<Page>("account");
   const [error, setError] = createSignal("");
+  // On a phone the window is the whole screen and shows one thing at a time:
+  // the list of sections first, then the picked section's page with a Back
+  // button (the way phone settings work). inPage: a page is open. A computer
+  // shows both side by side and never looks at this.
+  const [inPage, setInPage] = createSignal(false);
   const close = () => {
     setPage("account");
+    setInPage(false);
     setError("");
     props.onClose();
   };
@@ -207,7 +213,7 @@ export function Settings(props: {
 
   return (
     <Modal title="Settings" class="settings" open={props.open} onClose={close}>
-      <div class="set">
+      <div class="set" classList={{ "in-page": inPage() }}>
         <nav class="set-nav" aria-label="Settings sections">
           <For each={groups}>
             {(group) => (
@@ -222,6 +228,7 @@ export function Settings(props: {
                       onClick={() => {
                         setError("");
                         setPage(item.id);
+                        setInPage(true);
                       }}
                     >
                       {item.label}
@@ -238,6 +245,10 @@ export function Settings(props: {
         </nav>
 
         <section class="set-page" aria-label={titleOf(page())}>
+          {/* a phone only: back to the list of sections */}
+          <button type="button" class="set-back" onClick={() => setInPage(false)}>
+            ‹ Settings
+          </button>
           <h3 class="set-title">{titleOf(page())}</h3>
           <Show when={error()}>
             <p class="form-error">{error()}</p>

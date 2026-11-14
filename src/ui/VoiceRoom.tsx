@@ -3395,6 +3395,16 @@ function Tile(props: {
     props.onCorner?.(`${top ? "t" : "b"}${left ? "l" : "r"}` as InsetCorner);
   }
 
+  // A touch screen has no pointer to hover with: a tap on the tile shows its
+  // small "more" button for a few seconds (Kaalob: tap to show).
+  const [touched, setTouched] = createSignal(false);
+  let touchedTimer = 0;
+  const touchTile = () => {
+    setTouched(true);
+    window.clearTimeout(touchedTimer);
+    touchedTimer = window.setTimeout(() => setTouched(false), 5000);
+  };
+  onCleanup(() => window.clearTimeout(touchedTimer));
   // the tile's small "more" menu (Remove lives in it): a click anywhere else closes it
   const [moreOpen, setMoreOpen] = createSignal(false);
   createEffect(() => {
@@ -3426,12 +3436,14 @@ function Tile(props: {
         zoomed: props.zoomed,
         pip: props.pip,
         dragging: Boolean(pipDrag()),
+        touched: touched(),
       }}
       style={{
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
       onDblClick={props.onDblClick}
+      onClick={() => props.onRemove && touchTile()}
       onPointerDown={pipDown}
       onPointerUp={(e) => {
         if (pipFrom || pipDrag()) {
