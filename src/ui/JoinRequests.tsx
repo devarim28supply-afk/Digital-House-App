@@ -4,7 +4,7 @@ import { type JoinRequest, approveJoinRequest, declineJoinRequest, watchJoinRequ
 import "./find-server.css";
 
 /** The people waiting to join this server, with Approve and Decline. For the server's owner and admins. */
-export function JoinRequestList(props: { serverId: string }) {
+export function JoinRequestList(props: { serverId: string; /** banned from this server: their request cannot be approved until they are unbanned */ banned?: string[] }) {
   const [requests, setRequests] = createSignal<JoinRequest[]>([]);
   const [busyUid, setBusyUid] = createSignal("");
   const [error, setError] = createSignal("");
@@ -13,6 +13,10 @@ export function JoinRequestList(props: { serverId: string }) {
   onCleanup(stop);
 
   async function act(request: JoinRequest, approve: boolean) {
+    if (approve && props.banned?.includes(request.uid)) {
+      setError(`${request.name} is banned from this server. Unban them first (Server settings, Bans).`);
+      return;
+    }
     setBusyUid(request.uid);
     setError("");
     try {

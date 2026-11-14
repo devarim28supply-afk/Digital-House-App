@@ -9,6 +9,7 @@ import { Inbox } from "./Feedback";
 import { LiveCallWatch } from "./LiveCallWatch";
 import { access, auth } from "../firebase";
 import { OversightBody } from "./Oversight";
+import { RolesDialog } from "./Roles";
 import { faceStyle, faceText } from "./Shell";
 import "./dashboard.css";
 
@@ -193,6 +194,10 @@ function DashboardBody(props: {
   focusSection?: Section;
 }) {
   const [page, setPage] = createSignal<Page>(props.initialPage ?? "insights");
+  // Roles for the whole of Darkwood Node (who is staff, an admin, a developer)
+  // are managed from here (Kaalob): not from your own account settings, and
+  // not from a server's settings, which are only about that server.
+  const [rolesOpen, setRolesOpen] = createSignal(false);
   const [members, setMembers] = createSignal<MemberRow[] | undefined>();
   const [membersError, setMembersError] = createSignal("");
   const [memberQuery, setMemberQuery] = createSignal("");
@@ -546,6 +551,12 @@ function DashboardBody(props: {
             </span>
             <span class="dashboard-page-caption">{TOOLS_CAPTION}</span>
           </button>
+          <Show when={props.owner}>
+            <button type="button" class="dashboard-page-btn" classList={{ active: rolesOpen() }} onClick={() => setRolesOpen(true)}>
+              <span class="dashboard-page-label">Roles</span>
+              <span class="dashboard-page-caption">Who is staff, an admin or a developer, for all of Darkwood Node</span>
+            </button>
+          </Show>
         </div>
         <Show when={page() === "insights"}>
           <div class="dashboard-jumps">
@@ -1107,6 +1118,7 @@ function DashboardBody(props: {
           </section>
         </Show>
       </div>
+      <RolesDialog open={rolesOpen()} onClose={() => setRolesOpen(false)} uid={props.uid} profiles={props.profiles} />
     </div>
   );
 }

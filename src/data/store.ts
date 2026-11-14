@@ -94,7 +94,52 @@ export type Server = {
    * Older servers made before this field existed carry neither value.
    */
   kind?: "dm" | "server";
+  // ---- Server settings (ServerSettings.tsx). All optional: a server without them works as before. ----
+  /** a few words about the server (Server Profile) */
+  description?: string;
+  /** false: no chat message when someone asks to join (Engagement). Missing means on. */
+  announceJoins?: boolean;
+  /** true: not shown in Find a server (Access). People then get in by invite code or by being added. */
+  unlisted?: boolean;
+  /** the server's roles, the most important first (Roles): a name and a color for people's names */
+  roles?: ServerRole[];
+  /** who has which roles: uid -> role ids */
+  memberRoles?: Record<string, string[]>;
+  /** words that cannot be sent in this server's chats (Safety Setup) */
+  blockedWords?: string[];
+  /** removed for good: cannot be added again or approved until unbanned (Bans) */
+  bannedUids?: string[];
 };
+/** A role in one server: a label and a color for the names of the people who have it. */
+export type ServerRole = { id: string; name: string; color: string };
+
+/** The role that colors this person's name in this server: the first of the server's roles that they have. */
+export function topRoleOf(server: Pick<Server, "roles" | "memberRoles"> | undefined, uid: string): ServerRole | undefined {
+  const mine = server?.memberRoles?.[uid];
+  if (!mine?.length) return undefined;
+  return server?.roles?.find((role) => mine.includes(role.id));
+}
+
+/** A blocked word found in this text, or "" (whole words, any case). */
+export function blockedWordIn(server: Pick<Server, "blockedWords"> | undefined, text: string): string {
+  const words = server?.blockedWords;
+  if (!words?.length || !text) return "";
+  const lower = text.toLowerCase();
+  for (const word of words) {
+    const w = word.trim().toLowerCase();
+    if (!w) continue;
+    const at = lower.indexOf(w);
+    if (at < 0) continue;
+    // a whole word: not a piece of a longer one ("ass" does not block "class")
+    const before = lower[at - 1] ?? " ";
+    const after = lower[at + w.length] ?? " ";
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return word;
+    // it may still stand alone later in the text
+    const rest = new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`).test(lower);
+    if (rest) return word;
+  }
+  return "";
+}
 /**
  * "room" is a picture tile: click it for the room's video chat, and a toggle
  * flips the same pane to the room page itself (a Gestr 3D room or any link).
@@ -862,8 +907,9 @@ export const saveServerSettings = (
   banner: string | null | undefined,
   open: boolean,
   icon?: string | null,
+  unlisted = false,
 ) => {
-  void syncDirectoryEntry(sid, name).catch(() => {});
+  if (!unlisted) void syncDirectoryEntry(sid, name).catch(() => {});
   return logged(
     updateDoc(doc(db, "servers", sid), {
       name,
@@ -879,6 +925,44 @@ export const saveServerSettings = (
     },
   );
 };
+
+/**
+ * The other server settings (ServerSettings.tsx): any of the optional fields
+ * on the server. what: a few words for the audit log.
+ */
+export const saveServerExtras = (
+  sid: string,
+  patch: Partial<Pick<Server, "description" | "announceJoins" | "roles" | "memberRoles" | "blockedWords">>,
+  what: string,
+) => logged(updateDoc(doc(db, "servers", sid), patch), "server.settings", { serverId: sid, detail: what });
+
+/** Show the server in Find a server, or take it off the list. */
+export async function setServerListed(sid: string, name: string, listed: boolean) {
+  await updateDoc(doc(db, "servers", sid), { unlisted: listed ? deleteField() : true });
+  if (listed) await syncDirectoryEntry(sid, name);
+  else await deleteDoc(doc(db, "serverDirectory", sid)).catch(() => {});
+  audit("server.settings", { serverId: sid, detail: listed ? "listed in Find a server" : "taken off Find a server" });
+}
+
+/** Turn the invite code off: the code stops working and the server has none until a new one is made. */
+export async function removeInviteCode(sid: string) {
+  const serverRef = doc(db, "servers", sid);
+  const current = await getDoc(serverRef);
+  const old = typeof current.data()?.inviteCode === "string" ? (current.data()!.inviteCode as string) : "";
+  await updateDoc(serverRef, { inviteCode: deleteField() });
+  if (old) await deleteDoc(doc(db, "invites", old)).catch(() => {});
+  audit("server.invite", { serverId: sid, detail: "invite code turned off" });
+}
+
+/** Ban: out of the server, and kept out (not added again, a join request not approved) until unbanned. */
+export const banServerMember = (sid: string, uid: string) =>
+  logged(updateDoc(doc(db, "servers", sid), { memberUids: arrayRemove(uid), bannedUids: arrayUnion(uid) }), "member.remove", {
+    serverId: sid,
+    target: uid,
+    detail: "banned",
+  });
+export const unbanServerMember = (sid: string, uid: string) =>
+  logged(updateDoc(doc(db, "servers", sid), { bannedUids: arrayRemove(uid) }), "member.add", { serverId: sid, target: uid, detail: "unbanned" });
 
 export const setServerOpen = (sid: string, open: boolean) =>
   logged(updateDoc(doc(db, "servers", sid), { open }), "server.open", { serverId: sid, detail: open ? "open to everyone" : "closed" });
@@ -969,6 +1053,21 @@ export const setAnnouncement = (sid: string, text: string) =>
     "server.announce",
     { serverId: sid, target: text.trim().slice(0, 80) },
   );
+/**
+ * A server's own channels in a new order (Server settings > Channels). The
+ * built-in tiles are not part of it: they keep their place at the top
+ * (ensureServerTiles). A tile's chat moves with it.
+ */
+export async function orderTiles(sid: string, tileIds: string[], channels: Channel[]) {
+  const batch = writeBatch(db);
+  tileIds.forEach((id, i) => {
+    const position = i + 1;
+    batch.update(doc(db, "servers", sid, "channels", id), { position });
+    for (const chat of channels.filter((c) => c.parentId === id)) batch.update(doc(db, "servers", sid, "channels", chat.id), { position });
+  });
+  await batch.commit();
+  audit("channel.order", { serverId: sid, detail: `${tileIds.length} channels` });
+}
 export const renameChannel = (sid: string, cid: string, name: string) =>
   logged(updateDoc(doc(db, "servers", sid, "channels", cid), { name }), "channel.rename", { serverId: sid, target: name });
 /**

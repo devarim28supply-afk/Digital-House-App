@@ -9,6 +9,9 @@ import {
   type Emoji,
   type Message,
   type Profile,
+  type Server,
+  blockedWordIn,
+  topRoleOf,
   displayName,
   type Sticker,
   deleteMessage,
@@ -20,6 +23,7 @@ import {
 } from "../data/store";
 import { audit } from "../data/audit";
 import { access } from "../data/access";
+import { hourCycle, userPrefs } from "../data/prefs";
 import { Formatted } from "./Markdown";
 import { EmojiPicker, ImageViewer } from "./Emoji";
 import { faceStyle, faceText } from "./Shell";
@@ -38,10 +42,11 @@ function timeLabel(d: Date | null) {
   return `${d.toLocaleDateString()} ${time}`;
 }
 
-const shortTime = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "");
+// 12 or 24 hour as Settings > Chat says (hourCycle); nothing set there: as the computer has it
+const shortTime = (d: Date | null) => (d ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", ...hourCycle() }) : "");
 // the full date and time, shown when you hover any time
 const fullTime = (d: Date | null) =>
-  d ? d.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  d ? d.toLocaleString([], { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", ...hourCycle() }) : "";
 
 const EMOJI_TOKEN = /(:[a-z0-9_]{2,32}:)/g;
 // a message of only emojis (and spaces) shows them big, like Discord
@@ -212,6 +217,8 @@ export function Chat(props: {
   emojis?: Emoji[];
   /** who is in this server: the people @ can mention */
   members?: string[];
+  /** the server, for its settings: role colors on names, and the words that cannot be sent */
+  server?: Server;
 }) {
   const emojiMap = createMemo(
     () => new Map((props.emojis ?? []).filter((e) => e.kind !== "sticker").map((e) => [e.name, e])),
@@ -431,6 +438,12 @@ export function Chat(props: {
     const text = draft().trim();
     const files = ready();
     if ((!text && !files.length) || uploading()) return;
+    // Server settings > Safety Setup: a message with a blocked word is not sent
+    const blocked = blockedWordIn(props.server, text);
+    if (blocked) {
+      setError(`This server does not allow the word "${blocked}". Change your message and send it again.`);
+      return;
+    }
     const sent = pending();
     const where = `${props.serverId}/${props.channel.id}`;
     setDraft("");
@@ -534,7 +547,9 @@ export function Chat(props: {
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    // Settings > Chat: Enter sends (Shift+Enter is a new line), or Ctrl+Enter sends (Enter is a new line)
+    const sends = userPrefs().sendKey === "ctrl" ? e.ctrlKey || e.metaKey : !e.shiftKey;
+    if (e.key === "Enter" && sends && !e.isComposing) {
       e.preventDefault();
       void send();
     }
@@ -668,7 +683,13 @@ export function Chat(props: {
               <div class="msg-body">
                 <Show when={startsGroup(i())}>
                   <header class="msg-head">
-                    <b class="msg-author" onClick={(e) => props.onProfile?.(m.authorUid, e)}>
+                    <b
+                      class="msg-author"
+                      // the color of their top role in this server (Server settings > Roles)
+                      style={topRoleOf(props.server, m.authorUid) ? { color: topRoleOf(props.server, m.authorUid)!.color } : undefined}
+                      title={topRoleOf(props.server, m.authorUid)?.name}
+                      onClick={(e) => props.onProfile?.(m.authorUid, e)}
+                    >
                       {nameOf(m.authorUid)}<DeveloperBadge username={props.profiles.get(m.authorUid)?.username} />
                     </b>
                     <time title={fullTime(m.createdAt)}>{timeLabel(m.createdAt)}</time>
@@ -678,7 +699,11 @@ export function Chat(props: {
                   when={editing() === m.id}
                   fallback={
                     <>
-                      <Show when={m.text}>
+                      {/* a message with a word this server blocks (sent before the word was blocked, or from an old version): hidden for everyone but the people who run the server */}
+                      <Show when={m.text && blockedWordIn(props.server, m.text) && !props.canModerate}>
+                        <p class="msg-text msg-blocked">Message hidden: it has a word this server does not allow.</p>
+                      </Show>
+                      <Show when={m.text && (props.canModerate || !blockedWordIn(props.server, m.text))}>
                         <p class="msg-text" classList={{ jumbo: jumbo(m.text) }}>
                           <Text text={m.text} emojis={emojiMap()} usernames={usernames()} me={me()} />
                           <Show when={m.editedAt}>

@@ -28,6 +28,7 @@ import {
   ensureServerTiles,
   isHomeServer,
   isTvChannel,
+  topRoleOf,
   TV_TILE_IMAGE,
   VIDEOCHAT_TILE_IMAGE,
   restoreHomeMembers,
@@ -54,21 +55,20 @@ import {
   hasDarkwoodRoom,
 } from "../data/store";
 import { uploadPicture } from "../data/files";
-import { ACCENTS, accent, mode, saveAccent, saveMode } from "../data/layoutTheme";
 import { LEFT_WIDTH, RIGHT_WIDTH, access, setAccess } from "../data/access";
-import { AccessibilityDialog } from "./Accessibility";
+import { userPrefs } from "../data/prefs";
+import { Settings } from "./Settings";
+import { ServerSettings } from "./ServerSettings";
 import { Chat } from "./Chat";
 import { DM_CALL, DM_CHAT, dmPartner, isDm, markRead, openDm, readTimes, watchLatest } from "../data/dms";
 import { FeedbackDialog } from "./Feedback";
 import { Modal } from "./Modal";
 import { FindServer, FindServerDialog } from "./FindServer";
 import { JoinRequestList } from "./JoinRequests";
-import { FaceUnlockSetting } from "../auth/FaceOffer";
 import { RoomPane, type RoomPaneToggle } from "./RoomPane";
 import { VoiceRoom } from "./VoiceRoom";
 import { auth } from "../firebase";
 import { OWNER_EMAIL } from "../firebase-config.js";
-import { RolesDialog } from "./Roles";
 import { DashboardDialog, type Page as DashboardPage, type Section as DashboardSection } from "./Dashboard";
 import { setCanRemoveFromCall, setTvRemoteOpen, setWatchRequest, streamingIn, tvRemoteAvailable, tvRemoteOpen, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
@@ -245,7 +245,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
   }
-  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "find" | "rename" | "people" | "new-channel" | "me" | "access">("");
+  const [modal, setModal] = createSignal<"" | "new-server" | "join" | "find" | "rename" | "people" | "new-channel" | "me">("");
   // Feedback for the developers: from the top bar, or the Darkwood Room's
   // own button (it asks this page to open it), or /app/?feedback
   const [feedbackOpen, setFeedbackOpen] = createSignal(new URLSearchParams(location.search).has("feedback"));
@@ -299,6 +299,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       watchJoinRequests(s.id, (list) => {
         setWaiting((prev) => ({ ...prev, [s.id]: list }));
         if (s.ownerUid !== props.uid) return;
+        // Server settings > Engagement: no chat message when someone asks to join
+        if (s.announceJoins === false) return;
         for (const request of list) {
           const key = `${s.id}/${request.uid}`;
           if (request.announced || announced.has(key)) continue;
@@ -315,7 +317,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const syncedNames = new Map<string, string>();
   createEffect(() => {
     for (const s of realServers()) {
-      if (s.ownerUid !== props.uid || syncedNames.get(s.id) === s.name) continue;
+      if (s.ownerUid !== props.uid || s.unlisted || syncedNames.get(s.id) === s.name) continue;
       syncedNames.set(s.id, s.name);
       void syncDirectoryEntry(s.id, s.name).catch(() => syncedNames.delete(s.id));
     }
@@ -330,7 +332,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     const me = startPresence(props.uid);
     // tell everyone where you are: a call or a room's Room view
     // (and in which server: every server has a Node Lounge and a Living Room)
-    createEffect(() => me.setWhere(whereNow(), call()?.serverId ?? ""));
+    // Settings > Privacy: with "show where I am" off, no place is told at all
+    createEffect(() => me.setWhere(userPrefs().shareWhere ? whereNow() : "", call()?.serverId ?? ""));
     // the open call shows its Remove button to the server's owner and to admins
     createEffect(() => {
       const c = call();
@@ -453,7 +456,6 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // in a DM nobody runs anything: no settings, tiles or people to add
   // only the owner account hands out roles
   const isOwnerAccount = () => (auth.currentUser?.email ?? "").toLowerCase() === OWNER_EMAIL;
-  const [rolesOpen, setRolesOpen] = createSignal(false);
   const [editingAnnouncement, setEditingAnnouncement] = createSignal(false);
   const [announcementDraft, setAnnouncementDraft] = createSignal("");
   const [dashboardOpen, setDashboardOpen] = createSignal(false);
@@ -1299,6 +1301,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                 canModerate={runsServer()}
               emojis={emojis()}
               members={server()?.memberUids}
+              server={server()}
               />
             )}
           </Match>
@@ -1404,6 +1407,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             {/* who is online stays visible with a tile open, above its chat */}
             <div class="side-online">
               <MemberGroup
+                server={server()}
                 label={`Online — ${onlineHere().length}`}
                 uids={onlineHere()}
                 profiles={profiles()}
@@ -1414,6 +1418,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               />
               {/* the People tab lists everyone in the server: offline members under the online ones (Kaalob) */}
               <MemberGroup
+                server={server()}
                 label={`Offline — ${offlineHere().length}`}
                 uids={offlineHere()}
                 profiles={profiles()}
@@ -1435,6 +1440,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               canModerate={runsServer()}
               emojis={emojis()}
               members={server()?.memberUids}
+              server={server()}
               compact
               onNewMessage={pingRight}
               catchPageDrops
@@ -1463,6 +1469,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             return (
               <>
                 <MemberGroup
+                server={server()}
                   label={`Online — ${online().length}`}
                   uids={online()}
                   profiles={profiles()}
@@ -1472,6 +1479,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                   onPick={openCard}
                 />
                 <MemberGroup
+                server={server()}
                   label={`Offline — ${offline().length}`}
                   uids={offline()}
                   profiles={profiles()}
@@ -1536,24 +1544,19 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         onJoined={setPendingJoin}
         onClose={() => setModal("")}
       />
-      <ServerSettingsDialog
-        open={modal() === "rename"}
-        server={server()}
-        // the owner may delete a server, never the home server (its first Node Lounge tile)
-        canDelete={Boolean(server() && server()!.ownerUid === props.uid && !isHomeServer(server(), channels()))}
-        onClose={() => setModal("")}
-      />
-      <NewChannelDialog
-        open={modal() === "new-channel"}
-        onClose={() => setModal("")}
-        onSubmit={(name, extra) => createRoomTile(serverId()!, name, channels().length, extra)}
-      />
-      <PeopleDialog
-        open={modal() === "people"}
+      {/* everything about this one server: its own window, the gear by its name (ServerSettings.tsx) */}
+      <ServerSettings
+        open={modal() === "rename" || modal() === "people"}
+        startOn={modal() === "people" ? "members" : "profile"}
         onClose={() => setModal("")}
         server={server()}
+        channels={channels()}
+        emojis={emojis()}
         profiles={profiles()}
         uid={props.uid}
+        // the owner may delete a server, never the home server (its first Node Lounge tile)
+        canDelete={Boolean(server() && server()!.ownerUid === props.uid && !isHomeServer(server(), channels()))}
+        onNewChannel={() => setModal("new-channel")}
       />
       <NewDmDialog
         open={newDm()}
@@ -1580,7 +1583,6 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         }
       />
       <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>
-      <RolesDialog open={rolesOpen()} onClose={() => setRolesOpen(false)} uid={props.uid} profiles={profiles()} />
       <DashboardDialog
         open={dashboardOpen()}
         onClose={() => setDashboardOpen(false)}
@@ -1593,64 +1595,22 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         focusSection={dashboardFocus()}
         onMessage={dashboardMessage}
       />
-      <Modal title="Account" open={modal() === "me"} onClose={() => setModal("")}>
-        <p class="modal-text">
-          Signed in as <b>{nameOf(props.uid)}<DeveloperBadge username={props.username} /></b> (@{props.username || "member"}).
-        </p>
-        <fieldset class="field sidebar-mode"><legend>Sidebar behavior · left &amp; right</legend>
-          <div class="kind-pick">
-            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "slide" && rightMode() === "slide"} onChange={() => chooseSidebarMode("slide")} />Slides in and out</label>
-            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "hover" && rightMode() === "hover"} onChange={() => chooseSidebarMode("hover")} />Show only on hover</label>
-            <label><input type="radio" name="sidebar-mode" checked={leftMode() === "pinned" && rightMode() === "pinned"} onChange={() => chooseSidebarMode("pinned")} />Always show</label>
-          </div>
-          <small class="call-name-note">Sets both sides at once. The pin on each side pins only that side. Hover-only closes when the pointer leaves; slides in and out stays open briefly. Touch devices keep their tap controls.</small>
-        </fieldset>
-        {/* dark (the app as it was) or light: picked here, kept in this browser */}
-        <fieldset class="field sidebar-mode"><legend>Appearance</legend>
-          <div class="kind-pick">
-            <label><input type="radio" name="app-mode" checked={mode() === "dark"} onChange={() => saveMode("dark")} />Dark</label>
-            <label><input type="radio" name="app-mode" checked={mode() === "light"} onChange={() => saveMode("light")} />Light</label>
-          </div>
-          <small class="call-name-note">Webcams, TV screens and the 3D rooms stay dark in light mode. So does the login page.</small>
-        </fieldset>
-        {/* the same design in another color: picked here, kept in this browser */}
-        <fieldset class="field sidebar-mode"><legend>Color theme</legend>
-          <div class="accent-pick">
-            <For each={ACCENTS}>
-              {(a) => (
-                <button type="button" class="accent-choice" style={{ "--swatch": a.color }} aria-pressed={accent() === a.id} onClick={() => saveAccent(a.id)}>
-                  <i aria-hidden="true" />
-                  {a.label}
-                </button>
-              )}
-            </For>
-          </div>
-          <small class="call-name-note">Changes right away and stays in this browser. The 3D rooms keep their own colors.</small>
-        </fieldset>
-        <FaceUnlockSetting />
-        <div class="modal-actions">
-          {/* text size, zoom, contrast, motion and the rest: its own page */}
-          <button class="btn" type="button" onClick={() => setModal("access")}>
-            Accessibility
-          </button>
-          <Show when={isOwnerAccount()}>
-            <button
-              class="btn"
-              type="button"
-              onClick={() => {
-                setModal("");
-                setRolesOpen(true);
-              }}
-            >
-              Roles
-            </button>
-          </Show>
-          <button class="btn danger" type="button" onClick={props.onLogout}>
-            Log out
-          </button>
-        </div>
-      </Modal>
-      <AccessibilityDialog open={modal() === "access"} onClose={() => setModal("")} />
+      {/* Settings: one window, its sections down the left (Settings.tsx) */}
+      <Settings
+        open={modal() === "me"}
+        onClose={() => setModal("")}
+        name={nameOf(props.uid)}
+        username={props.username}
+        uid={props.uid}
+        profile={profiles().get(props.uid)}
+        sidebarMode={leftMode() === rightMode() ? leftMode() : undefined}
+        onSidebarMode={chooseSidebarMode}
+        onProfile={() => {
+          setModal("");
+          setCustomizeOpen(true);
+        }}
+        onLogout={props.onLogout}
+      />
     </div>
   );
 }
@@ -1825,6 +1785,8 @@ function MemberGroup(props: {
   whereOf?: (uid: string) => string;
   /** clicked: show their profile card */
   onPick?: (uid: string, at: MouseEvent) => void;
+  /** the server, for its roles: a person's name takes the color of their top role */
+  server?: Server;
 }) {
   return (
     <Show when={props.uids.length}>
@@ -1844,7 +1806,9 @@ function MemberGroup(props: {
               </Show>
             </span>
             <span class="member-text">
-              <span class="member-name">{props.nameOf(uid)}<DeveloperBadge username={props.profiles.get(uid)?.username} /></span>
+              <span class="member-name" style={topRoleOf(props.server, uid) ? { color: topRoleOf(props.server, uid)!.color } : undefined} title={topRoleOf(props.server, uid)?.name}>
+                {props.nameOf(uid)}<DeveloperBadge username={props.profiles.get(uid)?.username} />
+              </span>
               <Show when={props.online && props.whereOf?.(uid)}>
                 {(where) => <small class="member-where">{where()}</small>}
               </Show>
@@ -2077,7 +2041,7 @@ function JoinServerDialog(props: {
 }
 
 /** The code for this server. Creating a new one replaces the old one. */
-function InviteCodeField(props: { server?: Server }) {
+export function InviteCodeField(props: { server?: Server }) {
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
@@ -2124,220 +2088,6 @@ function InviteCodeField(props: { server?: Server }) {
         <p class="form-error">{error()}</p>
       </Show>
     </div>
-  );
-}
-
-/** The server's name, icon (its button in the rail) and banner (the picture across the top of its channels). */
-function ServerSettingsDialog(props: { open: boolean; server?: Server; canDelete: boolean; onClose: () => void }) {
-  // undefined = banner untouched, null = remove it, string = the new picture
-  const [banner, setBanner] = createSignal<string | null | undefined>();
-  // the icon, the same three ways
-  const [icon, setIcon] = createSignal<string | null | undefined>();
-  const [iconUploading, setIconUploading] = createSignal(false);
-  const shownIcon = () => (icon() === undefined ? props.server?.icon : icon() ?? undefined);
-  const [error, setError] = createSignal("");
-  const [saving, setSaving] = createSignal(false);
-  const [uploading, setUploading] = createSignal(false);
-  // Delete takes two clicks: the first arms it, the second deletes.
-  const [deleteArmed, setDeleteArmed] = createSignal(false);
-  const [deleting, setDeleting] = createSignal(false);
-  const shown = () => (banner() === undefined ? props.server?.banner : banner() ?? undefined);
-
-  const close = () => {
-    setBanner(undefined);
-    setIcon(undefined);
-    setError("");
-    setDeleteArmed(false);
-    props.onClose();
-  };
-
-  async function pickIcon(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file || !props.server) return;
-    setIconUploading(true);
-    setError("");
-    try {
-      setIcon(await uploadPicture(file, { kind: "icon", serverId: props.server.id }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not use that picture");
-    } finally {
-      setIconUploading(false);
-    }
-  }
-
-  async function removeServer() {
-    if (!props.server) return;
-    if (!deleteArmed()) {
-      setDeleteArmed(true);
-      return;
-    }
-    setDeleting(true);
-    try {
-      await deleteServer(props.server.id);
-      close();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete the server.");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function pick(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file || !props.server) return;
-    setUploading(true);
-    setError("");
-    try {
-      setBanner(await uploadPicture(file, { kind: "banner", serverId: props.server.id }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not use that picture");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  return (
-    <Modal title="Server settings" open={props.open} onClose={close}>
-      <Show when={props.open && props.server}>{(server) => <JoinRequestList serverId={server().id} />}</Show>
-      <form
-        class="modal-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          const name = String(form.get("name") ?? "").trim().slice(0, 60);
-          if (!name || !props.server) return;
-          setSaving(true);
-          try {
-            await saveServerSettings(props.server.id, name, banner(), false, icon()); // servers are never open: people ask to join
-            close();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Could not save that.");
-          } finally {
-            setSaving(false);
-          }
-        }}
-      >
-        <label class="field">
-          <span>Server name</span>
-          <input name="name" value={props.server?.name ?? ""} maxLength={60} required />
-        </label>
-        <InviteCodeField server={props.server} />
-        <div class="field">
-          <span>Icon</span>
-          <div class="icon-row">
-            <div class="icon-preview">
-              <Show when={shownIcon()} fallback={initials(props.server?.name ?? "")}>
-                {(src) => <img src={src()} alt="" />}
-              </Show>
-            </div>
-            <div class="banner-actions">
-              <label class="btn banner-upload">
-                {iconUploading() ? "Uploading…" : shownIcon() ? "Change picture or GIF" : "Upload picture or GIF"}
-                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={iconUploading()} onChange={pickIcon} />
-              </label>
-              <Show when={shownIcon()}>
-                <button class="btn danger" type="button" onClick={() => setIcon(null)}>
-                  Remove
-                </button>
-              </Show>
-            </div>
-          </div>
-          <small class="field-hint">The server's button on the left. A square picture works best. A GIF keeps moving.</small>
-        </div>
-        <div class="field">
-          <span>Banner</span>
-          <div class="banner-preview">
-            <Show when={shown()} fallback={<div class="banner-empty">No banner</div>}>
-              {(src) => <img src={src()} alt="" />}
-            </Show>
-          </div>
-          <div class="banner-actions">
-            <label class="btn banner-upload">
-              {uploading() ? "Uploading…" : shown() ? "Change picture" : "Upload picture"}
-              <input type="file" accept="image/*" disabled={uploading()} onChange={pick} />
-            </label>
-            <Show when={shown()}>
-              <button class="btn danger" type="button" onClick={() => setBanner(null)}>
-                Remove
-              </button>
-            </Show>
-          </div>
-          <small class="field-hint">Wide pictures work best (about 3 : 1). A GIF keeps moving.</small>
-        </div>
-        <Show when={props.canDelete}>
-          <div class="field">
-            <span>Delete</span>
-            <div class="banner-actions">
-              <button class="btn danger" type="button" disabled={deleting()} onClick={() => void removeServer()}>
-                {deleting() ? "Deleting…" : deleteArmed() ? "Click again to delete for good" : "Delete server"}
-              </button>
-            </div>
-            <small class="field-hint">Removes this server, its channels and all their messages.</small>
-          </div>
-        </Show>
-        <Show when={error()}>
-          <p class="form-error">{error()}</p>
-        </Show>
-        <div class="modal-actions">
-          <button class="btn" type="button" onClick={close}>
-            Cancel
-          </button>
-          <button class="btn primary" type="submit" disabled={saving() || uploading() || iconUploading()}>
-            {saving() ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-/** The server's owner adds or removes approved members. */
-function PeopleDialog(props: {
-  open: boolean;
-  onClose: () => void;
-  server?: Server;
-  profiles: Map<string, Profile>;
-  uid: string;
-}) {
-  const everyone = () =>
-    [...props.profiles.values()].sort((a, b) => displayName(a).localeCompare(displayName(b)));
-  const inServer = (uid: string) => Boolean(props.server?.memberUids.includes(uid));
-  return (
-    <Modal title="People in this server" open={props.open} onClose={props.onClose}>
-      <p class="modal-text">Everyone here is an approved member. Add them to let them see this server.</p>
-      <div class="people-list">
-        <For each={everyone()}>
-          {(p) => (
-            <div class="person">
-              <span class="avatar small" style={faceStyle(p)}>
-                {faceText(p, displayName(p))}
-              </span>
-              <span class="member-name">
-                {displayName(p)}<DeveloperBadge username={p.username} /> <small>@{p.username}</small>
-              </span>
-              <Show
-                when={inServer(p.uid)}
-                fallback={
-                  <button class="btn" type="button" onClick={() => void addServerMembers(props.server!.id, [p.uid])}>
-                    Add
-                  </button>
-                }
-              >
-                <Show when={p.uid !== props.server?.ownerUid} fallback={<span class="person-tag">owner</span>}>
-                  <button class="btn danger" type="button" onClick={() => void removeServerMember(props.server!.id, p.uid)}>
-                    Remove
-                  </button>
-                </Show>
-              </Show>
-            </div>
-          )}
-        </For>
-      </div>
-    </Modal>
   );
 }
 

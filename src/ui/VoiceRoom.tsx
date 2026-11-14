@@ -21,6 +21,7 @@ import {
 import { type SeatControl, startSeats } from "../data/seats";
 import { displayName, type Channel, type Profile } from "../data/store";
 import { setCallFaces } from "../data/callFaces";
+import { userPrefs } from "../data/prefs";
 import { setTvObs, setTvObsBusy, setTvObsCall, setTvShared, tvObsAsk, tvSharedAsk } from "../data/tvObs";
 import { audit } from "../data/audit";
 import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
@@ -772,6 +773,12 @@ export function VoiceRoom(props: {
         next.on(event, bump);
       }
       await next.connect(pass.url, pass.token);
+      // Settings > Voice & Video: the camera and microphone you picked. Told to
+      // the call before anything is turned on, so the first use is that device.
+      // A device that is gone (unplugged) is skipped: the call uses the default.
+      const picked = userPrefs();
+      if (picked.micDevice) await next.switchActiveDevice("audioinput", picked.micDevice).catch(() => {});
+      if (picked.camDevice) await next.switchActiveDevice("videoinput", picked.camDevice).catch(() => {});
       if (gen !== joinGen) {
         // hung up (or switched away) while this was connecting
         await next.disconnect();
@@ -1263,7 +1270,7 @@ export function VoiceRoom(props: {
 
   // ---- remove someone from the call (the server's owner and admins) -----------
   // ---- "talking to" (Kaalob) ----------------------------------------------
-  // Click someone's tile: your picture appears beside their name on their
+  // Click someone's NAME on their tile (not the picture): your picture appears beside their name on their
   // tile, and theirs beside your name on yours, for everyone in the call. It
   // says the two of you are talking directly. Click them again and both go;
   // click someone else and it moves there. One person at a time. It travels as your own LiveKit attribute
@@ -1316,8 +1323,9 @@ export function VoiceRoom(props: {
     if (!room()) setMyTalk(undefined);
   });
 
-  // The Remove button is on the person's own tile (it shows under the pointer),
-  // not in the row of call buttons (Kaalob): it asks first, then removes.
+  // Remove is in the small "more" menu on the person's own tile, not in the row
+  // of call buttons and not a button on the tile itself (Kaalob: too easy to
+  // hit by accident): open the menu, pick Remove, then say yes.
   const [removeAsk, setRemoveAsk] = createSignal<{ uid: string; name: string } | undefined>();
   const [removing, setRemoving] = createSignal(false);
   async function confirmRemove() {
@@ -2841,11 +2849,12 @@ export function VoiceRoom(props: {
         <Modal title="Remove from call" open={Boolean(removeAsk())} onClose={() => setRemoveAsk(undefined)}>
           <p class="modal-text">Remove {removeAsk()?.name} from this call? They are only disconnected, and can join again.</p>
           <div class="modal-actions">
-            <button type="button" class="dock-btn" disabled={removing()} onClick={() => void confirmRemove()}>
-              {removing() ? "Removing…" : "Yes, remove"}
-            </button>
+            {/* No comes first: it is the one the keyboard lands on, so Enter does not remove anyone */}
             <button type="button" class="dock-btn" onClick={() => setRemoveAsk(undefined)}>
-              No
+              No, keep them
+            </button>
+            <button type="button" class="dock-btn leave" disabled={removing()} onClick={() => void confirmRemove()}>
+              {removing() ? "Removing…" : "Yes, remove"}
             </button>
           </div>
         </Modal>
@@ -3200,7 +3209,7 @@ function Tile(props: {
   talkers?: { uid: string; name: string; profile?: Profile }[];
   /** their pair's color: the name banner glows in it, the same on both people's tiles */
   talkColor?: string;
-  /** a click on this person's tile: you are talking to them (again: not any more) */
+  /** a click on this person's name: you are talking to them (again: not any more) */
   onTalk?: () => void;
   /** they asked for attention: a white strobe around the tile */
   flashing?: boolean;
@@ -3282,7 +3291,8 @@ function Tile(props: {
     }
   });
 
-  const mirrored = () => props.tile.participant.isLocal && !props.tile.screen && !swapped();
+  // your own camera as a mirror, unless Settings > Voice & Video turned that off
+  const mirrored = () => userPrefs().mirrorCam && props.tile.participant.isLocal && !props.tile.screen && !swapped();
 
   // Zoomed share: 50% larger, and the point under the pointer stays in view.
   const [zoomOrigin, setZoomOrigin] = createSignal("50% 50%");
@@ -3385,6 +3395,21 @@ function Tile(props: {
     props.onCorner?.(`${top ? "t" : "b"}${left ? "l" : "r"}` as InsetCorner);
   }
 
+  // the tile's small "more" menu (Remove lives in it): a click anywhere else closes it
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  createEffect(() => {
+    if (!moreOpen()) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".tile-more")) setMoreOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMoreOpen(false);
+    window.addEventListener("pointerdown", close, true);
+    window.addEventListener("keydown", esc);
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", close, true);
+      window.removeEventListener("keydown", esc);
+    });
+  });
   // their microphone is off (a person's tile only, never a shared screen)
   const micMuted = () => {
     void props.version;
@@ -3401,19 +3426,12 @@ function Tile(props: {
         zoomed: props.zoomed,
         pip: props.pip,
         dragging: Boolean(pipDrag()),
-        "can-talk": Boolean(props.onTalk),
       }}
       style={{
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
       onDblClick={props.onDblClick}
-      // a click on someone's tile says you are talking to them (not on its buttons or its small picture)
-      onClick={(e) => {
-        if (!props.onTalk || props.pip) return;
-        if ((e.target as HTMLElement).closest("button, a, .tile-inset, .inset-resize")) return;
-        props.onTalk();
-      }}
       onPointerDown={pipDown}
       onPointerUp={(e) => {
         if (pipFrom || pipDrag()) {
@@ -3507,23 +3525,54 @@ function Tile(props: {
           />
         </div>
       </Show>
+      {/* Remove is not a button on the tile any more: it was too easy to hit by
+          accident (Kaalob). A small "more" button opens a menu, Remove is in
+          the menu, and it still asks before removing: three deliberate steps. */}
       <Show when={props.onRemove}>
-        <button
-          type="button"
-          class="tile-remove"
-          title={`Remove ${props.name} from this call`}
-          aria-label={`Remove ${props.name} from this call`}
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onRemove?.();
-          }}
-          onDblClick={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-        >
-          Remove
-        </button>
+        <div class="tile-more" onClick={(e) => e.stopPropagation()} onDblClick={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+          <button type="button" class="tile-more-btn" title={`More for ${props.name}`} aria-label={`More for ${props.name}`} aria-haspopup="menu" aria-expanded={moreOpen()} onClick={() => setMoreOpen(!moreOpen())}>
+            ⋯
+          </button>
+          <Show when={moreOpen()}>
+            <div class="tile-more-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMoreOpen(false);
+                  props.onRemove?.();
+                }}
+              >
+                Remove from call…
+              </button>
+            </div>
+          </Show>
+        </div>
       </Show>
-      <span class="tile-name" classList={{ talking: Boolean(props.talkColor) }} style={props.talkColor ? { "--talk": props.talkColor } : undefined}>
+      {/* "talking to" starts from the name, not the picture (Kaalob): a click on
+          someone's name says you are talking to them; again, not any more.
+          The click stays on the name: it does not open the tile big. */}
+      <span
+        class="tile-name"
+        classList={{ talking: Boolean(props.talkColor), "can-talk": Boolean(props.onTalk) }}
+        style={props.talkColor ? { "--talk": props.talkColor } : undefined}
+        role={props.onTalk ? "button" : undefined}
+        tabindex={props.onTalk ? 0 : undefined}
+        title={props.onTalk ? (props.talkColor ? `Click to stop talking to ${props.name}` : `Click to show you are talking to ${props.name}`) : undefined}
+        onClick={(e) => {
+          if (!props.onTalk) return;
+          e.stopPropagation();
+          props.onTalk();
+        }}
+        onDblClick={(e) => props.onTalk && e.stopPropagation()}
+        onPointerDown={(e) => props.onTalk && e.stopPropagation()}
+        onPointerUp={(e) => props.onTalk && e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (!props.onTalk || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
+          props.onTalk();
+        }}
+      >
         <Show when={props.stream}>
           <span class="live-dot" aria-hidden="true" />{" "}
         </Show>
