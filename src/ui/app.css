@@ -4592,3 +4592,52 @@ body.side-tv-window {
     opacity: 1;
   }
 }
+
+/* a muted person's name on their tile ends with a crossed-out microphone */
+.tile-muted {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: #f87171;
+}
+.tile-muted svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+/* "talking to": the pictures of the people talking to this person, beside the name on their tile */
+.tile .tile-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+.avatar.tile-talker {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  border: 1.5px solid var(--green);
+  font-size: 9px;
+  box-shadow: 0 0 6px rgba(var(--green-rgb), 0.6);
+}
+.avatar.tile-talker + .avatar.tile-talker {
+  margin-left: -5px;
+}
+/* a tile you can click to talk to its person */
+.tile.can-talk {
+  cursor: pointer;
+}
+
+/* a pair talking to each other: both name banners glow in the pair's own color */
+.tile .tile-name.talking {
+  overflow: visible;
+  box-shadow: 0 0 0 1.5px var(--talk), 0 0 14px 1px var(--talk);
+}
+.tile .tile-name.talking .avatar.tile-talker {
+  border-color: var(--talk);
+  box-shadow: 0 0 6px var(--talk);
+}

@@ -634,9 +634,10 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     // the button is "a third of the screen" or "normal": either way a dragged width goes
     setAccess({ rightWidth: 0 });
   };
-  // Sidebars sized to your liking (Accessibility): drag a sidebar's inner
+  // The right sidebar sized to your liking (Accessibility): drag its inner
   // edge. The width is kept (data/access.ts) and given to the layout as a
-  // variable on the shell; a double-click on the edge puts it back.
+  // variable on the shell; a double-click on the edge puts it back. Only the
+  // right one (Kaalob): the left sidebar keeps its own width.
   const [sizing, setSizing] = createSignal<"left" | "right" | undefined>();
   function startSizing(which: "left" | "right", e: PointerEvent) {
     if (e.button !== 0) return;
@@ -854,8 +855,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   return (
     <div
       class="shell"
-      // the sidebars' dragged widths (Accessibility), for the layout in app.css
-      style={{ "--side-w": access().leftWidth ? `${access().leftWidth}px` : undefined, "--right-wide": access().rightWidth ? `${access().rightWidth}px` : undefined }}
+      // the right sidebar's dragged width (Accessibility), for the layout in app.css. The left one keeps its own width (Kaalob).
+      style={{ "--right-wide": access().rightWidth ? `${access().rightWidth}px` : undefined }}
       on:click={(event:MouseEvent) => {if(Date.now()<panelSwipeClickBlockedUntil){event.preventDefault();event.stopPropagation();}}}
       onTouchStart={startPanelSwipe} on:touchmove={movePanelSwipe} onTouchEnd={endPanelSwipe} onTouchCancel={() => {panelSwipe=undefined;}}
       onMouseMove={e => {
@@ -936,7 +937,6 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
 
       {/* ---- channels ---- */}
       <aside class="side" onMouseEnter={e => { if (leftHover() || e.clientY >= window.innerHeight * 0.28 && e.clientY <= window.innerHeight * 0.80) enterLeft(); }} onMouseLeave={leaveLeft}>
-        <Sizer side="left" />
         {/* the banner on its own, the name in the row under it */}
         <Show when={!dmMode() && server()?.banner}>
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}

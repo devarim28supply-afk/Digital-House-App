@@ -1262,6 +1262,60 @@ export function VoiceRoom(props: {
   }
 
   // ---- remove someone from the call (the server's owner and admins) -----------
+  // ---- "talking to" (Kaalob) ----------------------------------------------
+  // Click someone's tile: your picture appears beside their name on their
+  // tile, and theirs beside your name on yours, for everyone in the call. It
+  // says the two of you are talking directly. Click them again and both go;
+  // click someone else and it moves there. One person at a time. It travels as your own LiveKit attribute
+  // ("dh-to": who you are talking to), so everyone's call shows the same.
+  const TO_ATTR = "dh-to";
+  // your own choice shows at once, without waiting for the call to say it back
+  const [myTalk, setMyTalk] = createSignal<string | undefined>();
+  /** who each person is paired with: their uid -> the uids whose pictures go on their tile */
+  // Each pair gets its own color (Kaalob): the name banners of the two people
+  // glow in it, so with several pairs at once you can tell who is with whom.
+  // The colors are handed out by the pairs' order, the same on everyone's screen.
+  const TALK_COLORS = ["#facc15", "#38bdf8", "#f472b6", "#a78bfa", "#fb923c", "#34d399"];
+  const talkers = createMemo(() => {
+    version();
+    const current = room();
+    const map = new Map<string, string[]>();
+    const colors = new Map<string, string>();
+    const pairs: [string, string][] = [];
+    if (!current) return { map, colors };
+    const me = current.localParticipant;
+    const here = new Set([me.identity, ...current.remoteParticipants.keys()]);
+    for (const p of [me, ...current.remoteParticipants.values()]) {
+      const to = p === me && myTalk() !== undefined ? myTalk()! : p.attributes[TO_ATTR] || "";
+      if (!to || to === p.identity || !here.has(to)) continue;
+      // both ways: you on their tile, and them on yours (once, if they clicked you too)
+      for (const [tile, face] of [[to, p.identity], [p.identity, to]]) {
+        const faces = map.get(tile) ?? [];
+        if (!faces.includes(face)) map.set(tile, [...faces, face]);
+      }
+      pairs.push([p.identity, to]);
+    }
+    // one color per pair; someone in two pairs keeps the color of the one they chose themselves
+    const keyOf = (a: string, b: string) => [a, b].sort().join("|");
+    const order = [...new Set(pairs.map(([a, b]) => keyOf(a, b)))].sort();
+    const colorOf = (a: string, b: string) => TALK_COLORS[order.indexOf(keyOf(a, b)) % TALK_COLORS.length];
+    for (const [from, to] of pairs) if (!colors.has(to)) colors.set(to, colorOf(from, to));
+    for (const [from, to] of pairs) colors.set(from, colorOf(from, to));
+    return { map, colors };
+  });
+  function toggleTalk(uid: string) {
+    const me = room()?.localParticipant;
+    if (!me || uid === me.identity) return;
+    const now = myTalk() ?? (me.attributes[TO_ATTR] || "");
+    const next = now === uid ? "" : uid;
+    setMyTalk(next);
+    void me.setAttributes({ [TO_ATTR]: next }).catch(() => setMyTalk(undefined));
+  }
+  // out of the call: nothing of yours is left pointing at anyone
+  createEffect(() => {
+    if (!room()) setMyTalk(undefined);
+  });
+
   // The Remove button is on the person's own tile (it shows under the pointer),
   // not in the row of call buttons (Kaalob): it asks first, then removes.
   const [removeAsk, setRemoveAsk] = createSignal<{ uid: string; name: string } | undefined>();
@@ -2433,6 +2487,9 @@ export function VoiceRoom(props: {
                 zoomed={zoomOn() && focus() === tile.key}
                 onToggleZoom={() => setZoomOn((on) => !on)}
                 forceOff={tile.participant.isLocal && !tile.screen && camWant() === false}
+                talkers={tile.screen ? undefined : (talkers().map.get(tile.participant.identity) ?? []).map((uid) => ({ uid, name: personName(uid), profile: props.profiles.get(uid) }))}
+                talkColor={tile.screen ? undefined : talkers().colors.get(tile.participant.identity)}
+                onTalk={!props.viewOnly && !tile.screen && !tile.participant.isLocal ? () => toggleTalk(tile.participant.identity) : undefined}
                 onRemove={
                   canRemoveFromCall() && !props.viewOnly && !tile.screen && !tile.participant.isLocal
                     ? () => setRemoveAsk({ uid: tile.participant.identity, name: nameOf(tile.participant) })
@@ -3139,6 +3196,12 @@ function Tile(props: {
   forceOff?: boolean;
   /** you run this server: a Remove button on this person's tile (it asks first) */
   onRemove?: () => void;
+  /** the people talking to this person right now: their pictures go beside the name */
+  talkers?: { uid: string; name: string; profile?: Profile }[];
+  /** their pair's color: the name banner glows in it, the same on both people's tiles */
+  talkColor?: string;
+  /** a click on this person's tile: you are talking to them (again: not any more) */
+  onTalk?: () => void;
   /** they asked for attention: a white strobe around the tile */
   flashing?: boolean;
   /** their phone is turning: keep the last good frame on screen for a moment */
@@ -3322,6 +3385,11 @@ function Tile(props: {
     props.onCorner?.(`${top ? "t" : "b"}${left ? "l" : "r"}` as InsetCorner);
   }
 
+  // their microphone is off (a person's tile only, never a shared screen)
+  const micMuted = () => {
+    void props.version;
+    return !props.tile.screen && !props.tile.participant.isMicrophoneEnabled;
+  };
   return (
     <article
       class="tile"
@@ -3333,12 +3401,19 @@ function Tile(props: {
         zoomed: props.zoomed,
         pip: props.pip,
         dragging: Boolean(pipDrag()),
+        "can-talk": Boolean(props.onTalk),
       }}
       style={{
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
       onDblClick={props.onDblClick}
+      // a click on someone's tile says you are talking to them (not on its buttons or its small picture)
+      onClick={(e) => {
+        if (!props.onTalk || props.pip) return;
+        if ((e.target as HTMLElement).closest("button, a, .tile-inset, .inset-resize")) return;
+        props.onTalk();
+      }}
       onPointerDown={pipDown}
       onPointerUp={(e) => {
         if (pipFrom || pipDrag()) {
@@ -3448,11 +3523,25 @@ function Tile(props: {
           Remove
         </button>
       </Show>
-      <span class="tile-name">
+      <span class="tile-name" classList={{ talking: Boolean(props.talkColor) }} style={props.talkColor ? { "--talk": props.talkColor } : undefined}>
         <Show when={props.stream}>
           <span class="live-dot" aria-hidden="true" />{" "}
         </Show>
         {props.name}<DeveloperBadge username={props.profile?.username} />
+        {/* who is talking to this person: their pictures, beside the name */}
+        <For each={props.talkers ?? []}>
+          {(who) => (
+            <span class="avatar tile-talker" style={faceStyle(who.profile)} role="img" aria-label={`${who.name} and ${props.name} are talking`} title={`${who.name} and ${props.name} are talking`}>
+              {faceText(who.profile, who.name)}
+            </span>
+          )}
+        </For>
+        {/* muted: a crossed-out microphone beside the name (Kaalob), on your own tile and on everyone's */}
+        <Show when={micMuted()}>
+          <span class="tile-muted" role="img" aria-label="Muted" title="Muted">
+            {dockIcon("mic-off")}
+          </span>
+        </Show>
       </span>
     </article>
   );

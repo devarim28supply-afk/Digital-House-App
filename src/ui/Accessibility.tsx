@@ -8,7 +8,7 @@ import "./accessibility.css";
  * Accessibility (Kaalob: the whole thing, like Discord's Accessibility and
  * Appearance pages): text size and spacing, zoom, cozy or compact messages,
  * colors and contrast, links, motion, animated pictures, the Send button,
- * and the sidebars' sizes. Every change shows at once and is kept in this
+ * and the right sidebar's size. Every change shows at once and is kept in this
  * browser (data/access.ts); the chat sample in the dialog shows the chat
  * settings as you move them.
  */
@@ -118,11 +118,11 @@ export function AccessibilityDialog(props: { open: boolean; onClose: () => void 
           <legend>Size</legend>
           <Slider label="Zoom level" hint="Everything in the app bigger or smaller: text, buttons, pictures. On a computer." value={a().zoom} min={50} max={200} step={10} unit="%" onChange={(n) => setAccess({ zoom: n })} />
           <div class="access-row">
-            <b>Sidebar sizes</b>
-            <small>Drag the inner edge of the left or the right sidebar to make it as wide as you like. Double-click the edge to put it back.</small>
+            <b>Right sidebar size</b>
+            <small>Drag the inner edge of the right sidebar to make it as wide as you like. Double-click the edge to put it back.</small>
             <div class="access-choices">
-              <button type="button" disabled={!a().leftWidth && !a().rightWidth} onClick={() => setAccess({ leftWidth: 0, rightWidth: 0 })}>
-                Put both sidebars back to normal
+              <button type="button" disabled={!a().rightWidth} onClick={() => setAccess({ leftWidth: 0, rightWidth: 0 })}>
+                Put the right sidebar back to normal
               </button>
             </div>
           </div>
