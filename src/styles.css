@@ -153,3 +153,21 @@ button {
   background: var(--panel-3);
   color: var(--text);
 }
+
+/* ---- the app's emoji: Noto Color Emoji (Kaalob's pick), the same on every device ----
+   The font comes from index.html. It is used where people's own words and
+   names show (messages, the message box, reactions, the emoji picker, names),
+   listed after the text fonts so letters and numbers stay as they are and
+   only emoji come from it. The app's own little symbols on buttons (the
+   gear, the envelope, arrows) are left alone: this is not set on them. */
+:root {
+  --sans-emoji: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Color Emoji", sans-serif;
+  --mono-emoji: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, Consolas, "Noto Color Emoji", monospace;
+}
+/* (:root four times: these must win over the font each of them is given elsewhere, the theme files included) */
+:root:root:root:root :is(.msg-text, .msg-author, .composer textarea, .edit-box textarea, .reaction, .emoji-pick.unicode, .emoji-btn, .attach, .member-name, .tile-name, .profile-card, .announcement, .mention-list, .set-card-text, .person) {
+  font-family: var(--sans-emoji);
+}
+:root:root:root:root :is(.room-tile-name, .side-title, .main-title, .call-bar-text, .ss-channel-text) {
+  font-family: var(--mono-emoji);
+}

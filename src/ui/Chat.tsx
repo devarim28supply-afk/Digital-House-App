@@ -716,6 +716,12 @@ export function Chat(props: {
                           <Still class="msg-sticker" src={sticker().url} animated={isGif(sticker().url)} alt={sticker().name} title={sticker().name} lazy />
                         )}
                       </Show>
+                      <Show when={m.files.length}>
+                        <div class="msg-files">
+                          <For each={m.files}>{(file) => <FileView file={file} onOpen={setViewing} />}</For>
+                        </div>
+                      </Show>
+                      {/* reactions go under the whole message: its words, then its pictures and files, then these (Kaalob) */}
                       <Show when={Object.values(m.reactions).some((who) => who.length)}>
                         <div class="msg-reactions">
                           <For each={Object.entries(m.reactions).filter(([, who]) => who.length)}>
@@ -748,11 +754,6 @@ export function Chat(props: {
                           >
                             ☺+
                           </button>
-                        </div>
-                      </Show>
-                      <Show when={m.files.length}>
-                        <div class="msg-files">
-                          <For each={m.files}>{(file) => <FileView file={file} onOpen={setViewing} />}</For>
                         </div>
                       </Show>
                     </>
