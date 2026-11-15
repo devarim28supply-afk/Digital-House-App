@@ -4743,12 +4743,16 @@ body.side-tv-window {
   bottom: calc(clamp(22px, 2.6vw, 44px) * 1.4 * 2 + 8px + 6px);
 }
 
-/* Turning your own phone in a videochat: your own picture fades out while the
-   camera and the tile take their new shape, then fades back in (VoiceRoom,
-   selfTurning). */
+/* A phone turned in a videochat (Kaalob: only the picture that got turned
+   fades to black, and fades back in when it is fully turned and set). The
+   picture of that phone goes black, the camera and the tile take their new
+   shape unseen, and the picture comes back: on that phone itself (VoiceRoom,
+   selfTurning) and for everyone watching it (held). The rest of the screen
+   stays as it is. */
 .tile video.turn-fade {
-  transition: opacity 150ms ease;
+  transition: filter 320ms ease;
 }
 .tile video.turn-fade.away {
-  opacity: 0;
+  filter: brightness(0);
+  transition: filter 140ms ease;
 }
