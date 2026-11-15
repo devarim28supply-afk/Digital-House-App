@@ -216,3 +216,23 @@ html[data-turning] *::after {
   transition: none !important;
 }
 /* (.turn-fade is your own picture's fade during the turn: that one glide is the point) */
+
+/* The turn itself is hidden behind black (data/mobileViewport.ts sets
+   html[data-blackout] from the moment a turn is seen until the screen has
+   settled): a quick fade to black, then a slower fade back in when the mark
+   is taken off. These two glides are the point, so they are kept while the
+   rule above stops every other one (!important, to win over it). */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms ease !important;
+}
+html[data-blackout] body::after {
+  opacity: 1;
+  transition: opacity 120ms ease !important;
+}

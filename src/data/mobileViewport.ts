@@ -30,14 +30,42 @@ function update() {
 // screen is changing shape, nothing glides: every part is simply in its new
 // place (html[data-turning], mobile-layout.css). Touch screens only; a
 // computer window being dragged to a new size is left as it is.
+//
+// The turn itself is hidden (Kaalob: fade to black while it turns, fade back
+// in when it is fully turned and set). The screen goes black the moment the
+// turn is seen, stays black while the browser turns and the app lays itself
+// out again, and fades back in once nothing has changed shape for a moment
+// (html[data-blackout], mobile-layout.css). A browser only says a turn
+// happened after it has begun, so the black comes on at once, not as a fade.
+// Only a real turn does this: the keyboard opening also changes the screen's
+// height, but not which way it is longer, so it is left alone.
 const touch = window.matchMedia("(pointer: coarse)");
+const sideways = () => window.innerWidth > window.innerHeight;
+let wasSideways = sideways();
 let turnTimer = 0;
-function turning() {
+let blackTimer = 0;
+let blackSince = 0;
+/** how long nothing may change shape before the picture comes back, and the longest it stays black */
+const SETTLE_MS = 450;
+const BLACK_MAX_MS = 1800;
+function black() {
+  const root = document.documentElement;
+  if (!root.dataset.blackout) blackSince = Date.now();
+  root.dataset.blackout = "1";
+  window.clearTimeout(blackTimer);
+  const left = Math.max(0, BLACK_MAX_MS - (Date.now() - blackSince));
+  blackTimer = window.setTimeout(() => delete root.dataset.blackout, Math.min(SETTLE_MS, left));
+}
+function turning(event?: Event) {
   if (!touch.matches) return;
   document.documentElement.dataset.turning = "1";
   window.clearTimeout(turnTimer);
   // long enough for the browser's own turn and the layout that follows it
   turnTimer = window.setTimeout(() => delete document.documentElement.dataset.turning, 500);
+  const now = sideways();
+  // turned (it is now longer the other way), or still settling after a turn
+  if (now !== wasSideways || event?.type !== "resize" || document.documentElement.dataset.blackout) black();
+  wasSideways = now;
 }
 window.addEventListener("resize", turning);
 window.addEventListener("orientationchange", turning);
