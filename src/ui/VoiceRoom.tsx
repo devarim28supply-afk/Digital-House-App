@@ -3277,26 +3277,17 @@ function Tile(props: {
     onCleanup(() => t.detach(inset!));
   });
 
-  // while held, the picture stops on its last good frame; it carries on when the hold ends.
-  // That is for OTHER people's pictures. Your own picture on your own phone is not frozen
-  // (Kaalob: it froze, sometimes went black, then jumped): see selfTurning, below.
+  // A phone that turns sends a moment of stretched, half-turned frames. They are
+  // hidden behind black: the picture of that phone fades to black, and fades
+  // back in when the turn is done (Kaalob: only the picture that got turned).
+  // Someone else's picture stays black for as long as it is held (TURN_HOLD_MS);
+  // your own, on your own phone, until your camera has settled: selfTurning, below.
+  // The picture keeps playing underneath, so it is live the moment it comes back.
   const ownCamera = () => props.tile.participant.isLocal && !props.tile.screen;
-  let pausedForTurn = false;
-  createEffect(() => {
-    const el = video;
-    if (!el) return;
-    if (props.held && !ownCamera()) {
-      pausedForTurn = true;
-      el.pause();
-    } else if (pausedForTurn) {
-      pausedForTurn = false;
-      void el.play().catch(() => undefined);
-    }
-  });
 
-  // Turning your own phone: your picture fades out, the camera settles into its
-  // new shape and the tile takes its new shape and place unseen, then the
-  // picture fades back in. No frozen frame, no black flash, no jump.
+  // Turning your own phone: your picture fades to black, the camera settles into
+  // its new shape and the tile takes its new shape and place unseen, then the
+  // picture fades back in. No frozen frame, no jump.
   // It comes back as soon as the camera is sending the turned picture (the
   // video says its size changed, a short moment for it to settle), or after
   // 0.6 s if this phone's camera never changes size on a turn, and never later
@@ -3504,7 +3495,7 @@ function Tile(props: {
         autoplay
         playsinline
         muted
-        classList={{ hidden: !big(), mirror: mirrored(), "turn-fade": ownCamera(), away: selfTurning() }}
+        classList={{ hidden: !big(), mirror: mirrored(), "turn-fade": !props.tile.screen, away: !props.tile.screen && (ownCamera() ? selfTurning() : Boolean(props.held)) }}
         style={props.zoomed ? { transform: "scale(1.5)", "transform-origin": zoomOrigin() } : undefined}
       />
       <Show when={props.canZoom}>
