@@ -3277,18 +3277,53 @@ function Tile(props: {
     onCleanup(() => t.detach(inset!));
   });
 
-  // while held, the picture stops on its last good frame; it carries on when the hold ends
+  // while held, the picture stops on its last good frame; it carries on when the hold ends.
+  // That is for OTHER people's pictures. Your own picture on your own phone is not frozen
+  // (Kaalob: it froze, sometimes went black, then jumped): see selfTurning, below.
+  const ownCamera = () => props.tile.participant.isLocal && !props.tile.screen;
   let pausedForTurn = false;
   createEffect(() => {
     const el = video;
     if (!el) return;
-    if (props.held) {
+    if (props.held && !ownCamera()) {
       pausedForTurn = true;
       el.pause();
     } else if (pausedForTurn) {
       pausedForTurn = false;
       void el.play().catch(() => undefined);
     }
+  });
+
+  // Turning your own phone: your picture fades out, the camera settles into its
+  // new shape and the tile takes its new shape and place unseen, then the
+  // picture fades back in. No frozen frame, no black flash, no jump.
+  // It comes back as soon as the camera is sending the turned picture (the
+  // video says its size changed, a short moment for it to settle), or after
+  // 0.6 s if this phone's camera never changes size on a turn, and never later
+  // than 1.5 s. A camera that is still handing over (muted) is waited for.
+  const [selfTurning, setSelfTurning] = createSignal(false);
+  createEffect(() => {
+    const el = video;
+    if (!el || !ownCamera() || !props.held) return;
+    setSelfTurning(true);
+    const started = Date.now();
+    let reshapedAt = 0;
+    const onResize = () => (reshapedAt = Date.now());
+    el.addEventListener("resize", onResize);
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      const age = now - started;
+      const camera = (el.srcObject as MediaStream | null)?.getVideoTracks()[0];
+      const sending = !camera?.muted;
+      const settled = reshapedAt ? now - reshapedAt > 220 : age > 600;
+      if (age > 1500 || (sending && settled)) done();
+    }, 60);
+    const done = () => {
+      window.clearInterval(timer);
+      el.removeEventListener("resize", onResize);
+      setSelfTurning(false);
+    };
+    onCleanup(done);
   });
 
   // your own camera as a mirror, unless Settings > Voice & Video turned that off
@@ -3469,7 +3504,7 @@ function Tile(props: {
         autoplay
         playsinline
         muted
-        classList={{ hidden: !big(), mirror: mirrored() }}
+        classList={{ hidden: !big(), mirror: mirrored(), "turn-fade": ownCamera(), away: selfTurning() }}
         style={props.zoomed ? { transform: "scale(1.5)", "transform-origin": zoomOrigin() } : undefined}
       />
       <Show when={props.canZoom}>

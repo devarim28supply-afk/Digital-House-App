@@ -1,22 +1,26 @@
 // TV channels for the Darkwood Room monitors.
 //
-// Channels come from public playlists on GitHub: Free-TV/IPTV (hand-picked
-// free, legal channels, the default) and iptv-org (many more US channels,
-// less reliable). Every viewer's own browser plays the channel straight
-// from its source with hls.js, so it costs nobody any upload; only which
-// channel is on travels between people (room.js).
+// Channels come from the app's own list, tv-channels.json: free, public
+// channels gathered from playlists on GitHub (Free-TV/IPTV and iptv-org),
+// sorted into kinds, and every one tried first, so a channel that is gone
+// or that other websites may not play is not in it (scripts/tv-channels.mjs
+// builds the list; run it again now and then). Every viewer's own browser
+// plays the channel straight from its source with hls.js, so it costs
+// nobody any upload; only which channel is on travels between people
+// (room.js).
 //
 // Captions: US TV carries closed captions inside the stream (CEA-608);
 // hls.js turns them into a text track, which is switched on here.
 
 import Hls from "hls.js";
 
+// The tabs of the channel list: every channel, then one tab per kind.
 export const SOURCES = [
-  { id: "free", name: "Free TV", url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8" },
-  { id: "more", name: "More channels (US)", url: "https://iptv-org.github.io/iptv/countries/us.m3u" },
+  { id: "all", name: "All" },
+  ...["News", "Sports", "Movies", "Shows", "Crime", "Comedy", "Reality", "Lifestyle", "Kids", "Music", "Learning", "Spanish", "Faith", "Other"].map((kind) => ({ id: kind, name: kind })),
 ];
 
-const lists = new Map(); // source id -> Promise<channel[]>
+let whole = null; // Promise<channel[]>: the whole list, fetched once
 
 // Channels that would not play in this browser (blocked for other websites,
 // gone, or blank): the picker greys them out. A channel that plays again
@@ -41,47 +45,18 @@ function markFailed(url, failed) {
 }
 export const failedChannels = failedSet;
 
-/** A playlist as [{ name, logo, group, url }], only streams a browser can play. */
+/** A tab's channels as [{ name, logo, kind, group, url }]; group is where the channel is from. */
 export function loadChannels(sourceId) {
-  if (!lists.has(sourceId)) {
-    const source = SOURCES.find((s) => s.id === sourceId);
-    lists.set(
-      sourceId,
-      fetch(source.url)
-        .then((res) => {
-          if (!res.ok) throw new Error(`channel list: ${res.status}`);
-          return res.text();
-        })
-        .then(parseM3u)
-        .catch((err) => {
-          lists.delete(sourceId); // try again next time
-          throw err;
-        }),
-    );
-  }
-  return lists.get(sourceId);
-}
-
-function parseM3u(text) {
-  const lines = text.split(/\r?\n/);
-  const channels = [];
-  for (let i = 0; i < lines.length; i++) {
-    const info = lines[i];
-    if (!info.startsWith("#EXTINF")) continue;
-    // the stream address is the next line that is not another # line
-    let url = "";
-    for (let j = i + 1; j < lines.length && !url; j++) {
-      if (lines[j] && !lines[j].startsWith("#")) url = lines[j].trim();
-      else if (lines[j].startsWith("#EXTINF")) break;
-    }
-    // HLS only: YouTube pages and other kinds do not play in a <video>
-    if (!/^https:\/\/.+\.m3u8(\?|$)/i.test(url)) continue;
-    const attr = (key) => (info.match(new RegExp(`${key}="([^"]*)"`)) || [])[1] || "";
-    const name = info.slice(info.lastIndexOf(",") + 1).trim();
-    if (!name) continue;
-    channels.push({ name, logo: attr("tvg-logo"), group: attr("group-title") || "Other", url });
-  }
-  return channels;
+  whole ??= fetch(`${import.meta.env.BASE_URL}tv-channels.json`)
+    .then((res) => {
+      if (!res.ok) throw new Error(`channel list: ${res.status}`);
+      return res.json();
+    })
+    .catch((err) => {
+      whole = null; // try again next time
+      throw err;
+    });
+  return whole.then((channels) => (sourceId === "all" ? channels.slice() : channels.filter((c) => c.kind === sourceId)));
 }
 
 /**
