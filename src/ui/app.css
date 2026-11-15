@@ -4112,6 +4112,7 @@ img.live-tile-still {
 }
 .tv-picker-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 .tv-picker-tabs button {
@@ -4740,4 +4741,14 @@ body.side-tv-window {
 }
 .side-tv:fullscreen.cc-on .side-tv-name {
   bottom: calc(clamp(22px, 2.6vw, 44px) * 1.4 * 2 + 8px + 6px);
+}
+
+/* Turning your own phone in a videochat: your own picture fades out while the
+   camera and the tile take their new shape, then fades back in (VoiceRoom,
+   selfTurning). */
+.tile video.turn-fade {
+  transition: opacity 150ms ease;
+}
+.tile video.turn-fade.away {
+  opacity: 0;
 }

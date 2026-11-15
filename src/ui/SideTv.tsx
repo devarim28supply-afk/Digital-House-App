@@ -553,7 +553,7 @@ const LIST_MAX = 300;
 const isUs = (c: TvChannel) => /^(usa|united states)/i.test(c.group);
 
 /**
- * Every channel to choose from: the two playlists as tabs, a search box, and
+ * Every channel to choose from: the kinds (News, Sports...) as tabs, a search box, and
  * the channels (the USA first; ones that did not play in this browser last,
  * greyed). A click on one puts it on the side TV.
  */
@@ -567,7 +567,7 @@ function ChannelPicker(props: {
 }) {
   const [source, setSource] = createSignal<string>(SOURCES[0].id);
   const [search, setSearch] = createSignal("");
-  // loaded the first time the list is opened, then kept (tv.js keeps each playlist)
+  // loaded the first time the list is opened, then kept (tv.js keeps the list)
   const [channels, { refetch }] = createResource(
     () => (props.open ? source() : undefined),
     (id) => loadChannels(id) as Promise<TvChannel[]>,

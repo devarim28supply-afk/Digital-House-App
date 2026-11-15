@@ -541,7 +541,7 @@ const pickerTabs = picker.querySelector(".tabs");
 const pickerSearch = picker.querySelector("input");
 const pickerList = picker.querySelector(".list");
 let pickerScreen = null;
-let pickerSource = "free";
+let pickerSource = SOURCES[0].id;
 // T: whichever screen you look at most directly, showing or not
 // (the whole-wall screens are for screen sharing only, never TV)
 const facingScreen = () => nearestInView(SCREENS.filter((x) => !x.big));

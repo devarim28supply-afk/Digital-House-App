@@ -205,3 +205,14 @@
   .side-online .group-label,.members .group-label{margin:16px 12px 8px;font-size:13px}
   .side-online .side-tool,.members .side-tool{min-height:48px;font-size:1rem}
 }
+
+/* Turning the phone: while the screen changes shape, nothing glides to its new
+   place (data/mobileViewport.ts sets html[data-turning] for the moment of the
+   turn). Without this the call's pictures, the sidebars and the call's header
+   and buttons all slide across a screen that has already turned. */
+html[data-turning] *:not(.turn-fade),
+html[data-turning] *::before,
+html[data-turning] *::after {
+  transition: none !important;
+}
+/* (.turn-fade is your own picture's fade during the turn: that one glide is the point) */
