@@ -565,7 +565,7 @@ export function ServerSettings(props: {
             </Match>
 
             <Match when={page() === "channels"}>
-              <p class="set-note">Node Lounge and Living Room are in every server: they stay at the top and cannot be deleted. Your own channels can be renamed, moved and deleted.</p>
+              <p class="set-note">Node Lounge and Private Movie Theatre are in every server: they stay at the top and cannot be deleted. Your own channels can be renamed, moved and deleted.</p>
               <div class="ss-channels">
                 <For each={tiles()}>
                   {(c) => (

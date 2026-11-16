@@ -316,7 +316,7 @@ export const NODE_LOUNGE_TILE: Omit<Channel, "id" | "position"> = {
 /** A second, separate sitting room - its own Darkwood Room, warm instead of
  * Node Lounge's cold Matrix green, not the same space. */
 export const LIVING_ROOM_TILE: Omit<Channel, "id" | "position"> = {
-  name: "Living Room",
+  name: "Private Movie Theatre",
   kind: "room",
   image: "/livingroom-tile.svg",
   roomKey: "darkwood-living-room",
