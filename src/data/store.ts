@@ -292,10 +292,14 @@ export function roomUrlOf(channel: Channel, serverId: string) {
   return `${import.meta.env.BASE_URL}room.html?${q}`;
 }
 
+/** The built-in tiles' pictures (Kaalob, 2026-11-17): the same in every server, old and new. */
+const NODE_LOUNGE_IMAGE = "/node-lounge-tile.jpg";
+const MOVIE_THEATRE_IMAGE = "/movie-theatre-tile.jpg";
+
 export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
   name: "Node Lounge",
   kind: "room",
-  image: "/living.png",
+  image: NODE_LOUNGE_IMAGE,
   roomKey: "gestr-living",
 };
 
@@ -309,7 +313,7 @@ export const LIVING_TILE: Omit<Channel, "id" | "position"> = {
 export const NODE_LOUNGE_TILE: Omit<Channel, "id" | "position"> = {
   name: "Node Lounge",
   kind: "room",
-  image: "/living.png",
+  image: NODE_LOUNGE_IMAGE,
   roomKey: "darkwood-node-lounge",
 };
 
@@ -318,9 +322,16 @@ export const NODE_LOUNGE_TILE: Omit<Channel, "id" | "position"> = {
 export const LIVING_ROOM_TILE: Omit<Channel, "id" | "position"> = {
   name: "Private Movie Theatre",
   kind: "room",
-  image: "/livingroom-tile.svg",
+  image: MOVIE_THEATRE_IMAGE,
   roomKey: "darkwood-living-room",
 };
+
+/** A tile's picture as shown: a built-in tile always shows its own picture, whatever is stored. */
+export function tileImage(c: Pick<Channel, "roomKey" | "image">) {
+  if (c.roomKey === "gestr-living" || c.roomKey === "darkwood-node-lounge") return NODE_LOUNGE_IMAGE;
+  if (c.roomKey === "darkwood-living-room") return MOVIE_THEATRE_IMAGE;
+  return c.image;
+}
 
 /** The home server's built-in tiles, top to bottom, each with its own chat. */
 const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
@@ -847,8 +858,9 @@ export async function ensureServerTiles(sid: string, channels: Channel[], home: 
       const tileRef = doc(channelsRef, spec.roomKey!);
       if (!(await getDoc(tileRef)).exists()) await setDoc(tileRef, { ...spec, position });
       tile = { id: spec.roomKey!, ...spec, position };
-    } else if (tile.name !== spec.name || tile.position !== position) {
-      await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position });
+    } else if (tile.name !== spec.name || tile.position !== position || tile.image !== spec.image) {
+      // the built-in pictures are the same everywhere (Kaalob): an old one is replaced too
+      await updateDoc(doc(channelsRef, tile.id), { name: spec.name, position, image: spec.image });
     }
     const textMatches = channels
       .filter((c) => c.kind === "text" && c.parentId === tile.id)

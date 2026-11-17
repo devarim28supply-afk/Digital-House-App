@@ -37,6 +37,7 @@ import {
   setInviteCode,
   setServerOpen,
   imageSrc,
+  tileImage,
   hiddenFromSidebar,
   isBuiltInTile,
   removeServerMember,
@@ -1111,7 +1112,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                     aria-current={c.id === channelId() ? "true" : undefined}
                     onClick={() => pickChannel(c.id)}
                   >
-                    <img src={imageSrc(c.image)} alt="" draggable={false} />
+                    <img src={imageSrc(tileImage(c))} alt="" draggable={false} />
                     {/* no name over the picture (Kaalob, as in the desktop app): the name shows on hover */}
                     {/* round pictures of who is in this room, like Discord's voice list */}
                     <Show when={peopleIn(c).length}>
