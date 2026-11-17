@@ -1112,7 +1112,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                     onClick={() => pickChannel(c.id)}
                   >
                     <img src={imageSrc(c.image)} alt="" draggable={false} />
-                    <span class="room-tile-name">{c.name}</span>
+                    {/* no name over the picture (Kaalob, as in the desktop app): the name shows on hover */}
                     {/* round pictures of who is in this room, like Discord's voice list */}
                     <Show when={peopleIn(c).length}>
                       <span class="tile-people" title={peopleIn(c).map(nameOf).join(", ")}>
