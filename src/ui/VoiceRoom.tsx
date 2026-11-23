@@ -34,6 +34,7 @@ import {
   CURTAIN_COLOR_ATTR,
   CURTAIN_COLOR_KEY,
   Curtains,
+  DRESS_ATTRS,
   LIFT_ATTR,
   NEIGHBOR_ATTR,
   NEIGHBOR_LOOKS,
@@ -539,6 +540,10 @@ export function VoiceRoom(props: {
   }
   onCleanup(() => holdTimers.forEach((t) => window.clearTimeout(t)));
   const bump = () => setVersion((v) => v + 1);
+  // Curtains and blinds being dragged change many times a second. They have their own count, so
+  // only the curtains and the blinds are drawn again: counting them as a change to the call drew
+  // every tile again from nothing each time, and the whole call blinked (Kaalob).
+  const [dressVersion, setDressVersion] = createSignal(0);
   const audioHost = document.createElement("div");
   audioHost.hidden = true;
   document.body.appendChild(audioHost);
@@ -793,10 +798,13 @@ export function VoiceRoom(props: {
         RoomEvent.LocalTrackUnpublished,
         RoomEvent.TrackPublished,
         RoomEvent.TrackUnpublished,
-        RoomEvent.ParticipantAttributesChanged,
       ]) {
         next.on(event, bump);
       }
+      next.on(RoomEvent.ParticipantAttributesChanged, (changed) => {
+        if (Object.keys(changed).every((name) => DRESS_ATTRS.has(name))) setDressVersion((v) => v + 1);
+        else bump();
+      });
       await next.connect(pass.url, pass.token);
       // Settings > Voice & Video: the camera and microphone you picked. Told to
       // the call before anything is turned on, so the first use is that device.
@@ -1409,6 +1417,7 @@ export function VoiceRoom(props: {
   let blindsTimer = 0;
   const dressAttr = (p: TileInfo["participant"], name: string) => {
     version();
+    dressVersion();
     return p.attributes[name] || "";
   };
   const dressNumber = (text: string) => {

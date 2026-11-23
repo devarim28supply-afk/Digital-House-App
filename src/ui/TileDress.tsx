@@ -24,6 +24,8 @@ export const CURTAIN_COLOR_ATTR = "dh-curtain-color";
 export const NEIGHBOR_ATTR = "dh-neighbor";
 export const LIFT_ATTR = "dh-neighbor-lift";
 export const TILT_ATTR = "dh-neighbor-tilt";
+/** What a person sets on their own tile: these change many times a second while curtains or blinds are dragged. */
+export const DRESS_ATTRS = new Set([CURTAIN_ATTR, CURTAIN_COLOR_ATTR, NEIGHBOR_ATTR, LIFT_ATTR, TILT_ATTR]);
 /** kept in this browser for your next call (the neighbor window is not kept: Kaalob's rule) */
 export const CURTAIN_COLOR_KEY = "dh_curtain_color";
 
@@ -86,20 +88,14 @@ export function Curtains(props: { closed: number; color: string; onDrag?: (close
   // the outer side; as it opens it slides out by half the tile
   const off = () => `${-4 - (1 - c()) * 50.2}%`;
 
-  let from: { left: boolean; at: number; x: number; half: number; moved: boolean } | undefined;
+  // Held and dragged: the drag is followed on the whole page until the button (or the finger, or
+  // the touchpad) lets go. It does not hang on the piece that was grabbed: that piece changes
+  // under the pointer while the curtains move (the tab goes when they start to close), and a drag
+  // tied to it broke off, most of all on a MacBook's touchpad (Kaalob).
+  let from: { id: number; left: boolean; at: number; x: number; half: number; moved: boolean } | undefined;
   let at = 0;
-  function down(e: PointerEvent) {
-    if (!props.onDrag) return;
-    const root = (e.currentTarget as HTMLElement).closest(".dress-curtains")?.getBoundingClientRect();
-    if (!root || !root.width) return;
-    // not the tile's own drag (its place in the call, the phone's small self-view)
-    e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    at = c();
-    from = { left: e.clientX < root.left + root.width / 2, at, x: e.clientX, half: root.width / 2, moved: false };
-  }
   function move(e: PointerEvent) {
-    if (!from || !props.onDrag) return;
+    if (!from || e.pointerId !== from.id || !props.onDrag) return;
     const dx = e.clientX - from.x;
     if (!from.moved && Math.abs(dx) < 3) return;
     from.moved = true;
@@ -109,20 +105,39 @@ export function Curtains(props: { closed: number; color: string; onDrag?: (close
     props.onDrag(at, false);
   }
   function up(e: PointerEvent) {
+    if (!from || e.pointerId !== from.id) return;
     const was = from;
-    from = undefined;
-    setDragging(false);
-    if (!was?.moved || !props.onDrag) return;
-    // a drag, not a tap: the tile must not take it for a double-tap
-    e.stopPropagation();
+    release();
+    if (!was.moved || !props.onDrag) return;
     // let go near an end: all the way open, or all the way closed
     props.onDrag(at > 0.94 ? 1 : at < 0.06 ? 0 : at, true);
   }
+  function release() {
+    from = undefined;
+    setDragging(false);
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", up, true);
+  }
+  onCleanup(release);
+  function down(e: PointerEvent) {
+    if (!props.onDrag || from || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const root = (e.currentTarget as HTMLElement).closest(".dress-curtains")?.getBoundingClientRect();
+    if (!root || !root.width) return;
+    // not the tile's own drag (its place in the call, the phone's small self-view), no text
+    // marked, no picture dragged out of the page
+    e.stopPropagation();
+    e.preventDefault();
+    at = c();
+    from = { id: e.pointerId, left: e.clientX < root.left + root.width / 2, at, x: e.clientX, half: root.width / 2, moved: false };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+  }
   const grab = {
     onPointerDown: down,
-    onPointerMove: move,
-    onPointerUp: up,
-    onPointerCancel: up,
+    // after a drag, the tile must not take the letting go for a double-tap
+    onPointerUp: (e: PointerEvent) => from?.moved && e.stopPropagation(),
     // the tile itself is dragged to another place in the call: not from here
     onDragStart: (e: DragEvent) => {
       e.preventDefault();
@@ -135,13 +150,16 @@ export function Curtains(props: { closed: number; color: string; onDrag?: (close
       {/* the picture between the curtains blurs and darkens as they close */}
       <Show when={c() > 0}>
         <div class="dress-dim" />
+      </Show>
+      {/* yours stay on the page while open too (off the tile), so nothing comes and goes during a drag */}
+      <Show when={c() > 0 || props.onDrag}>
         <img class="dress-cloth left" src={`${BASE}curtain-left.png`} alt="" draggable={false} style={{ left: off(), filter: dye() }} {...grab} />
         <img class="dress-cloth right" src={`${BASE}curtain-right.png`} alt="" draggable={false} style={{ right: off(), filter: dye() }} {...grab} />
       </Show>
       {/* open, and yours: a tab at each edge to pull them out by */}
-      <Show when={props.onDrag && c() < 0.02}>
-        <span class="dress-tab left" title="Drag to close your curtains" style={{ background: CURTAIN_COLORS[color()] }} {...grab} />
-        <span class="dress-tab right" title="Drag to close your curtains" style={{ background: CURTAIN_COLORS[color()] }} {...grab} />
+      <Show when={props.onDrag}>
+        <span class="dress-tab left" classList={{ gone: c() >= 0.02 }} title="Drag to close your curtains" style={{ background: CURTAIN_COLORS[color()] }} {...grab} />
+        <span class="dress-tab right" classList={{ gone: c() >= 0.02 }} title="Drag to close your curtains" style={{ background: CURTAIN_COLORS[color()] }} {...grab} />
       </Show>
     </div>
   );
@@ -289,25 +307,35 @@ export function NeighborFront(props: { look: NeighborLook; lift?: number; tilt?:
 
   // your own window: the blinds' bottom bar is dragged up and down. The pull is counted from
   // where the bar was when it was grabbed, so nothing is lost when the hand is faster than the picture.
-  let pull: { y: number; lift: number; travel: number } | undefined;
+  // The pull is followed on the whole page until it is let go (as the curtains' drag is).
+  let pull: { id: number; y: number; lift: number; travel: number } | undefined;
   let at = 0;
-  function down(e: PointerEvent) {
-    if (!props.onLift) return;
-    e.stopPropagation();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    at = liftNow();
-    pull = { y: e.clientY, lift: at, travel: (size().h || 1) * (1 - 0.045 - 0.05) };
-  }
   function move(e: PointerEvent) {
-    if (!pull || !props.onLift) return;
+    if (!pull || e.pointerId !== pull.id || !props.onLift) return;
     at = clamp(pull.lift - (e.clientY - pull.y) / pull.travel, 0, NEIGHBOR_MAX_LIFT);
     props.onLift(at, false);
   }
   function up(e: PointerEvent) {
-    if (!pull) return;
-    pull = undefined;
-    e.stopPropagation();
+    if (!pull || e.pointerId !== pull.id) return;
+    release();
     props.onLift?.(at, true);
+  }
+  function release() {
+    pull = undefined;
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", up, true);
+  }
+  onCleanup(release);
+  function down(e: PointerEvent) {
+    if (!props.onLift || pull || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.stopPropagation();
+    e.preventDefault();
+    at = liftNow();
+    pull = { id: e.pointerId, y: e.clientY, lift: at, travel: (size().h || 1) * (1 - 0.045 - 0.05) };
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
   }
 
   const blindsBox = { left: pct(BLINDS.x / W), top: pct(BLINDS.y / H), width: pct(BLINDS.w / W), height: pct(BLINDS.h / H) };
@@ -338,9 +366,7 @@ export function NeighborFront(props: { look: NeighborLook; lift?: number; tilt?:
             title="Drag to pull your blinds up or down"
             style={{ top: `calc(${pct(0.045 + (1 - 0.045 - 0.05) * (1 - liftNow()))} - 7px)` }}
             onPointerDown={down}
-            onPointerMove={move}
-            onPointerUp={up}
-            onPointerCancel={up}
+            onPointerUp={(e) => e.stopPropagation()}
             onDblClick={(e) => e.stopPropagation()}
             onDragStart={(e) => {
               e.preventDefault();

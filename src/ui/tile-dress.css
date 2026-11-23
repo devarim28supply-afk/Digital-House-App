@@ -132,6 +132,11 @@
   position: absolute;
   inset: -12px -10px;
 }
+/* the curtains have started to close: no tab (it stays on the page, so a drag that began on it goes on) */
+.dress-tab.gone {
+  visibility: hidden;
+  pointer-events: none;
+}
 .dress-tab.left {
   left: 0;
   border-radius: 0 6px 6px 0;
