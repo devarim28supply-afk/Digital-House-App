@@ -2,6 +2,7 @@ import { For, type JSX, Match, Show, Switch, createEffect, createSignal } from "
 
 import { FaceUnlockSetting } from "../auth/FaceOffer";
 import { desktopSupported, enableDesktopAlerts, prefs as alertPrefs, setPrefs as setAlertPrefs } from "../data/alerts";
+import { callLook, pictureForCall, setCallLook } from "../data/callLook";
 import { ACCENTS, accent, mode, saveAccent, saveMode } from "../data/layoutTheme";
 import { forgetDeviceSettings, setUserPrefs, userPrefs } from "../data/prefs";
 import { AVAILABILITY_OPTIONS, type Availability, availabilityStatus } from "../data/status";
@@ -12,6 +13,7 @@ import { Modal } from "./Modal";
 import { faceStyle, faceText } from "./Shell";
 import "./accessibility.css";
 import "./settings.css";
+import "./call-look.css";
 
 /**
  * Settings (Kaalob: neat and clean, in the style of Discord's, with
@@ -103,6 +105,40 @@ export function Settings(props: {
   const titleOf = (id: Page) => groups.flatMap((g) => g.items).find((i) => i.id === id)?.label ?? "";
 
   /** One setting on a page: its name, the control, and a line saying what it does. */
+  // ---- Appearance: your own videochat look (data/callLook.ts), as in the desktop app ----
+  const BACK_COLORS = ["#000000", "#101418", "#171717", "#262626", "#404040", "#f5f5f5", "#7f1d1d", "#9a3412", "#854d0e", "#166534", "#115e59", "#0c4a6e", "#1e40af", "#5b21b6", "#86198f", "#9d174d"];
+  const BUTTON_COLORS = ["#ffffff", "#d4d4d4", "#737373", "#262626", "#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#d946ef", "#ec4899"];
+  const DOCK_PARTS = [
+    { id: "button", label: "Button", usual: "var(--panel-3)" },
+    { id: "icon", label: "Icon", usual: "var(--text)" },
+    { id: "glow", label: "Glow when on", usual: "var(--green)" },
+    { id: "leave", label: "Disconnect", usual: "var(--red)" },
+  ] as const;
+  const [dockOpen, setDockOpen] = createSignal<(typeof DOCK_PARTS)[number]["id"] | "">("");
+  const [lookError, setLookError] = createSignal("");
+  let pictureInput: HTMLInputElement | undefined;
+  async function pickCallPicture(file?: File) {
+    if (!file) return;
+    try {
+      setCallLook({ picture: await pictureForCall(file), kind: "picture" });
+      setLookError("");
+    } catch {
+      setLookError("That picture could not be used. Try another one.");
+    }
+  }
+  /** Any one color: ready ones to click, and the browser's own picker for every other color. */
+  const ColorPick = (p: { value: string; colors: string[]; onPick: (hex: string) => void }) => (
+    <>
+      <div class="look-swatches">
+        <For each={p.colors}>{(c) => <button type="button" class="look-swatch" style={{ background: c }} aria-pressed={p.value === c} title="Use this color" aria-label={`Use the color ${c}`} onClick={() => p.onPick(c)} />}</For>
+      </div>
+      <label class="look-any">
+        <input type="color" value={p.value || "#808080"} onInput={(e) => p.onPick(e.currentTarget.value)} />
+        Any other color
+      </label>
+    </>
+  );
+
   const Row = (p: { label: string; hint?: string; children: JSX.Element }) => (
     <div class="set-row">
       <b>{p.label}</b>
@@ -337,7 +373,63 @@ export function Settings(props: {
                   </For>
                 </div>
               </Row>
-              <p class="set-note">Both change right away and stay in this browser.</p>
+              <Row label="Videochat background" hint="Behind the tiles in a videochat and, darker, behind the channel name above it. Only you see it, in this browser.">
+                <Pick
+                  value={callLook().kind}
+                  options={[
+                    { value: "grid", label: "Grid" },
+                    { value: "color", label: "Solid color" },
+                    { value: "picture", label: "Your own picture" },
+                  ]}
+                  onPick={(kind) => (kind === "picture" && !callLook().picture ? pictureInput?.click() : setCallLook({ kind }))}
+                />
+                <input ref={pictureInput} type="file" accept="image/*" hidden onChange={(e) => { void pickCallPicture(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
+                <Show when={callLook().kind === "color"}>
+                  <div style={{ "margin-top": "12px" }}>
+                    <ColorPick value={callLook().color} colors={BACK_COLORS} onPick={(color) => setCallLook({ color })} />
+                  </div>
+                </Show>
+                <Show when={callLook().kind === "picture"}>
+                  <div class="look-picture">
+                    <i style={{ "background-image": `url("${callLook().picture}")` }} aria-hidden="true" />
+                    <button type="button" class="btn" onClick={() => pictureInput?.click()}>Choose another picture</button>
+                  </div>
+                </Show>
+                <Show when={lookError()}><p class="look-error" role="alert">{lookError()}</p></Show>
+              </Row>
+              <Row label="Videochat buttons" hint="Your own colors for the buttons under a videochat. Only you see them, in this browser.">
+                <div class="look-preview voice" aria-hidden="true">
+                  <div class="dock">
+                    <button type="button" class="dock-btn" tabIndex={-1}>Share</button>
+                    <button type="button" class="dock-btn" aria-pressed="true" tabIndex={-1}>Camera</button>
+                    <button type="button" class="dock-btn leave" tabIndex={-1}>Disconnect</button>
+                  </div>
+                </div>
+                <div class="look-parts">
+                  <For each={DOCK_PARTS}>
+                    {(part) => (
+                      <button type="button" class="look-part" aria-pressed={dockOpen() === part.id} title="Change this color" onClick={() => setDockOpen(dockOpen() === part.id ? "" : part.id)}>
+                        <i style={{ background: callLook()[part.id] || part.usual }} aria-hidden="true" />
+                        {part.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+                <For each={DOCK_PARTS.filter((part) => part.id === dockOpen())}>
+                  {(part) => (
+                    <>
+                      <ColorPick value={callLook()[part.id]} colors={BUTTON_COLORS} onPick={(hex) => setCallLook({ [part.id]: hex })} />
+                      <Show when={callLook()[part.id]}>
+                        <button type="button" class="btn" style={{ "margin-top": "8px" }} onClick={() => setCallLook({ [part.id]: "" })}>Back to the usual color</button>
+                      </Show>
+                    </>
+                  )}
+                </For>
+                <Show when={!dockOpen() && DOCK_PARTS.some((part) => callLook()[part.id])}>
+                  <button type="button" class="btn" onClick={() => setCallLook({ button: "", icon: "", glow: "", leave: "" })}>All back to the usual colors</button>
+                </Show>
+              </Row>
+              <p class="set-note">These change right away and stay in this browser.</p>
             </Match>
 
             <Match when={page() === "access"}>

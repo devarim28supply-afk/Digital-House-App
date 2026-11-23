@@ -1,0 +1,243 @@
+/* Your own videochat look (data/callLook.ts, Settings > Appearance), as in the desktop app. */
+
+/* behind the tiles, and behind the channel's name above them (darker there) */
+.main.own-call-bg {
+  background: var(--call-bg-color, transparent) var(--call-bg-image, none) center / cover no-repeat;
+}
+.main.own-call-bg > .main-head {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* your own colors for the buttons under the videochat: they win over every theme */
+:root[data-dock-button] .voice .dock .dock-btn:not(.leave) {
+  background: var(--dock-button) !important;
+}
+:root[data-dock-icon] .voice .dock .dock-btn:not(.leave):not([aria-pressed]) {
+  color: var(--dock-icon) !important;
+}
+:root[data-dock-glow] .voice .dock .dock-btn[aria-pressed="true"]:not(.leave) {
+  border-color: var(--dock-glow) !important;
+  color: var(--dock-glow) !important;
+  box-shadow: 0 0 0 1px var(--dock-glow), 0 0 18px color-mix(in srgb, var(--dock-glow) 28%, transparent) !important;
+}
+:root[data-dock-leave] .voice .dock .dock-btn.leave {
+  color: var(--dock-leave) !important;
+  background: color-mix(in srgb, var(--dock-leave) 20%, #000) !important;
+  border-color: color-mix(in srgb, var(--dock-leave) 45%, #000) !important;
+}
+
+/* ---- Settings > Appearance: picking them ---- */
+.look-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.look-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid var(--line-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.look-swatch:hover {
+  border-color: var(--dim);
+}
+.look-swatch[aria-pressed="true"] {
+  border-color: var(--text);
+}
+.look-any {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.look-any input[type="color"] {
+  width: 44px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.look-picture {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.look-picture i {
+  display: block;
+  width: 160px;
+  height: 90px;
+  border-radius: 8px;
+  background: #000 center / cover no-repeat;
+}
+.look-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.look-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-3);
+  font-size: 13px;
+  cursor: pointer;
+}
+.look-part[aria-pressed="true"] {
+  border-color: var(--green);
+}
+.look-part i {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+}
+.look-preview {
+  flex: none;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.look-preview .dock {
+  justify-content: flex-start;
+  pointer-events: none;
+}
+.look-preview .dock-btn {
+  min-width: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.look-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--red);
+}
+
+/* ---- activity, as in the desktop app: a custom status and the game someone plays ---- */
+.member-doing {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+.profile-note {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #e8eee9;
+}
+.profile-playing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.profile-playing > i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  font-style: normal;
+  font-size: 20px;
+}
+.profile-playing > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.profile-playing b {
+  font-size: 14px;
+  line-height: 1.3;
+  color: #e8eee9;
+}
+.profile-playing small {
+  font-size: 12px;
+  color: #bebec7;
+}
+.self-note {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.self-note-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 5px;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.self-note-open:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+.self-note-open span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-emojis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.note-emojis button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font-size: 18px;
+  cursor: pointer;
+}
+.note-emojis button:hover {
+  background: var(--panel-3);
+}
+.note-emojis button[aria-pressed="true"] {
+  border-color: var(--green);
+}
+.note-after {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.note-after .btn[aria-pressed="true"] {
+  border-color: var(--green);
+  color: var(--green);
+}
+.note-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.note-actions > span {
+  flex: 1;
+}

@@ -1,4 +1,5 @@
 
+import { ownCallBackground } from "../data/callLook";
 import { Notifications, NotificationList, type Notice } from "./Notifications";
 import { SelfControls } from "./SelfControls";
 import { availabilityStatus, availabilityLabel } from "../data/status";
@@ -12,6 +13,9 @@ import {
   type Emoji,
   ONLINE_WINDOW_MS,
   type Presence,
+  type Activity,
+  noteNow,
+  playedFor,
   type Profile,
   type Server,
   addServerMembers,
@@ -77,6 +81,7 @@ import { SideTv } from "./SideTv";
 
 import { CallPopup, type IncomingCall } from "./CallPopup";
 import { buzz, desktopNotify, pushAlert } from "../data/alerts";
+import "./call-look.css";
 import "./app.css";
 
 const LAST_SERVER_KEY = "dh_last_server";
@@ -700,6 +705,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     const p = presence().get(uid);
     return p?.where && now() - p.whereAt < ONLINE_WINDOW_MS ? p.where : "";
   };
+  /** someone's custom status and game, while they show as online (as in the desktop app) */
+  const noteOf = (uid: string) => (isOnline(uid) ? noteNow(presence().get(uid)) : undefined);
+  const gameOf = (uid: string) => (isOnline(uid) ? presence().get(uid)?.activity : undefined);
   const onlineHere = () => server()?.memberUids.filter(isOnline) ?? [];
   const offlineHere = () => server()?.memberUids.filter((uid) => !isOnline(uid)) ?? [];
   // Who is streaming in this server right now (stream mode): their LIVE tiles.
@@ -1179,7 +1187,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           )}
         </Show>
         <footer class={`me self-nameplate ${nameplateClass(customization(profiles().get(props.uid)?.customization).nameplate)}`}>
-          <SelfControls uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onProfile={event => openCard(props.uid, event)} onAccount={() => setModal("me")} />
+          <SelfControls note={noteNow(presence().get(props.uid))} uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onProfile={event => openCard(props.uid, event)} onAccount={() => setModal("me")} />
         </footer>
       </aside>
 
@@ -1188,6 +1196,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       {/* ---- the channel ---- */}
       <main
         class="main"
+        classList={{ "own-call-bg": inThisCall() && ownCallBackground() }}
         onTouchStart={startCallSwipe}
         on:touchmove={moveCallSwipe}
         onTouchEnd={endCallSwipe}
@@ -1414,6 +1423,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                 profiles={profiles()}
                 nameOf={nameOf}
                 whereOf={whereOf}
+                noteOf={noteOf}
+                gameOf={gameOf}
                 online
                 onPick={openCard}
               />
@@ -1476,6 +1487,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
                   profiles={profiles()}
                   nameOf={nameOf}
                   whereOf={whereOf}
+                  noteOf={noteOf}
+                  gameOf={gameOf}
                   online
                   onPick={openCard}
                 />
@@ -1511,6 +1524,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             onEdit={c().uid === props.uid ? () => { setCard(undefined); setCustomizeOpen(true); } : undefined}
             onMessage={c().uid !== props.uid ? () => void startDm(c().uid) : undefined}
             where={whereOf(c().uid)}
+            note={noteOf(c().uid)}
+            game={gameOf(c().uid)}
             owner={server()?.ownerUid === c().uid}
             onClose={() => setCard(undefined)}
           />
@@ -1662,6 +1677,8 @@ export function ProfileCard(props: {
   name: string;
   online: boolean;
   where: string;
+  note?: { emoji: string; text: string };
+  game?: Activity;
   owner: boolean;
   /** start (or open) a direct message with them */
   onMessage?: () => void;
@@ -1759,11 +1776,24 @@ export function ProfileCard(props: {
               <span class="profile-badge">Owner</span>
             </Show>
           </h3>
-          <p class="profile-user">@{props.profile?.username || "member"}</p></div>
+          <p class="profile-user">@{props.profile?.username || "member"}</p>
+          <Show when={props.online && props.note}>{(note) => <p class="profile-note">{`${note().emoji} ${note().text}`.trim()}</p>}</Show></div>
           <div class="profile-section">
             <span class="group-label">Status</span>
             <p>{props.online ? props.where || "Online" : "Offline"}</p>
           </div>
+          <Show when={props.online && props.game}>
+            {(game) => (
+              <div class="profile-section profile-playing">
+                <i aria-hidden="true">🎮</i>
+                <span>
+                  <span class="group-label">{game().on ? `Playing on ${game().on}` : "Playing"}</span>
+                  <b>{game().name}</b>
+                  <Show when={game().since > 0}><small>{playedFor(game().since)}</small></Show>
+                </span>
+              </div>
+            )}
+          </Show>
           <Show when={props.onEdit}><button class="btn primary profile-message profile-edit" type="button" onClick={() => props.onEdit?.()}>✎ Edit Profile</button></Show>
           <Show when={props.onMessage}>
             <button class="btn primary profile-message" type="button" onClick={() => props.onMessage?.()}>
@@ -1784,6 +1814,9 @@ function MemberGroup(props: {
   online?: boolean;
   /** where an online person is ("In Living Room", "Videochat · …") */
   whereOf?: (uid: string) => string;
+  /** their custom status, otherwise the game they play */
+  noteOf?: (uid: string) => { emoji: string; text: string } | undefined;
+  gameOf?: (uid: string) => Activity | undefined;
   /** clicked: show their profile card */
   onPick?: (uid: string, at: MouseEvent) => void;
   /** the server, for its roles: a person's name takes the color of their top role */
@@ -1812,6 +1845,14 @@ function MemberGroup(props: {
               </span>
               <Show when={props.online && props.whereOf?.(uid)}>
                 {(where) => <small class="member-where">{where()}</small>}
+              </Show>
+              <Show when={props.online}>
+                <Show
+                  when={props.noteOf?.(uid)}
+                  fallback={<Show when={props.gameOf?.(uid)}>{(game) => <small class="member-doing">Playing <b>{game().name}</b>{game().on ? ` · ${game().on}` : ""}</small>}</Show>}
+                >
+                  {(note) => <small class="member-doing">{`${note().emoji} ${note().text}`.trim()}</small>}
+                </Show>
               </Show>
             </span>
           </button>
