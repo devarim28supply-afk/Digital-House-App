@@ -1,11 +1,12 @@
 /* Your own videochat look (data/callLook.ts, Settings > Appearance), as in the desktop app. */
 
 /* behind the tiles, and behind the channel's name above them (darker there) */
-.main.own-call-bg {
-  background: var(--call-bg-color, transparent) var(--call-bg-image, none) center / cover no-repeat;
+/* (it wins over every theme's own background for this part, the grid among them) */
+:root .shell .main.own-call-bg {
+  background: var(--call-bg-color, transparent) var(--call-bg-image, none) center / cover no-repeat !important;
 }
-.main.own-call-bg > .main-head {
-  background: rgba(0, 0, 0, 0.55);
+:root .shell .main.own-call-bg > .main-head {
+  background: rgba(0, 0, 0, 0.55) !important;
 }
 
 /* your own colors for the buttons under the videochat: they win over every theme */
