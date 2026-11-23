@@ -31,6 +31,8 @@ import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, livingSidePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
 import "./call-status.css";
+import "./call-look.css";
+import { setSidebarsLocked, sidebarsLocked } from "../data/sidebarLock";
 
 /** Why a call ended that must NOT be answered by joining again: you chose it, or someone else did. */
 const NO_REJOIN = new Set<DisconnectReason>([
@@ -1812,8 +1814,29 @@ export function VoiceRoom(props: {
       }
       cams.push({ key: `${p.identity}:cam`, participant: p, publication: p.getTrackPublication(Track.Source.Camera), screen: false });
     }
-    return [...screens, ...cams];
+    // the order you gave them by dragging (swapTiles); tiles you never moved keep the usual order
+    const usual = [...screens, ...cams];
+    const mine = tileOrder();
+    if (!mine.length) return usual;
+    const place = (t: TileInfo) => {
+      const at = mine.indexOf(t.key);
+      return at < 0 ? mine.length + usual.indexOf(t) : at;
+    };
+    return [...usual].sort((a, b) => place(a) - place(b));
   });
+  // Drag a tile onto another one and the two switch places (as in the desktop app). Only on your
+  // own screen, for this call.
+  const [tileOrder, setTileOrder] = createSignal<string[]>([]);
+  const [dragKey, setDragKey] = createSignal<string>();
+  const [dropKey, setDropKey] = createSignal<string>();
+  function swapTiles(from: string, to: string) {
+    const keys = tiles().map((t) => t.key);
+    const a = keys.indexOf(from);
+    const b = keys.indexOf(to);
+    if (a < 0 || b < 0 || a === b) return;
+    [keys[a], keys[b]] = [keys[b], keys[a]];
+    setTileOrder(keys);
+  }
 
   // the name on a tile: their chosen videochat name, else their name
   const nameOf = (p: Participant) => {
@@ -2474,6 +2497,17 @@ export function VoiceRoom(props: {
             return (
               <Tile
                 style={placeOf(tile.key, cellOf(i()))}
+                swap={
+                  layout().phone || props.viewOnly
+                    ? undefined
+                    : {
+                        over: dropKey() === tile.key && dragKey() !== tile.key,
+                        start: () => setDragKey(tile.key),
+                        enter: () => dragKey() && setDropKey(tile.key),
+                        end: () => { setDragKey(undefined); setDropKey(undefined); },
+                        drop: () => { const from = dragKey(); if (from) swapTiles(from, tile.key); },
+                      }
+                }
                 onDblClick={() => openBig(tile.key)}
                 onPress={layout().phone && tile.screen ? () => enterShare(tile.key) : undefined}
                 shareSlot={onSharePage(tile.key)}
@@ -2702,6 +2736,26 @@ export function VoiceRoom(props: {
           <p class="form-error voice-error">{error()}</p>
         </Show>
         <div class="dock" classList={{ hidden: Boolean(props.viewOnly) }}>
+          {/* Lock mode, as in the desktop app: the sidebars stop sliding in from the edges; click again to let them */}
+          <Show when={!layout().phone && !props.viewOnly}>
+            <button
+              type="button"
+              class="dock-btn icon-only"
+              aria-pressed={sidebarsLocked() ? true : undefined}
+              title={sidebarsLocked() ? "Unlock: let the sidebars slide in again" : "Lock: keep the sidebars from sliding in"}
+              aria-label={sidebarsLocked() ? "Unlock the sidebars" : "Lock the sidebars"}
+              onClick={() => setSidebarsLocked(!sidebarsLocked())}
+            >
+              <span class="dock-glyph" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="11" width="14" height="10" rx="2" />
+                  <path d={sidebarsLocked() ? "M8 11V7a4 4 0 0 1 8 0v4" : "M8 11V7a4 4 0 0 1 7.6-1.8"} />
+                </svg>
+              </span>
+              <span class="dock-word">{sidebarsLocked() ? "Locked" : "Lock"}</span>
+              <span class="dock-full">{sidebarsLocked() ? "Locked" : "Lock"}</span>
+            </button>
+          </Show>
           {/* mic and camera: an icon, not words (Kaalob). The words are the tooltip. */}
           <button type="button" class="dock-btn icon-only onoff" aria-pressed={micOn()} title={micOn() ? "Mic on" : "Mic off"} aria-label={micOn() ? "Mic on" : "Mic off"} onClick={() => void toggle("mic")}>
             <DockFace kind={micOn() ? "mic" : "mic-off"} word={micOn() ? "Mic" : "Muted"} full={micOn() ? "Mic on" : "Mic off"} />
@@ -3188,6 +3242,8 @@ function RoomViewTile(props: {
 }
 
 function Tile(props: {
+  /** drag this tile onto another one and the two switch places (not on a phone) */
+  swap?: { over: boolean; start: () => void; enter: () => void; end: () => void; drop: () => void };
   onDblClick: () => void;
   /** a single tap that did not turn into a drag. Phone shares use this to enter. */
   onPress?: () => void;
@@ -3461,6 +3517,7 @@ function Tile(props: {
         attention: Boolean(props.flashing),
         zoomed: props.zoomed,
         pip: props.pip,
+        "swap-over": Boolean(props.swap?.over),
         dragging: Boolean(pipDrag()),
         touched: touched(),
       }}
@@ -3468,6 +3525,25 @@ function Tile(props: {
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
+      draggable={Boolean(props.swap) && !props.pip}
+      onDragStart={(e) => {
+        if (!props.swap) return;
+        e.dataTransfer?.setData("text/plain", "tile");
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+        props.swap.start();
+      }}
+      onDragOver={(e) => {
+        if (!props.swap) return;
+        e.preventDefault();
+        props.swap.enter();
+      }}
+      onDrop={(e) => {
+        if (!props.swap) return;
+        e.preventDefault();
+        props.swap.drop();
+        props.swap.end();
+      }}
+      onDragEnd={() => props.swap?.end()}
       onDblClick={props.onDblClick}
       onClick={() => props.onRemove && touchTile()}
       onPointerDown={pipDown}

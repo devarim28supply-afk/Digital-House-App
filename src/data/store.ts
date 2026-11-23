@@ -40,7 +40,7 @@ function logged<T>(work: Promise<T>, action: AuditAction, info: { serverId?: str
  *
  *   profiles/{uid}       name, username, color,          everyone approved reads
  *                        photo, banner, background        your card's pictures
- *   presence/{uid}       lastSeen                         heartbeat, self-written
+ *   presence/{uid}       lastSeen, activity, note                         heartbeat, self-written
  *   servers/{sid}        name, ownerUid, memberUids[]     only its members read
  *                        banner? (a picture URL across the top of the channels)
  *     channels/{cid}     name, kind "text"|"voice"|"room", position
@@ -466,7 +466,33 @@ export type Presence = {
   whereSid?: string;
   streaming?: Streaming;
   calling?: Calling;
+  /** the game they play (their desktop app saw it running, or their console says so). on: "" for a computer, else "Xbox", "PS5"... */
+  activity?: Activity;
+  /** their custom status: a line of their own; until: when it clears itself (ms), 0 for never */
+  note?: StatusNote;
 };
+export type Activity = { name: string; since: number; on: string };
+export type StatusNote = { emoji: string; text: string; until: number };
+
+/** Someone's custom status, if it has not cleared itself yet. */
+export function noteNow(p?: Presence): { emoji: string; text: string } | undefined {
+  const n = p?.note;
+  if (!n || (!n.text && !n.emoji)) return undefined;
+  if (n.until && n.until < Date.now()) return undefined;
+  return { emoji: n.emoji, text: n.text };
+}
+
+/** "for 5 min", "for 2 h 10 min": how long a game has been played. */
+export function playedFor(since: number): string {
+  const min = Math.floor((Date.now() - since) / 60_000);
+  if (min < 1) return "just started";
+  if (min < 60) return `for ${min} min`;
+  return `for ${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ""}`;
+}
+
+/** Your custom status (as in the desktop app). until: when it clears itself (ms), 0 for never. */
+export const saveNote = (uid: string, emoji: string, text: string, until: number) => setDoc(doc(db, "presence", uid), { note: { emoji, text, until } }, { merge: true });
+export const clearNote = (uid: string) => setDoc(doc(db, "presence", uid), { note: deleteField() }, { merge: true });
 
 /** Heartbeat for this app; setWhere("") when you are not in a call or room. */
 export function startPresence(uid: string) {
@@ -555,6 +581,14 @@ export function watchPresence(cb: (presence: Map<string, Presence>) => void): Un
                       serverName: String(data.calling.serverName ?? ""),
                       at: Number(data.calling.at) || 0,
                     }
+                  : undefined,
+              activity:
+                typeof data.activity?.name === "string" && data.activity.name
+                  ? { name: data.activity.name as string, since: Number(data.activity.since) || 0, on: typeof data.activity.on === "string" ? (data.activity.on as string) : "" }
+                  : undefined,
+              note:
+                typeof data.note?.text === "string"
+                  ? { emoji: typeof data.note.emoji === "string" ? (data.note.emoji as string) : "", text: data.note.text as string, until: Number(data.note.until) || 0 }
                   : undefined,
             },
           ];
