@@ -1,5 +1,7 @@
 
 import { ownCallBackground } from "../data/callLook";
+import { inviteCodeIn, inviteDoor, inviteFieldFor, inviteLink, setJoinedServerIds, type InviteInfo } from "../data/invites";
+import { InviteCard } from "./InviteCard";
 import { sidebarsLocked } from "../data/sidebarLock";
 import { Notifications, NotificationList, type Notice } from "./Notifications";
 import { SelfControls } from "./SelfControls";
@@ -455,6 +457,22 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       openServer(id);
       setPendingJoin("");
     }
+  });
+  // Invite cards (ui/InviteCard.tsx): they know which servers you are in, and their button opens one
+  createEffect(() => setJoinedServerIds(new Set(servers().map((s) => s.id))));
+  inviteDoor.open = (id) => (servers().some((s) => s.id === id) ? openServer(id) : setPendingJoin(id));
+  onCleanup(() => (inviteDoor.open = undefined));
+  // An invite link opened in the browser (…/app/?invite=CODE): its card, in a window. The code is
+  // taken off the address, so a reload does not ask again.
+  const [linkInvite, setLinkInvite] = createSignal<{ code: string; info?: InviteInfo }>();
+  onMount(() => {
+    const code = inviteCodeIn(location.href);
+    if (!code) return;
+    const url = new URL(location.href);
+    url.searchParams.delete("invite");
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+    setLinkInvite({ code });
+    void inviteFieldFor(inviteLink(code)).then((info) => linkInvite()?.code === code && setLinkInvite({ code, info }));
   });
   function goDms() {
     setDmHome(true);
@@ -1582,6 +1600,11 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         joinedIds={servers().map((x) => x.id)}
         onClose={() => setModal("")}
       />
+      <Modal title="Server invite" open={!!linkInvite()} onClose={() => setLinkInvite(undefined)}>
+        <Show when={linkInvite()} keyed>
+          {(invite) => <InviteCard code={invite.code} info={invite.info} uid={props.uid} onDone={() => setLinkInvite(undefined)} />}
+        </Show>
+      </Modal>
       <JoinServerDialog
         open={modal() === "join"}
         servers={servers()}
@@ -2117,6 +2140,7 @@ export function InviteCodeField(props: { server?: Server }) {
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [copied, setCopied] = createSignal(false);
+  const [copiedLink, setCopiedLink] = createSignal(false);
 
   async function mint() {
     if (!props.server) return;
@@ -2156,6 +2180,32 @@ export function InviteCodeField(props: { server?: Server }) {
         </button>
       </div>
       <small class="field-hint">An approved member enters this on the # button to join. A new code replaces the old one.</small>
+      <Show when={props.server?.inviteCode}>
+        {(code) => (
+          <>
+            <span>Invite link</span>
+            <div class="invite-row">
+              <code class="invite-code invite-link-text">{inviteLink(code())}</code>
+              <button
+                class="btn"
+                type="button"
+                onClick={() =>
+                  void navigator.clipboard.writeText(inviteLink(code())).then(
+                    () => {
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 1500);
+                    },
+                    () => setError("Could not copy. Select the link and copy it."),
+                  )
+                }
+              >
+                {copiedLink() ? "Copied" : "Copy link"}
+              </button>
+            </div>
+            <small class="field-hint">Paste this link in a chat or a direct message. It shows as a card with this server’s banner, name and an Accept button.</small>
+          </>
+        )}
+      </Show>
       <Show when={error()}>
         <p class="form-error">{error()}</p>
       </Show>
