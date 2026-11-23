@@ -535,7 +535,7 @@ export function Settings(props: {
                 value={userPrefs().gameTools}
                 onChange={(on) => setUserPrefs({ gameTools: on })}
               />
-              <p class="set-note">Each tool is its own web page, shown inside the sidebar. Make the sidebar bigger with its size button, or drag its inner edge. The GTA 6 map opens in a new tab: its site does not allow itself inside another page.</p>
+              <p class="set-note">Each tool is its own web page, shown inside the sidebar. Make the sidebar bigger with its size button, or drag its inner edge.</p>
             </Match>
 
             <Match when={page() === "sidebars"}>

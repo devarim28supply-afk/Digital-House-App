@@ -8,6 +8,10 @@
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
+/* the chat sidebar puts its parts in its own order (its name, then the TV): the tabs come before all of them */
+.side-chat > .right-tabs {
+  order: -3;
+}
 /* the people list has its own padding: the tabs reach its edges */
 .members > .right-tabs {
   margin: -10px -10px 8px;
@@ -89,22 +93,6 @@
   border: 0;
   background: #000;
 }
-.game-tool-out {
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  padding: 18px 16px;
-}
-.game-tool-out p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-.game-tool-out a {
-  text-decoration: none;
-}
-
 /* Settings: an on/off setting drawn as a switch that slides, not a tick box */
 .access-toggle.slide input {
   appearance: none;
