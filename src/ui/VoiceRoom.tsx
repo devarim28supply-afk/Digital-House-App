@@ -27,6 +27,7 @@ import { audit } from "../data/audit";
 import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, setStreamingIn, setWatchRequest, watchRequest } from "../data/where";
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
+import { GoLiveDialog, type GoLivePick, goLiveBitrate, goLiveSize } from "./GoLive";
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, livingSidePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
@@ -864,6 +865,10 @@ export function VoiceRoom(props: {
   const [obsOn, setObsOn] = createSignal(false);
   const sharedCount = () => (screenOn() ? 1 : 0) + (secondOn() ? 1 : 0) + (obsOn() ? 1 : 0);
   const [shareMenu, setShareMenu] = createSignal(false);
+  // Go Live (ui/GoLive.tsx): the window the Share button's menu opens
+  const [goLiveOpen, setGoLiveOpen] = createSignal(false);
+  /** what each of your shares shows now ("screen", "window", "OBS Virtual Camera"), by slot */
+  const [shareNames, setShareNames] = createSignal<Record<string, string>>({});
   // a click anywhere else closes the share menu
   createEffect(() => {
     if (!shareMenu()) return;
@@ -945,44 +950,6 @@ export function VoiceRoom(props: {
     }
     return obs(devices);
   }
-  /** Share (or stop) OBS as a screen, next to screen 1 and 2. */
-  async function toggleObs() {
-    const me = room()?.localParticipant;
-    if (!me) return;
-    setError("");
-    if (obsScreen) {
-      await stopObs();
-      return;
-    }
-    let media: MediaStreamTrack | undefined;
-    try {
-      const device = await findObs();
-      if (!device) {
-        setError("OBS was not found. In OBS, press Start Virtual Camera, then try again.");
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: device.deviceId }, frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      media = stream.getVideoTracks()[0];
-      if (!media) return;
-      // OBS closed, or its Virtual Camera stopped: the share ends too
-      media.addEventListener("ended", () => void stopObs());
-      obsScreen = await me.publishTrack(media, { name: OBS_SCREEN, source: Track.Source.Unknown, simulcast: false });
-      setObsOn(true);
-      // its sound with it, automatically
-      obsScreenAudio = await publishObsSound(me, OBS_SCREEN_AUDIO);
-    } catch (err) {
-      media?.stop();
-      if (err instanceof DOMException && err.name === "NotAllowedError") setError("The browser blocked the camera, so OBS could not be read.");
-      else if (err instanceof DOMException && (err.name === "NotReadableError" || err.name === "OverconstrainedError" || err.name === "NotFoundError")) {
-        setError("OBS could not be shared. In OBS, press Start Virtual Camera, then try again.");
-      } else setError(err instanceof Error ? err.message : "OBS could not be shared.");
-    }
-    bump();
-  }
-
   // ---- the sidebar TV's channel, the same for everyone (Kaalob) ------------
   // Each person in the call carries the TV's current choice in their own
   // LiveKit attribute ("dh-tv": the channel, or off, and when it was chosen).
@@ -1141,34 +1108,115 @@ export function VoiceRoom(props: {
     });
   });
 
-  /** Share (or stop) a 2nd screen, next to the first. */
-  async function toggleSecondScreen() {
+  // ---- Go Live (Kaalob: the same as the desktop app) ------------------------
+  // Up to three shares at once, each in its own slot, as before: slot 1 is an
+  // ordinary screen share, slots 2 and 3 go out under their own names
+  // ("screen-2", "screen-obs"). Any slot takes a screen, a window or a device.
+  type ShareSlot = "screen1" | typeof SECOND_SCREEN | typeof OBS_SCREEN;
+  const slotUsed = (slot: ShareSlot) => (slot === "screen1" ? screenOn() : slot === SECOND_SCREEN ? secondOn() : obsOn());
+  const shareSlots: ShareSlot[] = ["screen1", SECOND_SCREEN, OBS_SCREEN];
+  const nameSlot = (slot: ShareSlot, name?: string) =>
+    setShareNames((old) => {
+      const next = { ...old };
+      if (name) next[slot] = name;
+      else delete next[slot];
+      return next;
+    });
+  async function stopSlot(slot: ShareSlot) {
+    nameSlot(slot);
+    if (slot === SECOND_SCREEN) return stopSecondScreen();
+    if (slot === OBS_SCREEN) return stopObs();
+    // slot 1: the screen share and its sound
+    await room()?.localParticipant.setScreenShareEnabled(false).catch(() => {});
+    bump();
+  }
+  /** Go Live: share what was picked, with its sound, at the size and speed picked. */
+  async function goLive(pick: GoLivePick) {
+    setGoLiveOpen(false);
     const me = room()?.localParticipant;
-    if (!me) return;
+    if (!me || noShare()) return;
     setError("");
-    if (secondScreen) {
-      await stopSecondScreen();
+    const slot = shareSlots.find((s) => !slotUsed(s));
+    if (!slot) {
+      setError("You are sharing 3 things already. Stop one first.");
       return;
     }
+    const size = goLiveSize(pick.quality);
+    const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    let video: MediaStreamTrack | undefined;
+    let sound: MediaStreamTrack | undefined;
     try {
-      // with its sound, the same as screen 1: the tick box in the browser's share box
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      const media = stream.getVideoTracks()[0];
-      if (!media) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (pick.kind === "device") {
+        // a camera, a capture card, OBS's Virtual Camera
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: pick.id }, frameRate: { ideal: pick.fps }, width: { ideal: size?.width ?? 3840 }, height: { ideal: size?.height ?? 2160 } },
+          audio: false,
+        });
+        video = stream.getVideoTracks()[0];
+        // its sound: the sound input picked for it, as it is (none of the voice clean-up a microphone gets)
+        if (video && pick.sound) {
+          sound = await navigator.mediaDevices
+            .getUserMedia({ audio: { deviceId: { exact: pick.sound }, ...raw, channelCount: 2 }, video: false })
+            .then((s) => s.getAudioTracks()[0])
+            .catch(() => undefined);
+          if (!sound) setError(`${pick.name} is on, without sound: that sound device could not be opened.`);
+        }
+      } else {
+        // a screen or a window: the browser's own list, opened on that kind; its sound is the tick box there
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: pick.fps }, ...(size ? { width: { ideal: size.width }, height: { ideal: size.height } } : {}), displaySurface: pick.kind === "screen" ? "monitor" : "window" } as MediaTrackConstraints,
+          audio: Boolean(pick.sound),
+        });
+        video = stream.getVideoTracks()[0];
+        sound = stream.getAudioTracks()[0];
+      }
+      if (!video) {
+        sound?.stop();
         return;
       }
-      // the browser's own "Stop sharing" ends it too
-      media.addEventListener("ended", () => void stopSecondScreen());
-      secondScreen = await me.publishTrack(media, { name: SECOND_SCREEN, source: Track.Source.Unknown, simulcast: false });
-      setSecondOn(true);
-      const sound = stream.getAudioTracks()[0];
-      if (sound) secondScreenAudio = await me.publishTrack(sound, { name: SECOND_SCREEN_AUDIO, source: Track.Source.Unknown, dtx: false }).catch(() => undefined);
-    } catch (err) {
-      // picking nothing in the browser's dialog is not an error
-      if (!(err instanceof DOMException && err.name === "NotAllowedError")) {
-        setError(err instanceof Error ? err.message : "That screen could not be shared.");
+      // fast: smooth movement first; slow: sharp text first
+      video.contentHint = pick.fps >= 30 ? "motion" : "detail";
+      // the browser's own "Stop sharing", a device unplugged, OBS closed: the share ends too
+      video.addEventListener("ended", () => void stopSlot(slot));
+      const encoding = { maxBitrate: goLiveBitrate(pick), maxFramerate: pick.fps };
+      const first = slot === "screen1";
+      const pub = await me.publishTrack(
+        video,
+        first
+          ? { source: Track.Source.ScreenShare, simulcast: false, videoEncoding: encoding, screenShareEncoding: encoding }
+          : { name: slot, source: Track.Source.Unknown, simulcast: false, videoEncoding: encoding },
+      );
+      const surface = pick.kind === "device" ? "" : ((video.getSettings() as { displaySurface?: string }).displaySurface ?? "");
+      nameSlot(slot, pick.kind === "device" ? pick.name : surface === "browser" ? "tab" : surface === "window" ? "window" : surface === "monitor" ? "screen" : pick.name);
+      const soundPub = sound
+        ? await me
+            .publishTrack(
+              sound,
+              first
+                ? { source: Track.Source.ScreenShareAudio, dtx: false }
+                : { name: slot === SECOND_SCREEN ? SECOND_SCREEN_AUDIO : OBS_SCREEN_AUDIO, source: Track.Source.Unknown, dtx: false, forceStereo: pick.kind === "device" },
+            )
+            .catch(() => {
+              sound?.stop();
+              return undefined;
+            })
+        : undefined;
+      if (slot === SECOND_SCREEN) {
+        secondScreen = pub;
+        secondScreenAudio = soundPub;
+        setSecondOn(true);
+      } else if (slot === OBS_SCREEN) {
+        obsScreen = pub;
+        obsScreenAudio = soundPub;
+        setObsOn(true);
       }
+    } catch (err) {
+      video?.stop();
+      sound?.stop();
+      // picking nothing in the browser's list is not an error
+      const blocked = err instanceof DOMException && err.name === "NotAllowedError";
+      if (pick.kind === "device") setError(blocked ? "The browser blocked the camera, so that device could not be read." : `${pick.name} could not be shared. Is another app using it?`);
+      else if (!blocked) setError(err instanceof Error ? err.message : "That could not be shared.");
     }
     bump();
   }
@@ -2873,37 +2921,33 @@ export function VoiceRoom(props: {
             </button>
             <Show when={shareMenu()}>
               <div class="dock-menu" role="menu" aria-label="Share screen">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setShareMenu(false);
-                    void toggle("screen");
-                  }}
-                >
-                  <span>{screenOn() ? "Stop screen 1" : "Share screen 1"}</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setShareMenu(false);
-                    void toggleSecondScreen();
-                  }}
-                >
-                  <span>{secondOn() ? "Stop screen 2" : "Share screen 2"}</span>
-                </button>
-                {/* OBS: one more shared screen, from its Virtual Camera (OBS must have Start Virtual Camera on) */}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setShareMenu(false);
-                    void toggleObs();
-                  }}
-                >
-                  <span>{obsOn() ? "Stop OBS" : "Share OBS"}</span>
-                </button>
+                {/* Go Live, then a Stop for each thing you share now */}
+                <Show when={sharedCount() < shareSlots.length}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShareMenu(false);
+                      setGoLiveOpen(true);
+                    }}
+                  >
+                    <span>Go Live...</span>
+                  </button>
+                </Show>
+                <For each={shareSlots.filter((slot) => slotUsed(slot))}>
+                  {(slot) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShareMenu(false);
+                        void stopSlot(slot);
+                      }}
+                    >
+                      <span>Stop {shareNames()[slot] ?? (slot === OBS_SCREEN ? "OBS" : "screen")}</span>
+                    </button>
+                  )}
+                </For>
               </div>
             </Show>
           </div>
@@ -2953,6 +2997,7 @@ export function VoiceRoom(props: {
             <DockFace kind="leave" word="Leave" full="Disconnect" />
           </button>
         </div>
+        <GoLiveDialog open={goLiveOpen()} onClose={() => setGoLiveOpen(false)} onGo={(pick) => void goLive(pick)} />
         <Modal title="Remove from call" open={Boolean(removeAsk())} onClose={() => setRemoveAsk(undefined)}>
           <p class="modal-text">Remove {removeAsk()?.name} from this call? They are only disconnected, and can join again.</p>
           <div class="modal-actions">
