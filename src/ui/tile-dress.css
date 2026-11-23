@@ -5,6 +5,72 @@
   z-index: 4;
 }
 
+/* ---- the corners a tile is moved by: over the picture, the curtains and the window; under the name and the buttons ---- */
+.tile-corner {
+  position: absolute;
+  z-index: 3;
+  width: 46px;
+  height: 46px;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tile-corner::before {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 0 solid rgba(255, 255, 255, 0.9);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+.tile-corner.tl {
+  top: 0;
+  left: 0;
+}
+.tile-corner.tr {
+  top: 0;
+  right: 0;
+}
+.tile-corner.bl {
+  bottom: 0;
+  left: 0;
+}
+.tile-corner.br {
+  right: 0;
+  bottom: 0;
+}
+.tile-corner.tl::before {
+  top: 7px;
+  left: 7px;
+  border-top-width: 3px;
+  border-left-width: 3px;
+  border-top-left-radius: 4px;
+}
+.tile-corner.tr::before {
+  top: 7px;
+  right: 7px;
+  border-top-width: 3px;
+  border-right-width: 3px;
+  border-top-right-radius: 4px;
+}
+.tile-corner.bl::before {
+  bottom: 7px;
+  left: 7px;
+  border-bottom-width: 3px;
+  border-left-width: 3px;
+  border-bottom-left-radius: 4px;
+}
+.tile-corner.br::before {
+  right: 7px;
+  bottom: 7px;
+  border-right-width: 3px;
+  border-bottom-width: 3px;
+  border-bottom-right-radius: 4px;
+}
+.tile:hover > .tile-corner {
+  opacity: 1;
+}
+
 /* ---- curtains: over the picture, under the name ---- */
 .dress-curtains {
   position: absolute;
