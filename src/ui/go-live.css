@@ -1,0 +1,167 @@
+/* Go Live: the window the Share button opens (ui/GoLive.tsx), the same as the desktop app's. */
+.modal.go-live {
+  max-width: 760px;
+}
+.go-live-body {
+  display: grid;
+  gap: 10px;
+}
+.go-live-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+}
+.go-live-tabs [role="tab"] {
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.go-live-tabs [role="tab"]:hover {
+  color: var(--text);
+}
+.go-live-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--green);
+  color: var(--green);
+}
+.go-live-space {
+  flex: 1;
+}
+.go-live-refresh {
+  margin-bottom: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.go-live-refresh:hover:not(:disabled) {
+  border-color: var(--green);
+}
+.go-live-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+  min-height: 190px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.go-live-card {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.go-live-card:hover {
+  border-color: var(--green);
+}
+.go-live-card[aria-pressed="true"] {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+.go-live-card.wide {
+  grid-column: 1 / -1;
+  cursor: default;
+}
+.go-live-card small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.go-live-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  max-height: 110px;
+  width: 100%;
+  border-radius: 5px;
+  background: #000;
+  color: var(--muted);
+  font-size: 34px;
+  line-height: 1;
+}
+.go-live-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.go-live-card[aria-pressed="true"] .go-live-name {
+  color: var(--green);
+  font-weight: 700;
+}
+.go-live-empty {
+  grid-column: 1 / -1;
+  align-self: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+.go-live-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.go-live-label {
+  flex: 0 0 92px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.go-live-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.go-live-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.go-live-chip:hover {
+  border-color: var(--green);
+}
+.go-live-chip[aria-pressed="true"] {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  color: var(--green);
+}
+.go-live-select {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+}
+@media (max-width: 560px) {
+  .go-live-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
