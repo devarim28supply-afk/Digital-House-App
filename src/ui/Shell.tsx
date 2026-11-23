@@ -864,13 +864,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       if (!sv || (here?.serverId === c.serverId && here.channel.id === c.channelId)) continue;
       const key = `${uid}:${c.at}`;
       if (dismissedCalls().has(key)) continue;
-      const direct = isDm(sv);
-      if (!direct) {
-        // a server call: only tell people when its first person starts it, and not while you are set to Do not disturb
-        let inIt = 0;
-        for (const q of presence().values()) if (q.calling?.serverId === c.serverId && q.calling.channelId === c.channelId && now() - q.lastSeen <= ONLINE_WINDOW_MS) inIt++;
-        if (inIt > 1 || dnd()) continue;
-      }
+      // someone joining a server's videochat tells nobody (Kaalob): only a call to you does
+      if (!isDm(sv)) continue;
       const prof = profiles().get(uid);
       out.push({
         key,
@@ -879,8 +874,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         name: nameOf(uid),
         face: faceStyle(prof),
         faceText: faceText(prof, nameOf(uid)),
-        line: direct ? "is calling you" : `started a call in ${sv.name} · ${c.channelName}`,
-        ringing: direct && !dnd(),
+        line: "is calling you",
+        ringing: !dnd(),
       });
     }
     return out;
