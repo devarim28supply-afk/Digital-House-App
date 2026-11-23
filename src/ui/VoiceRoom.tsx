@@ -145,6 +145,13 @@ function phoneAspect(): number {
 const IS_IOS =
   typeof navigator !== "undefined" &&
   (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+// A phone or a tablet has two cameras: the front one (facing you) and the back one. The Flip
+// button under the videochat picks which one your webcam is (Kaalob). Kept for this visit.
+const [camFacing, setCamFacing] = createSignal<"user" | "environment">("user");
+/** The camera request with the picked side added, on a touch device; a computer's is left as it is. */
+const facingCapture = (capture: VideoCaptureOptions | undefined): VideoCaptureOptions | undefined =>
+  COARSE_POINTER ? ({ ...(capture ?? {}), facingMode: camFacing() } as VideoCaptureOptions) : capture;
+
 function phoneCameraCapture(loose = false): VideoCaptureOptions | undefined {
   if (typeof window === "undefined" || !COARSE_POINTER) return undefined;
   if (Math.min(window.innerWidth, window.innerHeight) >= PHONE_SHORT) return undefined;
@@ -1510,11 +1517,36 @@ export function VoiceRoom(props: {
     setCamWant(undefined);
   });
 
+  // Flip: the other camera of this phone or tablet. With the webcam on, it changes over now;
+  // with it off, the next time it is turned on.
+  const [flipBusy, setFlipBusy] = createSignal(false);
+  async function flipCamera() {
+    if (flipBusy()) return;
+    const next = camFacing() === "user" ? "environment" : "user";
+    const pub = room()?.localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = pub?.videoTrack;
+    if (!track || pub?.isMuted) {
+      setCamFacing(next);
+      return;
+    }
+    setFlipBusy(true);
+    try {
+      await (track as unknown as { restartTrack: (options: VideoCaptureOptions) => Promise<void> }).restartTrack({ ...(phoneCameraCapture(true) ?? {}), facingMode: next } as VideoCaptureOptions);
+      setCamFacing(next);
+      setError("");
+    } catch {
+      setError(`This device could not switch to its ${next === "user" ? "front" : "back"} camera.`);
+    } finally {
+      setFlipBusy(false);
+      bump();
+    }
+  }
+
   /** One camera start or stop, and a way out if the browser never answers. */
   async function moveCamera(active: LocalParticipant, on: boolean) {
     let timer = 0;
     const attempt = (async () => {
-      const capture = on ? phoneCameraCapture() : undefined;
+      const capture = on ? facingCapture(phoneCameraCapture()) : undefined;
       try {
         await active.setCameraEnabled(on, capture, CAMERA_PUBLISH);
       } catch (err) {
@@ -1524,7 +1556,7 @@ export function VoiceRoom(props: {
         if (!capture || name === "NotAllowedError" || name === "SecurityError") throw err;
         // Still 9:16, without the exact ratio that this phone rejected.
         // A bare retry would open LiveKit's exact 1280×720, which is 16:9.
-        await active.setCameraEnabled(true, phoneCameraCapture(true), CAMERA_PUBLISH);
+        await active.setCameraEnabled(true, facingCapture(phoneCameraCapture(true)), CAMERA_PUBLISH);
       }
     })()
       .then(
@@ -2778,6 +2810,27 @@ export function VoiceRoom(props: {
                     full={camWant() === true && !camOn() ? "Starting camera…" : camShown() ? "Camera on" : "Camera off"}
                   />
                 </button>
+                {/* a phone or a tablet only: its front or its back camera */}
+                <Show when={COARSE_POINTER}>
+                  <button
+                    type="button"
+                    class="dock-btn icon-only"
+                    disabled={flipBusy()}
+                    title={camFacing() === "user" ? "Front camera. Tap for the back camera" : "Back camera. Tap for the front camera"}
+                    aria-label={camFacing() === "user" ? "Front camera. Switch to the back camera" : "Back camera. Switch to the front camera"}
+                    onClick={() => void flipCamera()}
+                  >
+                    <span class="dock-glyph" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 8h3l1.5-2h7L17 8h3v11H4z" />
+                        <path d="M9.2 13.5a3 3 0 0 1 5.3-1.6M14.8 13.5a3 3 0 0 1-5.3 1.6" />
+                        <path d="M14.6 10.4v1.6H13M9.4 16.6V15H11" />
+                      </svg>
+                    </span>
+                    <span class="dock-word">{camFacing() === "user" ? "Front" : "Back"}</span>
+                    <span class="dock-full">{camFacing() === "user" ? "Front camera" : "Back camera"}</span>
+                  </button>
+                </Show>
                 <Show when={!coarsePhone()}>
                   <StreamMenu />
                 </Show>
@@ -3374,7 +3427,7 @@ function Tile(props: {
   });
 
   // your own camera as a mirror, unless Settings > Voice & Video turned that off
-  const mirrored = () => userPrefs().mirrorCam && props.tile.participant.isLocal && !props.tile.screen && !swapped();
+  const mirrored = () => userPrefs().mirrorCam && props.tile.participant.isLocal && !props.tile.screen && !swapped() && camFacing() === "user";
 
   // Zoomed share: 50% larger, and the point under the pointer stays in view.
   const [zoomOrigin, setZoomOrigin] = createSignal("50% 50%");
@@ -3621,7 +3674,7 @@ function Tile(props: {
             autoplay
             playsinline
             muted
-            classList={{ hidden: !small(), mirror: swapped() && props.tile.participant.isLocal }}
+            classList={{ hidden: !small(), mirror: swapped() && props.tile.participant.isLocal && camFacing() === "user" }}
           />
           <Show when={!small()}>
             <span class="avatar" style={faceStyle(props.profile)}>
