@@ -18,9 +18,13 @@ export type Prefs = {
   /** the camera and the microphone a call uses: a device's id, or "" for the computer's default */
   camDevice: string;
   micDevice: string;
+  /** Settings > Gaming Tools: a Game Tool tab on the right sidebar (ui/GameTool.tsx) */
+  gameTools: boolean;
+  /** the game tool picked in that tab's list ("gta6", "tos", "phasmo") */
+  gameTool: string;
 };
 
-export const PREF_DEFAULTS: Prefs = { shareWhere: true, timeFormat: "auto", sendKey: "enter", mirrorCam: true, camDevice: "", micDevice: "" };
+export const PREF_DEFAULTS: Prefs = { shareWhere: true, timeFormat: "auto", sendKey: "enter", mirrorCam: true, camDevice: "", micDevice: "", gameTools: false, gameTool: "gta6" };
 
 const KEY = "dh_prefs";
 function read(): Prefs {
@@ -33,6 +37,8 @@ function read(): Prefs {
       mirrorCam: v.mirrorCam !== false,
       camDevice: typeof v.camDevice === "string" ? v.camDevice : "",
       micDevice: typeof v.micDevice === "string" ? v.micDevice : "",
+      gameTools: v.gameTools === true,
+      gameTool: typeof v.gameTool === "string" ? v.gameTool : "gta6",
     };
   } catch {
     return { ...PREF_DEFAULTS };

@@ -46,7 +46,7 @@ import "./call-look.css";
  */
 
 type SidebarMode = "slide" | "pinned" | "hover";
-type Page = "account" | "privacy" | "activity" | "appearance" | "access" | "voice" | "chat" | "notifications" | "keys" | "sidebars" | "advanced" | "face";
+type Page = "account" | "privacy" | "activity" | "appearance" | "access" | "voice" | "chat" | "notifications" | "keys" | "sidebars" | "gaming" | "advanced" | "face";
 
 // a phone or tablet: a touch screen with no mouse pointer
 const ON_PHONE = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -98,6 +98,7 @@ export function Settings(props: {
         { id: "notifications", label: "Notifications" },
         { id: "keys", label: "Keybinds" },
         { id: "sidebars", label: "Sidebars" },
+        { id: "gaming", label: "Gaming Tools" },
         { id: "advanced", label: "Advanced" },
         ...(ON_PHONE ? [{ id: "face" as const, label: "Face unlock" }] : []),
       ],
@@ -150,8 +151,8 @@ export function Settings(props: {
     </div>
   );
   /** On or off. */
-  const Toggle = (p: { label: string; hint: string; value: boolean; onChange: (on: boolean) => void }) => (
-    <label class="access-toggle">
+  const Toggle = (p: { label: string; hint: string; value: boolean; onChange: (on: boolean) => void; slide?: boolean }) => (
+    <label class="access-toggle" classList={{ slide: p.slide }}>
       <span>
         <b>{p.label}</b>
         <small>{p.hint}</small>
@@ -524,6 +525,17 @@ export function Settings(props: {
                 </For>
               </div>
               <p class="set-note">These are fixed for now; they cannot be changed.</p>
+            </Match>
+
+            <Match when={page() === "gaming"}>
+              <Toggle
+                slide
+                label="Game Tool"
+                hint='Adds two tabs to the top of the right sidebar: "TV & Chat" and "Game Tool". Game Tool has a list to pick from: GTA 6 map, The Other Side ghost chart, Phasmophobia ghost chart.'
+                value={userPrefs().gameTools}
+                onChange={(on) => setUserPrefs({ gameTools: on })}
+              />
+              <p class="set-note">Each tool is its own web page, shown inside the sidebar. Make the sidebar bigger with its size button, or drag its inner edge. The GTA 6 map opens in a new tab: its site does not allow itself inside another page.</p>
             </Match>
 
             <Match when={page() === "sidebars"}>
