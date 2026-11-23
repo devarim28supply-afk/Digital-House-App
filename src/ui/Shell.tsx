@@ -1,5 +1,6 @@
 
 import { ownCallBackground } from "../data/callLook";
+import { sidebarsLocked } from "../data/sidebarLock";
 import { Notifications, NotificationList, type Notice } from "./Notifications";
 import { SelfControls } from "./SelfControls";
 import { availabilityStatus, availabilityLabel } from "../data/status";
@@ -547,6 +548,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   // Leaving it, it stays 5 more seconds (Kaalob); coming back cancels that.
   let leaveTimer = 0;
   function enterRight() {
+    if (sidebarsLocked()) return; // lock mode: nothing slides in from the edge
     window.clearTimeout(leaveTimer);
     leaveTimer = 0;
     setEdgeHover(true);
@@ -618,6 +620,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   const [leftHover, setLeftHover] = createSignal(false);
   let leftTimer = 0;
   function enterLeft() {
+    if (sidebarsLocked()) return; // lock mode: nothing slides in from the edge
     window.clearTimeout(leftTimer);
     leftTimer = 0;
     setLeftHover(true);
@@ -627,6 +630,14 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     leftTimer = window.setTimeout(() => { leftTimer = 0; setLeftHover(false); }, leftMode() === "hover" ? 100 : RIGHT_LINGER_MS);
   }
   onCleanup(() => window.clearTimeout(leftTimer));
+  // Locked (the lock button under the videochat): a side that slid in goes away now
+  createEffect(() => {
+    if (!sidebarsLocked()) return;
+    window.clearTimeout(leftTimer); leftTimer = 0;
+    window.clearTimeout(leaveTimer); leaveTimer = 0;
+    setLeftHover(false);
+    setEdgeHover(false);
+  });
   const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH);
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.

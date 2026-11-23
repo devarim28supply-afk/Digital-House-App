@@ -46,7 +46,7 @@ import "./call-look.css";
  */
 
 type SidebarMode = "slide" | "pinned" | "hover";
-type Page = "account" | "privacy" | "appearance" | "access" | "voice" | "chat" | "notifications" | "keys" | "sidebars" | "advanced" | "face";
+type Page = "account" | "privacy" | "activity" | "appearance" | "access" | "voice" | "chat" | "notifications" | "keys" | "sidebars" | "advanced" | "face";
 
 // a phone or tablet: a touch screen with no mouse pointer
 const ON_PHONE = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -85,6 +85,7 @@ export function Settings(props: {
       items: [
         { id: "account", label: "My Account" },
         { id: "privacy", label: "Privacy" },
+        { id: "activity", label: "Activity" },
       ],
     },
     {
@@ -338,6 +339,15 @@ export function Settings(props: {
                 onChange={(on) => setUserPrefs({ shareWhere: on })}
               />
               <p class="set-note">To show as offline altogether, set your status to Invisible under My Account.</p>
+            </Match>
+
+            <Match when={page() === "activity"}>
+              <Row label="The game you play" hint="Only the game's name is shared, never your other programs. With your status on Invisible, no game is shown.">
+                <p class="set-note">The desktop app sees a game running on your computer (or on your PlayStation, once connected there) and shows "Playing" with its name in the people list and on your profile card. A browser cannot see your games: turn it on or off, add your own games and connect a console in the desktop app, under Settings, Activity.</p>
+              </Row>
+              <Row label="Custom status" hint="Everyone sees it under your name while you are online.">
+                <p class="set-note">Click your picture at the bottom left, then "Set a custom status": a line of your own with an emoji. It can clear itself after a while.</p>
+              </Row>
             </Match>
 
             <Match when={page() === "appearance"}>

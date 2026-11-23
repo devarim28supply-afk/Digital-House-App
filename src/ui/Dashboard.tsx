@@ -7,7 +7,8 @@ import { type StaffMessage, sendStaffMessage, watchStaffChat } from "../data/sta
 import { type Profile, type Server, ONLINE_WINDOW_MS, displayName, watchAllServers, watchPresence } from "../data/store";
 import { Inbox } from "./Feedback";
 import { LiveCallWatch } from "./LiveCallWatch";
-import { access, auth } from "../firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import { access, auth, db } from "../firebase";
 import { OversightBody } from "./Oversight";
 import { RolesDialog } from "./Roles";
 import { faceStyle, faceText } from "./Shell";
@@ -200,6 +201,23 @@ function DashboardBody(props: {
   const [rolesOpen, setRolesOpen] = createSignal(false);
   const [members, setMembers] = createSignal<MemberRow[] | undefined>();
   const [membersError, setMembersError] = createSignal("");
+  // People who signed up on their own (dhMembers: a verified email, no approval asked). Listed under
+  // Members too, as in the desktop app: everyone who ever signed up shows there.
+  const [openSignups, setOpenSignups] = createSignal<{ uid: string; name: string; username: string; at: number }[]>([]);
+  onMount(() => {
+    const stop = onSnapshot(
+      collection(db, "dhMembers"),
+      (snap) =>
+        setOpenSignups(
+          snap.docs.map((d) => {
+            const v = d.data();
+            return { uid: d.id, name: String(v.name ?? ""), username: String(v.username ?? ""), at: v.createdAt?.toMillis?.() ?? 0 };
+          }),
+        ),
+      () => setOpenSignups([]),
+    );
+    onCleanup(stop);
+  });
   const [memberQuery, setMemberQuery] = createSignal("");
   const [busy, setBusy] = createSignal(new Set<string>());
   const [servers, setServers] = createSignal<Server[] | undefined>();
@@ -388,6 +406,14 @@ function DashboardBody(props: {
   const denied = createMemo(() => byStatus("denied"));
   const suspended = createMemo(() => byStatus("suspended"));
   const banned = createMemo(() => byStatus("banned"));
+  /** signed up on their own and not in the approval list: newest first */
+  const signedUp = createMemo(() => {
+    const term = memberQuery().trim().toLowerCase();
+    const listed = new Set((members() ?? []).map((m) => m.uid));
+    return openSignups()
+      .filter((r) => !listed.has(r.uid) && (!term || `${props.profiles.get(r.uid)?.name ?? r.name} ${r.username}`.toLowerCase().includes(term)))
+      .sort((a, b) => b.at - a.at);
+  });
   const pendingTotal = createMemo(() => members()?.filter((m) => m.status === "pending").length ?? 0);
 
   const allApproved = createMemo(() => members()?.filter((m) => m.status === "approved") ?? []);
@@ -735,6 +761,24 @@ function DashboardBody(props: {
                   )}
                 </For>
               </div>
+
+              <Show when={signedUp().length}>
+                <h3 class="dashboard-subhead">Signed up ({signedUp().length})</h3>
+                <div class="people-list find-list dashboard-people">
+                  <For each={signedUp()}>
+                    {(row) => (
+                      <div class="person">
+                        <span class="avatar small" style={faceStyle(props.profiles.get(row.uid))}>
+                          {faceText(props.profiles.get(row.uid), displayName(props.profiles.get(row.uid), row.name || row.username || "Member"))}
+                        </span>
+                        <span class="member-name">
+                          {displayName(props.profiles.get(row.uid), row.name || row.username || "Member")} <small>@{row.username || "member"}</small>
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
 
               <Show when={suspended().length}>
                 <details class="dashboard-group" open>
