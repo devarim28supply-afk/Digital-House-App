@@ -4,13 +4,13 @@ import "./game-tool.css";
 
 /**
  * The game tools, in the order of the list (the desktop app's, lib/ui/game_tool.dart).
- * `framed: false`: that site does not let another page show it inside itself, so it
- * gets a button that opens it in a new tab.
+ * The GTA 6 map is gta6map.io here (Kaalob picked it): the desktop app's, gtabase.com,
+ * does not let a website show it inside a page.
  */
 export const GAME_TOOLS = [
-  { id: "gta6", name: "GTA 6 map", url: "https://www.gtabase.com/gta-6/map/", framed: false },
-  { id: "tos", name: "The Other Side ghost chart", url: "https://tos-ghost-chart.vercel.app/", framed: true },
-  { id: "phasmo", name: "Phasmophobia ghost chart", url: "https://phasmo-ghost-chart.vercel.app/", framed: true },
+  { id: "gta6", name: "GTA 6 map", url: "https://www.gta6map.io/" },
+  { id: "tos", name: "The Other Side ghost chart", url: "https://tos-ghost-chart.vercel.app/" },
+  { id: "phasmo", name: "Phasmophobia ghost chart", url: "https://phasmo-ghost-chart.vercel.app/" },
 ] as const;
 
 /** Which tab of the right sidebar is open: the sidebar as it is, or Game Tool. */
@@ -60,40 +60,25 @@ export function GameTool(props: { children?: JSX.Element }) {
           <select aria-label="Pick a game tool" value={tool().id} onChange={(e) => setUserPrefs({ gameTool: e.currentTarget.value })}>
             <For each={GAME_TOOLS}>{(t) => <option value={t.id}>{t.name}</option>}</For>
           </select>
-          <Show when={tool().framed}>
-            <button
-              type="button"
-              class="icon-btn"
-              title="Reload"
-              aria-label="Reload"
-              onClick={() => {
-                const frame = frames[tool().id];
-                if (frame) frame.src = tool().url;
-              }}
-            >
-              ↻
-            </button>
-          </Show>
+          <button
+            type="button"
+            class="icon-btn"
+            title="Reload"
+            aria-label="Reload"
+            onClick={() => {
+              const frame = frames[tool().id];
+              if (frame) frame.src = tool().url;
+            }}
+          >
+            ↻
+          </button>
           {props.children}
         </header>
         <div class="game-tool-pages">
           <For each={GAME_TOOLS.filter((t) => opened().includes(t.id))}>
             {(t) => (
               <div class="game-tool-page" hidden={tool().id !== t.id}>
-                <Show
-                  when={t.framed}
-                  fallback={
-                    <div class="game-tool-out">
-                      <b>{t.name}</b>
-                      <p>This site does not let other websites show it inside a page. It opens in a new tab. In the desktop app it shows right here.</p>
-                      <a class="btn primary" href={t.url} target="_blank" rel="noopener noreferrer">
-                        Open the {t.name}
-                      </a>
-                    </div>
-                  }
-                >
-                  <iframe ref={(el) => (frames[t.id] = el)} src={t.url} title={t.name} allow="clipboard-write; fullscreen" referrerpolicy="no-referrer" />
-                </Show>
+                <iframe ref={(el) => (frames[t.id] = el)} src={t.url} title={t.name} allow="clipboard-write; fullscreen" referrerpolicy="no-referrer" />
               </div>
             )}
           </For>
