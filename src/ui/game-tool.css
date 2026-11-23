@@ -1,0 +1,147 @@
+/* The right sidebar's two tabs and its Game Tool tab (ui/GameTool.tsx). Settings > Gaming Tools turns them on. */
+.right-tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  height: 41px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+/* the people list has its own padding: the tabs reach its edges */
+.members > .right-tabs {
+  margin: -10px -10px 8px;
+}
+.right-tabs [role="tab"] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+.right-tabs [role="tab"]:hover {
+  background: var(--panel-3, var(--panel-2));
+  color: var(--text);
+}
+.right-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--green);
+  background: transparent;
+  color: var(--green);
+  font-weight: 700;
+}
+
+/* Game Tool covers the sidebar under the tabs */
+.game-tool {
+  position: absolute;
+  inset: 41px 0 0 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+}
+.game-tool[hidden] {
+  display: none;
+}
+.game-tool-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.game-tool-bar select {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.game-tool-pages {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.game-tool-page {
+  position: absolute;
+  inset: 0;
+}
+.game-tool-page[hidden] {
+  display: none;
+}
+.game-tool-page iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+.game-tool-out {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 18px 16px;
+}
+.game-tool-out p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.game-tool-out a {
+  text-decoration: none;
+}
+
+/* Settings: an on/off setting drawn as a switch that slides, not a tick box */
+.access-toggle.slide input {
+  appearance: none;
+  position: relative;
+  width: 42px;
+  height: 24px;
+  margin: 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.access-toggle.slide input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 140ms ease, background 140ms ease;
+}
+.access-toggle.slide input:checked {
+  border-color: var(--green);
+  background: var(--green);
+}
+.access-toggle.slide input:checked::after {
+  background: #000;
+  transform: translateX(18px);
+}
+
+/* phones: the sidebar is a drawer with its own Chat / People switch; no Game Tool there yet */
+@media (max-width: 600px) {
+  .right-tabs,
+  .game-tool {
+    display: none;
+  }
+}

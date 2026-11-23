@@ -1401,6 +1401,49 @@
   text-align: center;
 }
 
+/* a message about the call: a small window over the videochat, just above the buttons, with an x */
+.call-note-anchor {
+  position: relative;
+  z-index: 6;
+  flex: none;
+  height: 0;
+  /* takes no room: not even the gap between the tiles and the buttons */
+  margin-top: -12px;
+}
+.call-note {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(460px, calc(100% - 24px));
+  padding: 12px 8px 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 55%, var(--line-2));
+  border-radius: 10px;
+  background: #0b0b0c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.87);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: left;
+  transform: translateX(-50%);
+}
+.call-note b {
+  margin-top: 1px;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.call-note span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.call-note .icon-btn {
+  flex: none;
+}
+
 .dock.hidden {
   display: none;
 }

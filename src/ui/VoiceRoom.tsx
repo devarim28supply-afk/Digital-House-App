@@ -2812,8 +2812,19 @@ export function VoiceRoom(props: {
           </Show>
         </div>
         {statusChip()}
+        {/* a message about the call (OBS has no sound, the camera could not start...): a small
+            window over the videochat, there until its x is clicked, as in the desktop app (Kaalob),
+            not a red line under the tiles */}
         <Show when={error()}>
-          <p class="form-error voice-error">{error()}</p>
+          <div class="call-note-anchor">
+            <div class="call-note" role="alert">
+              <b aria-hidden="true">!</b>
+              <span>{error()}</span>
+              <button type="button" class="icon-btn" title="Close this message" aria-label="Close this message" onClick={() => setError("")}>
+                ✕
+              </button>
+            </div>
+          </div>
         </Show>
         <div class="dock" classList={{ hidden: Boolean(props.viewOnly) }}>
           {/* Lock mode, as in the desktop app: the sidebars stop sliding in from the edges; click again to let them */}

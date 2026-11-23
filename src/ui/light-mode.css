@@ -288,3 +288,9 @@ html[data-mode="light"][data-style="noir"] .shell :is(.main, .members) {
     linear-gradient(rgba(var(--green-rgb), 0.14) 1px, transparent 1px),
     linear-gradient(90deg, rgba(var(--green-rgb), 0.14) 1px, transparent 1px);
 }
+
+/* the call message window (app.css .call-note), light */
+html[data-mode="light"] .call-note {
+  background: #f4f5f4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}

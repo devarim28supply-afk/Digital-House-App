@@ -81,6 +81,7 @@ import { DashboardDialog, type Page as DashboardPage, type Section as DashboardS
 import { setCanRemoveFromCall, setTvRemoteOpen, setWatchRequest, streamingIn, tvRemoteAvailable, tvRemoteOpen, whereNow } from "../data/where";
 import { LiveTile } from "./LiveTile";
 import { SideTv } from "./SideTv";
+import { GameTool, RightTabs } from "./GameTool";
 
 import { CallPopup, type IncomingCall } from "./CallPopup";
 import { buzz, desktopNotify, pushAlert } from "../data/alerts";
@@ -1435,6 +1436,12 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
             onMouseLeave={leaveRight}
           >
             <Sizer side="right" />
+            {/* Settings > Gaming Tools: two tabs at the top, and Game Tool over the sidebar */}
+            <RightTabs />
+            <GameTool>
+              <WideButton wide={rightWide() || Boolean(access().rightWidth)} onWide={widenRight} />
+              <PinButton pinned={rightPinned()} onPin={pinRight} />
+            </GameTool>
             <header class="side-chat-head">
               <span>
                 <span class="hash">#</span> {chat().name}
@@ -1518,6 +1525,11 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         onMouseLeave={leaveRight}
       >
         <Sizer side="right" />
+        <RightTabs />
+        <GameTool>
+          <WideButton wide={rightWide() || Boolean(access().rightWidth)} onWide={widenRight} />
+          <PinButton pinned={rightPinned()} onPin={pinRight} />
+        </GameTool>
         <div class="members-head">
           <WideButton wide={rightWide() || Boolean(access().rightWidth)} onWide={widenRight} />
           <PinButton pinned={rightPinned()} onPin={pinRight} />
