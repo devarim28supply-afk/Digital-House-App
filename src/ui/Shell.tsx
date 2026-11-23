@@ -655,7 +655,9 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setLeftHover(false);
     setEdgeHover(false);
   });
-  const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH);
+  // A tablet: unpinned, the left side is hidden everywhere (not only in a videochat) and a swipe
+  // brings it in (Kaalob). Its pin keeps it always showing, as on a computer.
+  const leftSlides = () => !leftPinned() && (inThisCall() || leftMode() === "hover" && !TOUCH || TABLET());
   // Each person picks: the sidebar slides in and out, or it is always there
   // as its own column beside the videochat (covering nothing). Remembered.
   const savedRightMode = recall(RIGHT_MODE_KEY) ?? recall("dh_sidebar_mode");
