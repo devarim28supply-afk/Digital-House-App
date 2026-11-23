@@ -18,8 +18,8 @@ export type IncomingCall = {
 };
 
 /**
- * The incoming call popup (big, centered at the top, pulsing so it can be seen from across a room) and the small toast
- * stack under it. Everything shows on screen; the ring tone, tab-title flash and phone buzz come with it.
+ * The incoming call popup (big, in the middle of the screen, pulsing so it can be seen from across a room) and the
+ * small toast stack at the top. Everything shows on screen; the ring tone, tab-title flash and phone buzz come with it.
  */
 export function CallPopup(props: { calls: IncomingCall[]; onAnswer: (call: IncomingCall) => void; onDecline: (call: IncomingCall) => void }) {
   createEffect(() => {
@@ -37,7 +37,8 @@ export function CallPopup(props: { calls: IncomingCall[]; onAnswer: (call: Incom
   });
   return (
     <Portal>
-      <div class="call-popups" role="region" aria-label="Calls and alerts">
+      {/* a call: in the middle of the screen, big (Kaalob) */}
+      <div class="call-popups calls" role="region" aria-label="Calls">
         <For each={props.calls}>
           {(call) => (
             <div class="call-popup" classList={{ ringing: call.ringing }} role="alertdialog" aria-label={`${call.name} ${call.line}`}>
@@ -59,6 +60,8 @@ export function CallPopup(props: { calls: IncomingCall[]; onAnswer: (call: Incom
             </div>
           )}
         </For>
+      </div>
+      <div class="call-popups" role="region" aria-label="Alerts">
         <For each={alerts()}>
           {(a) => (
             <div class="alert-toast" role="status" aria-live="polite">

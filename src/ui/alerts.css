@@ -13,6 +13,59 @@
 .call-popups > * {
   pointer-events: auto;
 }
+/* a call: in the middle of the screen, and big (Kaalob) */
+.call-popups.calls {
+  top: 50%;
+  z-index: 3001;
+  gap: 14px;
+  width: min(620px, calc(100vw - 24px));
+  transform: translate(-50%, -50%);
+}
+.call-popups.calls .call-popup {
+  gap: 20px;
+  padding: 24px;
+  border-width: 2px;
+  border-radius: 16px;
+}
+.call-popups.calls .call-popup-face {
+  width: 92px;
+  height: 92px;
+  font-size: 34px;
+}
+.call-popups.calls .call-popup-text {
+  gap: 4px;
+}
+.call-popups.calls .call-popup-text strong {
+  font-size: 26px;
+}
+.call-popups.calls .call-popup-text span {
+  font-size: 15.5px;
+}
+.call-popups.calls .call-popup-actions {
+  gap: 14px;
+}
+.call-popups.calls .call-popup-actions .btn {
+  min-height: 64px;
+  font-size: 17px;
+  font-weight: 700;
+}
+@media (max-width: 600px) {
+  .call-popups.calls .call-popup {
+    gap: 14px;
+    padding: 16px;
+  }
+  .call-popups.calls .call-popup-face {
+    width: 68px;
+    height: 68px;
+    font-size: 26px;
+  }
+  .call-popups.calls .call-popup-text strong {
+    font-size: 21px;
+  }
+  .call-popups.calls .call-popup-actions .btn {
+    min-height: 56px;
+  }
+}
 .call-popup {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

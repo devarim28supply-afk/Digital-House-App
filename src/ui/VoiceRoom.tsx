@@ -28,6 +28,21 @@ import { canRemoveFromCall, livingRoomTvBottom, livingRoomTvRight, setInCall, se
 import { auth } from "../firebase";
 import { Modal } from "./Modal";
 import { GoLiveDialog, type GoLivePick, goLiveBitrate, goLiveSize } from "./GoLive";
+import {
+  CURTAIN_ATTR,
+  CURTAIN_COLORS,
+  CURTAIN_COLOR_ATTR,
+  CURTAIN_COLOR_KEY,
+  Curtains,
+  LIFT_ATTR,
+  NEIGHBOR_ATTR,
+  NEIGHBOR_LOOKS,
+  NeighborFront,
+  TILT_ATTR,
+  type TileDress,
+  TileDressGear,
+  neighborCamStyle,
+} from "./TileDress";
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, livingSidePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
@@ -1380,6 +1395,120 @@ export function VoiceRoom(props: {
     if (!room()) setMyTalk(undefined);
   });
 
+  // ---- curtains and neighbor mode (ui/TileDress.tsx), the same as in the desktop app ----
+  // Each person sets their own, over their own picture, and everyone sees them: they travel as
+  // your own LiveKit attributes, under the desktop app's names. Your own show at once, without
+  // waiting for the call to say them back.
+  const [myCurtain, setMyCurtain] = createSignal(0);
+  const [myCurtainColor, setMyCurtainColor] = createSignal("black");
+  const [myNeighbor, setMyNeighbor] = createSignal(0);
+  const [myLift, setMyLift] = createSignal<number | undefined>();
+  const [myTilt, setMyTilt] = createSignal<number | undefined>();
+  let curtainSent = 0;
+  let curtainTimer = 0;
+  let blindsTimer = 0;
+  const dressAttr = (p: TileInfo["participant"], name: string) => {
+    version();
+    return p.attributes[name] || "";
+  };
+  const dressNumber = (text: string) => {
+    const v = Number.parseFloat(text);
+    return Number.isFinite(v) ? v : undefined;
+  };
+  const curtainOf = (p: TileInfo["participant"]) => (p.isLocal ? myCurtain() : Math.min(1, Math.max(0, dressNumber(dressAttr(p, CURTAIN_ATTR)) ?? 0)));
+  const curtainColorOf = (p: TileInfo["participant"]) => {
+    const c = p.isLocal ? myCurtainColor() : dressAttr(p, CURTAIN_COLOR_ATTR);
+    return CURTAIN_COLORS[c] ? c : "black";
+  };
+  const neighborOf = (p: TileInfo["participant"]) => {
+    const n = p.isLocal ? myNeighbor() : Number.parseInt(dressAttr(p, NEIGHBOR_ATTR), 10) || 0;
+    return NEIGHBOR_LOOKS[n] ? n : 0;
+  };
+  const liftOf = (p: TileInfo["participant"]) => (p.isLocal ? myLift() : dressNumber(dressAttr(p, LIFT_ATTR)));
+  const tiltOf = (p: TileInfo["participant"]) => (p.isLocal ? myTilt() : dressNumber(dressAttr(p, TILT_ATTR)));
+  const sendDress = (attrs: Record<string, string>) => void room()?.localParticipant.setAttributes(attrs).catch(() => {});
+  function sendCurtain() {
+    window.clearTimeout(curtainTimer);
+    curtainTimer = 0;
+    if (curtainSent === myCurtain()) return;
+    curtainSent = myCurtain();
+    sendDress({ [CURTAIN_ATTR]: myCurtain().toFixed(3) });
+  }
+  /** You dragged your curtains. done: you let go. While dragging, the others are told a few times a second. */
+  function dragCurtain(closed: number, done: boolean) {
+    setMyCurtain(closed);
+    if (done) return sendCurtain();
+    if (!curtainTimer) curtainTimer = window.setTimeout(sendCurtain, 120);
+  }
+  function sendBlinds() {
+    window.clearTimeout(blindsTimer);
+    blindsTimer = 0;
+    sendDress({ [LIFT_ATTR]: myLift()?.toFixed(3) ?? "", [TILT_ATTR]: myTilt()?.toFixed(3) ?? "" });
+  }
+  /** You moved your blinds. done: you let go. */
+  function moveBlinds(move: { lift?: number; tilt?: number }, done: boolean) {
+    if (move.lift !== undefined) setMyLift(move.lift);
+    if (move.tilt !== undefined) setMyTilt(move.tilt);
+    if (done) return sendBlinds();
+    if (!blindsTimer) blindsTimer = window.setTimeout(sendBlinds, 120);
+  }
+  function pickNeighbor(look: number) {
+    window.clearTimeout(blindsTimer);
+    blindsTimer = 0;
+    setMyNeighbor(look);
+    setMyLift(undefined);
+    setMyTilt(undefined);
+    sendDress({ [NEIGHBOR_ATTR]: look === 0 ? "" : String(look), [LIFT_ATTR]: "", [TILT_ATTR]: "" });
+  }
+  function pickCurtainColor(color: string) {
+    setMyCurtainColor(color);
+    sendDress({ [CURTAIN_COLOR_ATTR]: color });
+    try {
+      localStorage.setItem(CURTAIN_COLOR_KEY, color);
+    } catch {
+      /* private window: the color is for this call only */
+    }
+  }
+  /** the gear on your own tile */
+  const myDress = (): TileDress => ({
+    curtainColor: myCurtainColor(),
+    onCurtainColor: pickCurtainColor,
+    neighbor: myNeighbor(),
+    onNeighbor: pickNeighbor,
+    tilt: Math.min(1, Math.max(0, myTilt() ?? NEIGHBOR_LOOKS[myNeighbor()]?.tilt ?? 0)),
+    onTilt: (tilt, done) => moveBlinds({ tilt }, done),
+  });
+  // A new call starts with your curtains open and without the neighbor window (every call: you
+  // turn it on in the tile's settings each time, Kaalob's rule). The curtain color is the one
+  // you picked last time.
+  createEffect(
+    on(room, (current) => {
+      window.clearTimeout(curtainTimer);
+      window.clearTimeout(blindsTimer);
+      curtainTimer = 0;
+      blindsTimer = 0;
+      curtainSent = 0;
+      setMyCurtain(0);
+      setMyNeighbor(0);
+      setMyLift(undefined);
+      setMyTilt(undefined);
+      if (!current || props.viewOnly) return;
+      let kept = "black";
+      try {
+        kept = localStorage.getItem(CURTAIN_COLOR_KEY) ?? "black";
+      } catch {
+        /* private window */
+      }
+      if (!CURTAIN_COLORS[kept]) kept = "black";
+      setMyCurtainColor(kept);
+      void current.localParticipant.setAttributes({ [CURTAIN_COLOR_ATTR]: kept }).catch(() => {});
+    }),
+  );
+  onCleanup(() => {
+    window.clearTimeout(curtainTimer);
+    window.clearTimeout(blindsTimer);
+  });
+
   // Remove is in the small "more" menu on the person's own tile, not in the row
   // of call buttons and not a button on the tile itself (Kaalob: too easy to
   // hit by accident): open the menu, pick Remove, then say yes.
@@ -2612,6 +2741,14 @@ export function VoiceRoom(props: {
                 talkers={tile.screen ? undefined : (talkers().map.get(tile.participant.identity) ?? []).map((uid) => ({ uid, name: personName(uid), profile: props.profiles.get(uid) }))}
                 talkColor={tile.screen ? undefined : talkers().colors.get(tile.participant.identity)}
                 onTalk={!props.viewOnly && !tile.screen && !tile.participant.isLocal ? () => toggleTalk(tile.participant.identity) : undefined}
+                curtain={tile.screen ? 0 : curtainOf(tile.participant)}
+                curtainColor={curtainColorOf(tile.participant)}
+                onCurtain={!tile.screen && tile.participant.isLocal && !props.viewOnly ? dragCurtain : undefined}
+                neighbor={tile.screen ? 0 : neighborOf(tile.participant)}
+                lift={liftOf(tile.participant)}
+                tilt={tiltOf(tile.participant)}
+                onLift={!tile.screen && tile.participant.isLocal && !props.viewOnly ? (lift, done) => moveBlinds({ lift }, done) : undefined}
+                dress={!tile.screen && tile.participant.isLocal && !props.viewOnly ? myDress() : undefined}
                 onRemove={
                   canRemoveFromCall() && !props.viewOnly && !tile.screen && !tile.participant.isLocal
                     ? () => setRemoveAsk({ uid: tile.participant.identity, name: nameOf(tile.participant) })
@@ -3400,8 +3537,23 @@ function Tile(props: {
   onPipDrop?: (spot: PipSpot) => void;
   /** your camera's own picture: wide when landscape, tall when portrait */
   onFrame?: (wide: boolean) => void;
+  /** how far their curtains are drawn over their picture (0 = open, 1 = closed), and in which color */
+  curtain?: number;
+  curtainColor?: string;
+  /** your own tile: you drag the curtains */
+  onCurtain?: (closed: number, done: boolean) => void;
+  /** neighbor mode: which of the six looks they wear (0 = none), and their blinds if they moved them */
+  neighbor?: number;
+  lift?: number;
+  tilt?: number;
+  /** your own window: you drag the blinds */
+  onLift?: (lift: number, done: boolean) => void;
+  /** your own tile: the gear with its settings (curtain color, neighbor mode, the slats) */
+  dress?: TileDress;
 }) {
   let video: HTMLVideoElement | undefined;
+  // neighbor mode: their tile is a house window, with them behind it
+  const look = () => (props.tile.screen ? undefined : NEIGHBOR_LOOKS[props.neighbor ?? 0]);
   let inset: HTMLVideoElement | undefined;
   const track = (): Track | undefined => {
     void props.version;
@@ -3483,7 +3635,8 @@ function Tile(props: {
   });
 
   // your own camera as a mirror, unless Settings > Voice & Video turned that off
-  const mirrored = () => userPrefs().mirrorCam && props.tile.participant.isLocal && !props.tile.screen && !swapped() && camFacing() === "user";
+  // (never in neighbor mode: your window shows you as the others see you)
+  const mirrored = () => userPrefs().mirrorCam && props.tile.participant.isLocal && !props.tile.screen && !swapped() && camFacing() === "user" && !look();
 
   // Zoomed share: 50% larger, and the point under the pointer stays in view.
   const [zoomOrigin, setZoomOrigin] = createSignal("50% 50%");
@@ -3629,6 +3782,7 @@ function Tile(props: {
         "swap-over": Boolean(props.swap?.over),
         dragging: Boolean(pipDrag()),
         touched: touched(),
+        neighbor: Boolean(look()),
       }}
       style={{
         ...props.style,
@@ -3654,7 +3808,7 @@ function Tile(props: {
       }}
       onDragEnd={() => props.swap?.end()}
       onDblClick={props.onDblClick}
-      onClick={() => props.onRemove && touchTile()}
+      onClick={() => (props.onRemove || props.dress) && touchTile()}
       onPointerDown={pipDown}
       onPointerUp={(e) => {
         if (pipFrom || pipDrag()) {
@@ -3681,7 +3835,7 @@ function Tile(props: {
         playsinline
         muted
         classList={{ hidden: !big(), mirror: mirrored(), "turn-fade": !props.tile.screen, away: !props.tile.screen && (ownCamera() ? selfTurning() : Boolean(props.held)) }}
-        style={props.zoomed ? { transform: "scale(1.5)", "transform-origin": zoomOrigin() } : undefined}
+        style={props.zoomed ? { transform: "scale(1.5)", "transform-origin": zoomOrigin() } : look() ? neighborCamStyle(look()!) : undefined}
       />
       <Show when={props.canZoom}>
         <button
@@ -3700,12 +3854,14 @@ function Tile(props: {
         </button>
       </Show>
       <Show when={!big()}>
-        <div class="tile-empty" style={cameraOffStyle(props.profile)}>
+        <div class="tile-empty" style={{ ...cameraOffStyle(props.profile), ...(look() ? neighborCamStyle(look()!) : {}) }}>
           <span class="avatar big" style={faceStyle(props.profile)}>
             {faceText(props.profile, props.name)}
           </span>
         </div>
       </Show>
+      {/* neighbor mode: the room, the blinds, the glass and the wall, in front of their picture */}
+      <Show when={look()}>{(l) => <NeighborFront look={l()} lift={props.lift} tilt={props.tilt} onLift={props.onLift} />}</Show>
       <Show when={props.stream}>
         <div
           class={`tile-inset corner-${props.corner ?? "tl"}`}
@@ -3748,6 +3904,12 @@ function Tile(props: {
           />
         </div>
       </Show>
+      {/* their curtains, over the picture and under the name */}
+      <Show when={!props.tile.screen && ((props.curtain ?? 0) > 0 || props.onCurtain)}>
+        <Curtains closed={props.curtain ?? 0} color={props.curtainColor ?? "black"} onDrag={props.onCurtain} />
+      </Show>
+      {/* your own tile: a gear for your curtain color and neighbor mode */}
+      <Show when={props.dress}>{(d) => <TileDressGear dress={d()} />}</Show>
       {/* Remove is not a button on the tile any more: it was too easy to hit by
           accident (Kaalob). A small "more" button opens a menu, Remove is in
           the menu, and it still asks before removing: three deliberate steps. */}
