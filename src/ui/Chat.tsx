@@ -22,6 +22,8 @@ import {
   MESSAGE_PAGE,
 } from "../data/store";
 import { audit } from "../data/audit";
+import { inviteCodeIn, inviteFieldFor, inviteInfoFrom } from "../data/invites";
+import { InviteCard } from "./InviteCard";
 import { access } from "../data/access";
 import { hourCycle, userPrefs } from "../data/prefs";
 import { Formatted } from "./Markdown";
@@ -331,7 +333,7 @@ export function Chat(props: {
             const existing=new Map(previous.map(message=>[message.id,message]));
             return rows.map(message=>{
               const old=existing.get(message.id);
-              return old && old.authorUid === message.authorUid && old.text === message.text && old.createdAt?.getTime() === message.createdAt?.getTime() && old.editedAt?.getTime() === message.editedAt?.getTime() && JSON.stringify(old.files) === JSON.stringify(message.files) && JSON.stringify(old.sticker) === JSON.stringify(message.sticker) && JSON.stringify(old.reactions) === JSON.stringify(message.reactions) ? old : message;
+              return old && old.authorUid === message.authorUid && old.text === message.text && old.createdAt?.getTime() === message.createdAt?.getTime() && old.editedAt?.getTime() === message.editedAt?.getTime() && JSON.stringify(old.files) === JSON.stringify(message.files) && JSON.stringify(old.sticker) === JSON.stringify(message.sticker) && JSON.stringify(old.invite) === JSON.stringify(message.invite) && JSON.stringify(old.reactions) === JSON.stringify(message.reactions) ? old : message;
             });
           });
           setLoaded(true);
@@ -451,7 +453,8 @@ export function Chat(props: {
     setError("");
     stickToBottom = true;
     try {
-      await sendMessage(props.serverId, props.channel.id, props.uid, text.slice(0, 4000), files);
+      // an invite link: the server's name, banner and icon go on the message, for its card
+      await sendMessage(props.serverId, props.channel.id, props.uid, text.slice(0, 4000), files, undefined, await inviteFieldFor(text));
     } catch {
       // Put back the words and the attached files, so a retry sends both,
       // but only into the same chat: switched away meanwhile, they would
@@ -711,6 +714,16 @@ export function Chat(props: {
                           </Show>
                         </p>
                       </Show>
+                      {/* an invite link in the message: the server's card, with its Accept button */}
+                      <Show when={(props.canModerate || !blockedWordIn(props.server, m.text)) && inviteCodeIn(m.text)}>
+                        {(code) => {
+                          const info = () => {
+                            const on = inviteInfoFrom(m.invite);
+                            return on && on.code === code() ? on : undefined;
+                          };
+                          return <InviteCard code={code()} info={info()} uid={props.uid} />;
+                        }}
+                      </Show>
                       <Show when={m.sticker}>
                         {(sticker) => (
                           <Still class="msg-sticker" src={sticker().url} animated={isGif(sticker().url)} alt={sticker().name} title={sticker().name} lazy />
@@ -763,7 +776,7 @@ export function Chat(props: {
                     text={m.text}
                     onCancel={() => setEditing(undefined)}
                     onSave={async (text) => {
-                      await editMessage(props.serverId, props.channel.id, m.id, props.uid, text);
+                      await editMessage(props.serverId, props.channel.id, m.id, props.uid, text, await inviteFieldFor(text));
                       setEditing(undefined);
                     }}
                   />

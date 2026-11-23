@@ -1,0 +1,115 @@
+/* An invite link in a chat: the server's card (banner, icon, name, members, Accept). */
+.invite-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin: 4px 0;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+}
+.invite-banner {
+  height: 96px;
+  /* no banner picture: a dark green wash, so the card still has its top */
+  background: linear-gradient(135deg, #123222, #0a1410 55%, #16261e);
+}
+.invite-banner img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.invite-icon {
+  position: absolute;
+  top: 62px;
+  left: 14px;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border: 4px solid var(--panel-2);
+  border-radius: 18px;
+  background: var(--panel-3, #0f1612);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+}
+.invite-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.invite-body {
+  display: grid;
+  gap: 4px;
+  padding: 44px 16px 16px;
+}
+.invite-label {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.invite-name {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.invite-members {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.invite-members i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.invite-accept {
+  min-height: 44px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--green);
+  color: #000;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.invite-accept:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+.invite-accept:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.invite-accept.joined {
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--text);
+}
+.invite-error {
+  margin: 4px 0 0;
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* the invite link in Server settings: smaller than the code, cut with dots when it does not fit */
+.invite-code.invite-link-text {
+  overflow: hidden;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

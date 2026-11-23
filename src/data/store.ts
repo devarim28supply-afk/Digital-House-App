@@ -372,6 +372,8 @@ export type Message = {
   text: string;
   files: ChatFile[];
   sticker?: Sticker;
+  /** the server an invite link in this message is for (data/invites.ts reads it), put there by the sender's app */
+  invite?: unknown;
   /** emoji (or :name: for a server emoji) -> who reacted with it */
   reactions: Record<string, string[]>;
   createdAt: Date | null;
@@ -1161,6 +1163,7 @@ export function watchMessages(
         text: (data.text as string) ?? "",
         files: Array.isArray(data.files) ? (data.files as ChatFile[]) : [],
         sticker: data.sticker?.url ? (data.sticker as Sticker) : undefined,
+        invite: data.invite as unknown,
         reactions: data.reactions && typeof data.reactions === "object" ? (data.reactions as Record<string, string[]>) : {},
         // a message we just sent has no server time yet: show it as now
         createdAt: toDate(data.createdAt) ?? new Date(),
@@ -1178,12 +1181,14 @@ export const sendMessage = (
   text: string,
   files: ChatFile[] = [],
   sticker?: Sticker,
+  invite?: object,
 ) =>
   addDoc(collection(db, "servers", sid, "channels", cid, "messages"), {
     authorUid,
     text,
     ...(files.length ? { files } : {}),
     ...(sticker ? { sticker } : {}),
+    ...(invite ? { invite } : {}),
     createdAt: serverTimestamp(),
   });
 
@@ -1195,10 +1200,11 @@ export const reactToMessage = (sid: string, cid: string, mid: string, uid: strin
     on ? arrayUnion(uid) : arrayRemove(uid),
   );
 
-export const editMessage = (sid: string, cid: string, mid: string, authorUid: string, text: string) =>
+export const editMessage = (sid: string, cid: string, mid: string, authorUid: string, text: string, invite?: object) =>
   updateDoc(doc(db, "servers", sid, "channels", cid, "messages", mid), {
     authorUid,
     text,
+    invite: invite ?? deleteField(),
     editedAt: serverTimestamp(),
   });
 
