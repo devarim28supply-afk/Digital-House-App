@@ -206,10 +206,14 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
   let callSwipe: {x:number;y:number;at:number} | undefined;
   let panelSwipe: {x:number;y:number;at:number;panel:"chat"|"channels"} | undefined;
   let panelSwipeClickBlockedUntil=0;
+  // A tablet: a touch screen wide enough for the computer layout. It has no mouse to bring the
+  // sidebars in from the screen's edges, so swipes do it (Kaalob): right for the left side, left
+  // for the right side; swipe back or tap the middle part to send one away. Lock mode stops them.
+  const TABLET = () => window.matchMedia("(pointer:coarse) and (min-width:761px)").matches;
   function startPanelSwipe(event:TouchEvent) {
     const target=event.target instanceof Element ? event.target : undefined;
     const panel=target?.closest(".side-chat") ? "chat" : target?.closest(".side,.rail") ? "channels" : undefined;
-    if(!window.matchMedia("(max-width:600px)").matches || !panel || event.touches.length !== 1 || target?.closest("input,textarea,video,audio,[role=slider],.mobile-panel-switch,.message-actions-menu,.inset-resize") || panel === "chat" && Boolean(target?.closest("a,button"))) {panelSwipe=undefined;return;}
+    if(!(window.matchMedia("(max-width:600px)").matches || TABLET()) || !panel || event.touches.length !== 1 || target?.closest("input,textarea,video,audio,[role=slider],.mobile-panel-switch,.message-actions-menu,.inset-resize") || panel === "chat" && Boolean(target?.closest("a,button"))) {panelSwipe=undefined;return;}
     const touch=event.touches[0];panelSwipe={x:touch.clientX,y:touch.clientY,at:Date.now(),panel};
   }
   function movePanelSwipe(event:TouchEvent) {
@@ -235,7 +239,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     // The channel list has no button. A right swipe on the page opens it.
     // On a call, the first right swipe is your camera and the call keeps that
     // touch. The next right swipe, while you are on your camera, reaches here.
-    if(!window.matchMedia("(max-width:760px)").matches || event.touches.length !== 1 || !target?.closest(".main") || target.closest("button,input,textarea,a,[role=slider],.dock-menu,.inset-resize,video[controls]")) {callSwipe=undefined;return;}
+    if(!(window.matchMedia("(max-width:760px)").matches || TABLET()) || event.touches.length !== 1 || !target?.closest(".main") || target.closest("button,input,textarea,a,[role=slider],.dock-menu,.inset-resize,video[controls]")) {callSwipe=undefined;return;}
     const touch=event.touches[0];callSwipe={x:touch.clientX,y:touch.clientY,at:Date.now()};
   }
   function moveCallSwipe(event:TouchEvent) {
@@ -248,6 +252,18 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     const start=callSwipe;callSwipe=undefined;
     if(!start || !event.changedTouches.length || Date.now()-start.at>1000) return;
     const touch=event.changedTouches[0],dx=touch.clientX-start.x,dy=touch.clientY-start.y;
+    if(TABLET()) {
+      const swipe=Math.abs(dx)>=60 && Math.abs(dx)>=Math.abs(dy)*1.5;
+      // a tap on the middle part: a side that was swiped in goes away
+      if(!swipe) {if(Math.abs(dx)<10 && Math.abs(dy)<10) {setLeftHover(false);setEdgeHover(false);}return;}
+      if(sidebarsLocked()) return;
+      if(dx>0) {
+        if(edgeHover()) setEdgeHover(false);
+        else if(leftSlides()) {window.clearTimeout(leftTimer);leftTimer=0;setLeftHover(true);}
+      } else if(leftHover()) setLeftHover(false);
+      else if(!rightPinned()) {window.clearTimeout(leaveTimer);leaveTimer=0;setEdgeHover(true);}
+      return;
+    }
     if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.5) return;
     if(dx<0 && tileChat()) {setMobilePanel("chat");setNavOpen(false);setSideChatOpen(true);}
     else if(dx>0) {setSideChatOpen(false);setNavOpen(true);}
@@ -554,6 +570,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setEdgeHover(true);
   }
   function leaveRight() {
+    if (TABLET()) return; // a tablet: it stays until swiped back or the middle is tapped
     if (leaveTimer) return;
     leaveTimer = window.setTimeout(() => { leaveTimer = 0; setEdgeHover(false); }, rightMode() === "hover" ? 100 : RIGHT_LINGER_MS);
   }
@@ -626,7 +643,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setLeftHover(true);
   }
   function leaveLeft() {
-    if (leftTimer) return;
+    if (leftTimer || TABLET()) return;
     leftTimer = window.setTimeout(() => { leftTimer = 0; setLeftHover(false); }, leftMode() === "hover" ? 100 : RIGHT_LINGER_MS);
   }
   onCleanup(() => window.clearTimeout(leftTimer));
