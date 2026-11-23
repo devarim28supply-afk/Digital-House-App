@@ -3694,6 +3694,21 @@ function Tile(props: {
     resizeFrom = undefined;
   }
 
+  // The tile is moved to another place in the call by its corners only (Kaalob), so a drag on
+  // the picture is only ever the curtains or the blinds. A corner pressed: the tile can be dragged.
+  const [cornerHeld, setCornerHeld] = createSignal(false);
+  createEffect(() => {
+    if (!cornerHeld()) return;
+    const up = () => setCornerHeld(false);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    window.addEventListener("dragend", up);
+    onCleanup(() => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("dragend", up);
+    });
+  });
   const tapTile = doubleTap(() => props.onDblClick());
   const insetTap = doubleTap(() => props.onSwap?.());
   // Phone self-view: follow the finger, then sit on the nearest edge.
@@ -3788,7 +3803,7 @@ function Tile(props: {
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
-      draggable={Boolean(props.swap) && !props.pip}
+      draggable={Boolean(props.swap) && !props.pip && cornerHeld()}
       onDragStart={(e) => {
         if (!props.swap) return;
         e.dataTransfer?.setData("text/plain", "tile");
@@ -3907,6 +3922,12 @@ function Tile(props: {
       {/* their curtains, over the picture and under the name */}
       <Show when={!props.tile.screen && ((props.curtain ?? 0) > 0 || props.onCurtain)}>
         <Curtains closed={props.curtain ?? 0} color={props.curtainColor ?? "black"} onDrag={props.onCurtain} />
+      </Show>
+      {/* the corners the tile is moved by (not the one the small stream picture is in: that is dragged itself) */}
+      <Show when={props.swap && !props.pip}>
+        <For each={["tl", "tr", "bl", "br"].filter((c) => !(props.stream && (props.corner ?? "tl") === c))}>
+          {(c) => <span class={`tile-corner ${c}`} title="Drag a corner onto another tile to switch places" onPointerDown={() => setCornerHeld(true)} />}
+        </For>
       </Show>
       {/* your own tile: a gear for your curtain color and neighbor mode */}
       <Show when={props.dress}>{(d) => <TileDressGear dress={d()} />}</Show>
