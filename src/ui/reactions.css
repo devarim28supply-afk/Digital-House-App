@@ -32,6 +32,17 @@
 .react-controls.small {
   bottom: 4px;
 }
+/* the mouse is not on the streaming screen: nothing of it shows (a touch screen has no mouse: it stays) */
+@media (hover: hover) {
+  .react-controls {
+    opacity: 0;
+  }
+  .tile:hover > .react-controls,
+  .tile-inset:hover > .react-controls,
+  .react-controls:has(:focus-visible) {
+    opacity: 1;
+  }
+}
 .react-btn {
   display: flex;
   align-items: center;
