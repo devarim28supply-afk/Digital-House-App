@@ -333,7 +333,7 @@ export function SideTv(props: { serverId: string; channelId: string; profiles: M
       // the same look there: this page's styles and its theme switches
       for (const node of document.querySelectorAll('style, link[rel="stylesheet"]')) win.document.head.append(node.cloneNode(true));
       for (const [key, value] of Object.entries(document.documentElement.dataset)) if (value !== undefined) win.document.documentElement.dataset[key] = value;
-      win.document.title = "Darkwood TV";
+      win.document.title = "Cozycave TV";
       win.document.body.className = "side-tv-window";
       // clicks on its buttons are handled by this page's code
       delegateEvents(["click"], win.document);

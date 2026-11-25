@@ -28,7 +28,7 @@ type Kind = "commit" | "push" | "deploy" | "pr" | "action";
 type Event = {
   kind: Kind;
   project: string;
-  account: string; // the GitHub / Vercel / Darkwood account that did it
+  account: string; // the GitHub / Vercel / Cozycave account that did it
   avatar: string;
   title: string;
   url: string;
@@ -46,7 +46,7 @@ type Profile = { name?: string; username?: string; photo?: string; color?: strin
 const $ = (id: string) => document.getElementById(id)!;
 const REFRESH_MS = 60_000;
 const PAGE = 60;
-const KIND_LABEL: Record<Kind, string> = { commit: "Commits", push: "Pushes", deploy: "Deploys", pr: "Pull requests", action: "Darkwood actions" };
+const KIND_LABEL: Record<Kind, string> = { commit: "Commits", push: "Pushes", deploy: "Deploys", pr: "Pull requests", action: "Cozycave actions" };
 
 let data: Activity | null = null;
 let actions: AuditEntry[] = [];
@@ -195,7 +195,7 @@ function events(): Event[] {
     if (a.serverId) void loadServerName(a.serverId);
     out.push({
       kind: "action",
-      project: "Darkwood Node app",
+      project: "Cozycave app",
       account: a.uid,
       avatar: "",
       title: (ACTION_TEXT[a.action] ?? ((e: AuditEntry) => `${e.action} ${e.target ?? ""}`))(a),
@@ -334,7 +334,7 @@ function render() {
   more.onclick = () => { shown += PAGE; render(); };
 
   const errors = data.repos.filter((r) => r.error).map((r) => `${r.name}: ${r.error}`);
-  if (actionsError) errors.push(`Darkwood actions: ${actionsError}`);
+  if (actionsError) errors.push(`Cozycave actions: ${actionsError}`);
   $("updated").textContent = `updated ${ago(Date.parse(data.at))}${errors.length ? ` · ${errors.join("; ")}` : ""}`;
 }
 
@@ -360,7 +360,7 @@ function renderEditor() {
     vc.placeholder = "Vercel accounts (comma)";
     vc.value = p.vercel.join(", ");
     const uid = el("input");
-    uid.placeholder = "Darkwood account id (optional, for their photo)";
+    uid.placeholder = "Cozycave account id (optional, for their photo)";
     uid.value = p.uid;
     const del = button("Remove", false, async () => {
       if (p.id) await deleteDoc(doc(db, "activity_people", p.id)).catch((err) => alertBox(err));
@@ -387,7 +387,7 @@ function renderEditor() {
   };
   rows.forEach(draw);
   const add = button("+ Person", false, () => draw({ id: "", name: "", uid: "", github: [], vercel: [] }));
-  const hint = el("p", "hint", "Each person's GitHub and Vercel accounts count as them. Only the owner and admins can save. Your own Darkwood account id: " + (auth.currentUser?.uid ?? ""));
+  const hint = el("p", "hint", "Each person's GitHub and Vercel accounts count as them. Only the owner and admins can save. Your own Cozycave account id: " + (auth.currentUser?.uid ?? ""));
   box.replaceChildren(hint, list, add);
 }
 function alertBox(err: unknown) {
@@ -488,7 +488,7 @@ if (new URLSearchParams(location.search).has("embed")) document.body.classList.a
 let started = false;
 onAuthStateChanged(auth, (user) => {
   if (!user) {
-    $("status").textContent = "Log in to Darkwood Node first (owner, admins and developers only).";
+    $("status").textContent = "Log in to Cozycave first (owner, admins and developers only).";
     return;
   }
   if (started) return;

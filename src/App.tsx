@@ -66,7 +66,7 @@ export function App() {
       </Match>
       <Match when={state().status === "pending"}>
         <Notice title="Waiting for approval" onLogout={logout}>
-          Your account is registered. The operator approves new members; this page opens Darkwood Node on its own
+          Your account is registered. The operator approves new members; this page opens Cozycave on its own
           the moment you are approved.
         </Notice>
       </Match>

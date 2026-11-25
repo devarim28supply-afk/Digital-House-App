@@ -660,7 +660,7 @@ export function ServerSettings(props: {
                   </For>
                 </div>
               </Row>
-              <Row label={`Not in this server (${others().length})`} hint="Everyone here is an approved member of Darkwood Node. Add them to let them see this server.">
+              <Row label={`Not in this server (${others().length})`} hint="Everyone here is an approved member of Cozycave. Add them to let them see this server.">
                 <div class="people-list">
                   <For each={others()}>
                     {(p) => (
@@ -753,7 +753,7 @@ export function ServerSettings(props: {
             </Match>
 
             <Match when={page() === "audit"}>
-              <Show when={!auditError()} fallback={<p class="set-note">The audit log can be read by Darkwood Node staff only.</p>}>
+              <Show when={!auditError()} fallback={<p class="set-note">The audit log can be read by Cozycave staff only.</p>}>
                 <Show when={entries()} fallback={<p class="set-note">Loading…</p>}>
                   <Show when={serverEntries().length} fallback={<p class="set-note">Nothing recorded for this server in the latest 300 actions.</p>}>
                     <div class="ss-audit">

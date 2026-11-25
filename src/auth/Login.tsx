@@ -152,7 +152,7 @@ export function Login() {
             <i />
           </span>
           <span class="prompt">
-            <b>~/darkwood-node</b> $ auth
+            <b>~/cozycave</b> $ auth
           </span>
           <span class="status" role="status" style={{ "--status-colour": STATUS[mood()].colour }}>
             {STATUS[mood()].label}

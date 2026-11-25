@@ -115,7 +115,7 @@ export async function enableFaceUnlock(id: string, password: string): Promise<vo
   const created = (await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: "Darkwood Node", id: location.hostname },
+      rp: { name: "Cozycave", id: location.hostname },
       user: { id: crypto.getRandomValues(new Uint8Array(16)), name: id, displayName: id },
       pubKeyCredParams: [
         { type: "public-key", alg: -7 },
