@@ -47,6 +47,8 @@ import {
 import { cameraOffStyle, faceStyle, faceText } from "./Shell";
 import { type PipSpot, type ShareView, broadcastPlan, deskPlan, livingPhonePlan, livingSidePlan, phonePlan, phoneSharePlaces, pipSpotAt, shareSwipeTarget } from "./phoneCallLayout";
 import { LivingRoomBroadcast } from "./LivingRoomBroadcast";
+import { REACT_TOPIC, type ReactBoard, ReactionLayer, createReactBoard, packReaction, unpackReaction } from "./Reactions";
+import { STREAM_COLOR_ATTR, STREAM_COLOR_KEY, STREAM_PALETTE, streamColors, streamHex } from "../data/streamColors";
 import "./call-status.css";
 import "./call-look.css";
 import { setSidebarsLocked, sidebarsLocked } from "../data/sidebarLock";
@@ -761,7 +763,8 @@ export function VoiceRoom(props: {
           bump();
         })
         .on(RoomEvent.ActiveSpeakersChanged, (who: Participant[]) => setSpeaking(new Set(who.map((p) => p.identity))))
-        .on(RoomEvent.DataReceived, (_payload, participant, _kind, topic) => {
+        .on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
+          if (topic === REACT_TOPIC && participant) landReaction(participant.identity, payload);
           if (topic === ATTENTION_TOPIC && participant) flashTile(participant.identity);
           if (topic === TURN_TOPIC && participant) holdPicture(participant.identity);
         })
@@ -1295,6 +1298,69 @@ export function VoiceRoom(props: {
     }
     bump();
   }
+  // ---- reactions on a shared screen or a Stream (Reactions.tsx) -------------
+  const reactBoard = createReactBoard();
+  function landReaction(identity: string, data: Uint8Array) {
+    const r = unpackReaction(data, personName(identity), streamHex(props.profiles.get(identity)?.color) ?? "#4ADE80");
+    if (r) reactBoard.add(r);
+  }
+  function sendReaction(sid: string, what: string, x: number, y: number) {
+    const me = room()?.localParticipant;
+    if (!me) return;
+    const data = packReaction(sid, what, x, y);
+    landReaction(me.identity, data); // yours shows at once
+    me.publishData(data, { reliable: true, topic: REACT_TOPIC }).catch(() => setError("Could not send that. Check your connection."));
+  }
+  /** a video track's own id in the call, the same for everyone */
+  const sidOf = (track: Track | undefined) => {
+    void version();
+    const current = room();
+    if (!current || !track) return undefined;
+    for (const p of [current.localParticipant, ...current.remoteParticipants.values()]) {
+      for (const pub of p.trackPublications.values()) if (pub.track === track) return pub.trackSid;
+    }
+    return undefined;
+  };
+
+  // ---- streaming colors (data/streamColors.ts) ------------------------------
+  const [myStreamColor, setMyStreamColor] = createSignal("");
+  let streamColorTimer = 0;
+  const isStreaming = (p: Participant) => {
+    for (const pub of p.trackPublications.values()) {
+      if (pub.kind !== Track.Kind.Video || pub.isMuted) continue;
+      if (pub.source === Track.Source.ScreenShare || [SECOND_SCREEN, OBS_SCREEN, STREAM, STREAM_CAM].includes(pub.trackName)) return true;
+    }
+    return false;
+  };
+  /** everyone streaming in this call -> their color */
+  const streamGlow = createMemo(() => {
+    void version();
+    const who = new Map<string, string | undefined>();
+    const current = room();
+    if (!current) return new Map<string, string>();
+    if (!props.viewOnly && isStreaming(current.localParticipant)) who.set(current.localParticipant.identity, myStreamColor());
+    for (const p of current.remoteParticipants.values()) if (isStreaming(p)) who.set(p.identity, dressAttr(p, STREAM_COLOR_ATTR));
+    return streamColors(who);
+  });
+  createEffect(() => streamGlow().size > 0 && reactBoard.load());
+  function sendStreamColor() {
+    window.clearTimeout(streamColorTimer);
+    streamColorTimer = 0;
+    sendDress({ [STREAM_COLOR_ATTR]: myStreamColor() });
+    try {
+      localStorage.setItem(STREAM_COLOR_KEY, myStreamColor());
+    } catch {
+      /* private window: the color is for this call only */
+    }
+  }
+  /** done false: the slider is still moving, the others are told a few times a second */
+  function pickStreamColor(hex: string, done: boolean) {
+    setMyStreamColor(hex);
+    if (done) return sendStreamColor();
+    if (!streamColorTimer) streamColorTimer = window.setTimeout(sendStreamColor, 120);
+  }
+  onCleanup(() => window.clearTimeout(streamColorTimer));
+
   // ---- attention: a white strobe around someone's tile ---------------------
   const [flashing, setFlashing] = createSignal(new Set<string>());
   const flashTimers = new Map<string, number>();
@@ -1480,6 +1546,9 @@ export function VoiceRoom(props: {
   }
   /** the gear on your own tile */
   const myDress = (): TileDress => ({
+    streamColor: myStreamColor(),
+    streamShown: streamHex(myStreamColor()) ?? streamGlow().get(room()?.localParticipant.identity ?? "") ?? STREAM_PALETTE[0],
+    onStreamColor: pickStreamColor,
     curtainColor: myCurtainColor(),
     onCurtainColor: pickCurtainColor,
     neighbor: myNeighbor(),
@@ -1510,7 +1579,14 @@ export function VoiceRoom(props: {
       }
       if (!CURTAIN_COLORS[kept]) kept = "black";
       setMyCurtainColor(kept);
-      void current.localParticipant.setAttributes({ [CURTAIN_COLOR_ATTR]: kept }).catch(() => {});
+      let stream = "";
+      try {
+        stream = streamHex(localStorage.getItem(STREAM_COLOR_KEY) ?? "") ?? "";
+      } catch {
+        /* private window */
+      }
+      setMyStreamColor(stream);
+      void current.localParticipant.setAttributes({ [CURTAIN_COLOR_ATTR]: kept, [STREAM_COLOR_ATTR]: stream }).catch(() => {});
     }),
   );
   onCleanup(() => {
@@ -2770,6 +2846,10 @@ export function VoiceRoom(props: {
                 }
                 swapped={swapped().has(tile.participant.identity)}
                 onSwap={() => swap(tile.participant.identity)}
+                streamColor={streamGlow().get(tile.participant.identity)}
+                reactBoard={reactBoard}
+                sidOf={sidOf}
+                onReact={props.viewOnly ? undefined : sendReaction}
                 corner={corners().get(tile.participant.identity) ?? "tl"}
                 onCorner={(corner) => setCorner(tile.participant.identity, corner)}
                 insetSize={insetSizes().get(tile.participant.identity) ?? INSET_MAX}
@@ -2799,6 +2879,9 @@ export function VoiceRoom(props: {
               onDblClick={() => openBig(teamKey(members))}
               uids={members.split(",")}
               streamFor={streamFor}
+              reactBoard={reactBoard}
+              sidOf={sidOf}
+              onReact={props.viewOnly ? undefined : sendReaction}
               profileOf={(uid) => props.profiles.get(uid)}
               nameOf={(uid) => displayName(props.profiles.get(uid))}
             />
@@ -3338,6 +3421,9 @@ function TeamScreen(props: {
   nameOf: (uid: string) => string;
   style: JSX.CSSProperties;
   onDblClick: () => void;
+  reactBoard: ReactBoard;
+  sidOf: (track: Track | undefined) => string | undefined;
+  onReact?: (sid: string, what: string, x: number, y: number) => void;
 }) {
   const videos: HTMLVideoElement[] = [];
   // which of the two videos is in front, and the track each one shows
@@ -3412,6 +3498,9 @@ function TeamScreen(props: {
     <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
       <video ref={(el) => (videos[0] = el)} class="team-video" classList={{ front: front() === 0 }} autoplay playsinline muted />
       <video ref={(el) => (videos[1] = el)} class="team-video" classList={{ front: front() === 1 }} autoplay playsinline muted />
+      <Show when={props.sidOf(track())} keyed>
+        {(sid) => <ReactionLayer board={props.reactBoard} sid={sid} video={() => videos[front()]} onSend={props.onReact && ((what, x, y) => props.onReact!(sid, what, x, y))} />}
+      </Show>
       <span class="team-players">
         <span class="live-dot" aria-hidden="true" />
         <For each={props.uids}>
@@ -3559,6 +3648,12 @@ function Tile(props: {
   onLift?: (lift: number, done: boolean) => void;
   /** your own tile: the gear with its settings (curtain color, neighbor mode, the slats) */
   dress?: TileDress;
+  /** they are streaming: the color of the dot by their name and of their streaming screen's glow */
+  streamColor?: string;
+  /** reactions on their streaming screen */
+  reactBoard: ReactBoard;
+  sidOf: (track: Track | undefined) => string | undefined;
+  onReact?: (sid: string, what: string, x: number, y: number) => void;
 }) {
   let video: HTMLVideoElement | undefined;
   // neighbor mode: their tile is a house window, with them behind it
@@ -3578,6 +3673,10 @@ function Tile(props: {
   const swapped = () => Boolean(props.stream && props.swapped);
   const big = () => (swapped() ? props.stream : track());
   const small = () => (props.stream ? (swapped() ? track() : props.stream) : undefined);
+  // the whole tile is their streaming screen: a shared screen, or their Stream swapped into the big picture
+  const bigStream = () => props.tile.screen || swapped();
+  const bigSid = () => (bigStream() ? props.sidOf(big()) : undefined);
+  const smallSid = () => (swapped() ? undefined : props.sidOf(small()));
 
   createEffect(() => {
     const t = big();
@@ -3807,8 +3906,10 @@ function Tile(props: {
         dragging: Boolean(pipDrag()),
         touched: touched(),
         neighbor: Boolean(look()),
+        "stream-glow": Boolean(props.streamColor && bigStream()),
       }}
       style={{
+        ...(props.streamColor ? { "--stream": props.streamColor } : {}),
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
@@ -3889,7 +3990,7 @@ function Tile(props: {
       <Show when={props.stream}>
         <div
           class={`tile-inset corner-${props.corner ?? "tl"}`}
-          classList={{ dragging: Boolean(drag()) }}
+          classList={{ dragging: Boolean(drag()), "stream-glow": Boolean(props.streamColor && !swapped()) }}
           style={{
             width: `${props.insetSize ?? INSET_MAX}%`,
             ...(drag() ? { transform: `translate(${drag()!.x}px, ${drag()!.y}px)` } : {}),
@@ -3917,6 +4018,24 @@ function Tile(props: {
               {faceText(props.profile, props.name)}
             </span>
           </Show>
+          {/* React on the small picture: it goes big, with the bar open (the phone's small self-view is too small for it) */}
+          <Show when={smallSid()} keyed>
+            {(sid) => (
+              <ReactionLayer
+                board={props.reactBoard}
+                sid={sid}
+                video={() => inset}
+                onButton={
+                  props.onReact && !props.pip
+                    ? () => {
+                        props.reactBoard.setOpen(sid);
+                        props.onSwap?.();
+                      }
+                    : undefined
+                }
+              />
+            )}
+          </Show>
           <span
             class="inset-resize"
             title="Drag to resize"
@@ -3937,6 +4056,10 @@ function Tile(props: {
         <For each={["tl", "tr", "bl", "br"].filter((c) => !(props.stream && (props.corner ?? "tl") === c))}>
           {(c) => <span class={`tile-corner ${c}`} title="Drag a corner onto another tile to switch places" onPointerDown={() => setCornerHeld(true)} />}
         </For>
+      </Show>
+      {/* reactions on their shared screen, or on their Stream while it is the big picture */}
+      <Show when={bigSid()} keyed>
+        {(sid) => <ReactionLayer board={props.reactBoard} sid={sid} video={() => video} onSend={props.onReact && !props.pip ? (what, x, y) => props.onReact!(sid, what, x, y) : undefined} />}
       </Show>
       {/* your own tile: a gear for your curtain color and neighbor mode */}
       <Show when={props.dress}>{(d) => <TileDressGear dress={d()} />}</Show>
@@ -3964,6 +4087,8 @@ function Tile(props: {
           </Show>
         </div>
       </Show>
+      {/* a shared screen has no name banner: its border has its person's streaming color (Kaalob) */}
+      <Show when={!props.tile.screen}>
       {/* "talking to" starts from the name, not the picture (Kaalob): a click on
           someone's name says you are talking to them; again, not any more.
           The click stays on the name: it does not open the tile big. */}
@@ -3988,9 +4113,6 @@ function Tile(props: {
           props.onTalk();
         }}
       >
-        <Show when={props.stream}>
-          <span class="live-dot" aria-hidden="true" />{" "}
-        </Show>
         {props.name}<DeveloperBadge username={props.profile?.username} />
         {/* who is talking to this person: their pictures, beside the name */}
         <For each={props.talkers ?? []}>
@@ -4006,7 +4128,12 @@ function Tile(props: {
             {dockIcon("mic-off")}
           </span>
         </Show>
+        {/* streaming: a glowing dot in the color of their streaming screen's border */}
+        <Show when={props.streamColor}>
+          <span class="stream-dot" role="img" aria-label="Streaming" title={`${props.name} is streaming`} />
+        </Show>
       </span>
+      </Show>
     </article>
   );
 }
