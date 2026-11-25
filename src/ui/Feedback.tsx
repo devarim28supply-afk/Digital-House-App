@@ -128,7 +128,7 @@ function SendForm(props: { uid: string; name: string; username: string; where: s
 
   return (
     <form class="modal-form" onSubmit={send}>
-      <p class="modal-text">Tell the developers about a bug, an idea, or anything else about Cozycave.</p>
+      <p class="modal-text">Tell the developers about a bug, an idea, or anything else about cozycave.</p>
       <div class="fb-types">
         <For each={TYPES}>
           {(t) => (

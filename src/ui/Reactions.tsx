@@ -16,7 +16,8 @@ export const REACT_EMOJI = ["1f44d", "2764", "1f602", "1f62e", "1f525", "1f480",
 export const REACT_WORDS = ["NICE", "LOL", "WOW", "FIRE", "THIS", "WTF", "KILL"];
 const NAMES: Record<string, string> = { "1f44d": "Thumbs up", "2764": "Heart", "1f602": "Laughing", "1f62e": "Surprised", "1f525": "Fire", "1f480": "Skull", "1f440": "Eyes", "1f91f": "I love you" };
 const LIFE_MS = 3200;
-const FLASH_MS = 1500;
+// as long as Attention
+const FLASH_MS = 3000;
 const BASE = `${import.meta.env.BASE_URL}reactions/`;
 
 /** sid: the video's own id in the call. x, y: 0 to 1 of the picture itself, so it is the same spot on everyone's tile. */
@@ -46,7 +47,11 @@ export function createReactBoard() {
   const [picked, setPicked] = createSignal(REACT_EMOJI[0]);
   const [flashing, setFlashing] = createSignal<ReadonlyMap<string, string>>(new Map());
   const timers = new Set<number>();
-  onCleanup(() => timers.forEach((t) => window.clearTimeout(t)));
+  const flashTimers = new Map<string, number>();
+  onCleanup(() => {
+    timers.forEach((t) => window.clearTimeout(t));
+    flashTimers.forEach((t) => window.clearTimeout(t));
+  });
   let loaded = false;
   return {
     live,
@@ -63,19 +68,22 @@ export function createReactBoard() {
       timers.add(t);
     },
     flashing,
-    /** someone reacted to your stream: its border flashes in your streaming color (only you see it); while it flashes, more reactions do not start it again */
+    /** someone reacted to your stream: it strobes like Attention, in your streaming color (only you see it). Another reaction: 3 seconds more. */
     flash(sid: string, color: string) {
-      if (flashing().has(sid)) return;
+      const old = flashTimers.get(sid);
+      if (old) window.clearTimeout(old);
       setFlashing((m) => new Map(m).set(sid, color));
-      const t = window.setTimeout(() => {
-        timers.delete(t);
-        setFlashing((m) => {
-          const next = new Map(m);
-          next.delete(sid);
-          return next;
-        });
-      }, FLASH_MS);
-      timers.add(t);
+      flashTimers.set(
+        sid,
+        window.setTimeout(() => {
+          flashTimers.delete(sid);
+          setFlashing((m) => {
+            const next = new Map(m);
+            next.delete(sid);
+            return next;
+          });
+        }, FLASH_MS),
+      );
     },
     /** someone streams: have the moving pictures ready, so a reaction shows at once */
     load() {

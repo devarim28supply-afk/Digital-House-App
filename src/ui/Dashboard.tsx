@@ -580,7 +580,7 @@ function DashboardBody(props: {
           <Show when={props.owner}>
             <button type="button" class="dashboard-page-btn" classList={{ active: rolesOpen() }} onClick={() => setRolesOpen(true)}>
               <span class="dashboard-page-label">Roles</span>
-              <span class="dashboard-page-caption">Who is staff, an admin or a developer, for all of Cozycave</span>
+              <span class="dashboard-page-caption">Who is staff, an admin or a developer, for all of cozycave</span>
             </button>
           </Show>
         </div>
@@ -617,7 +617,7 @@ function DashboardBody(props: {
         <div class="dashboard-grid">
           <section id="dashboard-section-overview" class="dashboard-section">
             <h1 class="dashboard-title">Overview</h1>
-            <p class="modal-text">Cozycave, right now.</p>
+            <p class="modal-text">cozycave, right now.</p>
             <div class="dashboard-overview-row">
               <div class="dashboard-stats">
                 <StatTile label="Servers" value={servers()?.length ?? "…"} />

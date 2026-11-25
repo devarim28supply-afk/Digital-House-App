@@ -51,7 +51,7 @@ const VERCEL_TEAM = "team_PUGYiYbFC2XneUsiLOCykO73";
 
 // What it tracks: each repo, and its Vercel project (if it deploys)
 const PROJECTS = [
-  { name: "Cozycave app", repo: "devarim28supply-afk/Digital-House-App", vercel: "prj_rrMY8QSKG5uOHcLItLdg9VrnYuat" },
+  { name: "cozycave app", repo: "devarim28supply-afk/Digital-House-App", vercel: "prj_rrMY8QSKG5uOHcLItLdg9VrnYuat" },
   { name: "Database rules", repo: "devarim28supply-afk/M2A-Access-Control", vercel: "" },
   { name: "M2A-access bunker", repo: "devarim28supply-afk/M2A-access", vercel: "prj_onQqeCIuWtFs8MPYSadkMqc7NqiV" },
   { name: "Living Room", repo: "devarim28supply-afk/Gestr-LivingRoom", vercel: "prj_F7m9Quqo0w8GtQyFai8useAHT54n" },
@@ -161,7 +161,7 @@ export function whichAi(text: string) {
 
 // Which part of the app a changed file belongs to (first match wins).
 const AREAS: [RegExp, string][] = [
-  [/^src\/room\/|^room\.html$/, "Cozycave Room"],
+  [/^src\/room\/|^room\.html$/, "cozycave Room"],
   [/src\/ui\/(Chat|Emoji)/, "Chat"],
   [/src\/ui\/(VoiceRoom|CallStrip|LiveTile|WallView|RoomPane)/, "Videochat"],
   [/src\/data\/dms/, "DMs"],

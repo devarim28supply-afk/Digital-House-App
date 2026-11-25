@@ -3464,6 +3464,10 @@ function TeamScreen(props: {
     });
   }
   const track = () => props.streamFor(current());
+  const strobe = () => {
+    const sid = props.sidOf(track());
+    return sid ? props.reactBoard.flashing().get(sid) : undefined;
+  };
   let fadeTimer = 0;
   createEffect(() => {
     const t = track();
@@ -3500,7 +3504,7 @@ function TeamScreen(props: {
     shown.forEach((t, i) => t?.detach(videos[i]));
   });
   return (
-    <article class="tile team-screen" style={props.style} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
+    <article class="tile team-screen" classList={{ "react-strobe": Boolean(strobe()) }} style={{ ...props.style, ...(strobe() ? { "--flash": strobe() } : {}) }} onDblClick={props.onDblClick} onPointerUp={doubleTap(props.onDblClick)}>
       <video ref={(el) => (videos[0] = el)} class="team-video" classList={{ front: front() === 0 }} autoplay playsinline muted />
       <video ref={(el) => (videos[1] = el)} class="team-video" classList={{ front: front() === 1 }} autoplay playsinline muted />
       <Show when={props.sidOf(track())} keyed>
@@ -3682,6 +3686,8 @@ function Tile(props: {
   const bigStream = () => props.tile.screen || swapped();
   const bigSid = () => (bigStream() ? props.sidOf(big()) : undefined);
   const smallSid = () => (swapped() ? undefined : props.sidOf(small()));
+  // someone reacted to your stream: it strobes like Attention, in your streaming color
+  const strobe = (sid: string | undefined) => (sid ? props.reactBoard.flashing().get(sid) : undefined);
 
   createEffect(() => {
     const t = big();
@@ -3912,9 +3918,11 @@ function Tile(props: {
         touched: touched(),
         neighbor: Boolean(look()),
         "stream-glow": Boolean(props.streamColor && bigStream()),
+        "react-strobe": Boolean(strobe(bigSid())),
       }}
       style={{
         ...(props.streamColor ? { "--stream": props.streamColor } : {}),
+        ...(strobe(bigSid()) ? { "--flash": strobe(bigSid()) } : {}),
         ...props.style,
         ...(pipDrag() ? { transform: `translate(${pipDrag()!.x}px, ${pipDrag()!.y}px)` } : {}),
       }}
@@ -3995,8 +4003,9 @@ function Tile(props: {
       <Show when={props.stream}>
         <div
           class={`tile-inset corner-${props.corner ?? "tl"}`}
-          classList={{ dragging: Boolean(drag()), "stream-glow": Boolean(props.streamColor && !swapped()) }}
+          classList={{ dragging: Boolean(drag()), "stream-glow": Boolean(props.streamColor && !swapped()), "react-strobe": Boolean(strobe(smallSid())) }}
           style={{
+            ...(strobe(smallSid()) ? { "--flash": strobe(smallSid()) } : {}),
             width: `${props.insetSize ?? INSET_MAX}%`,
             ...(drag() ? { transform: `translate(${drag()!.x}px, ${drag()!.y}px)` } : {}),
           }}

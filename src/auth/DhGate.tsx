@@ -110,7 +110,7 @@ export function DhGate(props: { children: (member: DhMember) => JSX.Element }) {
             <div class="auth-body">
               <h1 class="auth-title">Check your email</h1>
               <p class="auth-note">
-                We sent a link to <b>{user()?.email}</b>. Open it to confirm this is you. This page opens Cozycave by itself
+                We sent a link to <b>{user()?.email}</b>. Open it to confirm this is you. This page opens cozycave by itself
                 a few seconds after you do.
               </p>
               <Show when={message()}>
