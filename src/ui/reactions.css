@@ -45,6 +45,31 @@
   opacity: 0.6;
   cursor: pointer;
 }
+/* not hovered: only its small picture */
+.react-btn span {
+  display: none;
+}
+.react-btn:hover span,
+.react-btn:focus-visible span {
+  display: inline;
+}
+.react-pill {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  color: var(--green);
+  font: 700 11px var(--mono);
+  cursor: pointer;
+}
+.react-pill img {
+  width: 18px;
+  height: 18px;
+}
 .react-btn img {
   width: 18px;
   height: 18px;
