@@ -19,7 +19,7 @@ import { isIP } from "node:net";
  * again for every redirect.
  */
 
-const OUR_ORIGINS = ["https://darkwood-node.vercel.app", "http://localhost:5186"];
+const OUR_ORIGINS = ["https://cozycave.app", "https://darkwood-node.vercel.app", "http://localhost:5186"];
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 6000;
 

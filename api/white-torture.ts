@@ -13,7 +13,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
  */
 
 const GAME_ORIGIN = "https://rimyshrimp-white-torture-br.vercel.app";
-const FRAME_ANCESTORS = "frame-ancestors 'self' https://darkwood-node.vercel.app http://localhost:5186";
+const FRAME_ANCESTORS = "frame-ancestors 'self' https://cozycave.app https://darkwood-node.vercel.app http://localhost:5186";
 const MAX_HTML = 1_000_000;
 
 /** Let the game's own files load, and let Digital House frame this copy. */

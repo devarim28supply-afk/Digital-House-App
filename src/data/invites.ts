@@ -21,9 +21,10 @@ export { joinedServerIds, setJoinedServerIds };
 /** Open this server (now, or as soon as it is in your list). Set by the shell. */
 export const inviteDoor: { open?: (serverId: string) => void } = {};
 
-export const inviteLink = (code: string) => `https://darkwood-node.vercel.app/app/?invite=${code}`;
+export const inviteLink = (code: string) => `https://cozycave.app/app/?invite=${code}`;
 
-const INVITE_RE = /darkwood-node\.vercel\.app\/app\/?\?invite=([A-Za-z0-9]{8})(?![A-Za-z0-9])/i;
+// (links given out before cozycave.app keep working)
+const INVITE_RE = /(?<![\w.-])(?:(?:www\.)?cozycave\.app|darkwood-node\.vercel\.app)\/app\/?\?invite=([A-Za-z0-9]{8})(?![A-Za-z0-9])/i;
 
 /** The invite code of the first invite link in this text, or undefined. */
 export const inviteCodeIn = (text: string) => INVITE_RE.exec(text)?.[1]?.toUpperCase();
