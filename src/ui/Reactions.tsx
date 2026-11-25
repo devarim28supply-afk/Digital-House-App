@@ -95,6 +95,14 @@ export function ReactionLayer(props: {
 }) {
   const open = () => Boolean(props.onSend) && props.board.open() === props.sid;
   const stop = (e: Event) => e.stopPropagation();
+  // The open bar is one small pill (the picked reaction) so it does not block the screen; the mouse on
+  // it makes it the whole bar. On a touch screen: a tap on the pill, until one is picked.
+  const [full, setFull] = createSignal(false);
+  let touch = false;
+  const pick = (what: string) => {
+    props.board.setPicked(what);
+    if (touch) setFull(false);
+  };
   let from: { x: number; y: number } | undefined;
   let last = 0;
   function drop(e: PointerEvent) {
@@ -132,7 +140,7 @@ export function ReactionLayer(props: {
   }
   const face = () => (
     <>
-      <img src={`${BASE}button.svg`} alt="" draggable={false} /> React
+      <img src={`${BASE}button.svg`} alt="" draggable={false} /> <span>React</span>
     </>
   );
   return (
@@ -155,21 +163,39 @@ export function ReactionLayer(props: {
         <For each={props.board.live().filter((r) => r.sid === props.sid)}>{(r) => <Landed r={r} video={props.video} />}</For>
       </div>
       <Show when={props.onSend || props.onButton}>
-        <div ref={watchFit} class="react-controls" classList={{ small: Boolean(props.onButton) }} onClick={stop} onDblClick={stop} onPointerDown={stop} onPointerUp={stop}>
+        <div ref={watchFit} class="react-controls" classList={{ small: Boolean(props.onButton) }} onClick={stop} onDblClick={stop} onPointerDown={(e) => { e.stopPropagation(); touch = e.pointerType === "touch"; }} onPointerUp={stop}
+          onPointerEnter={(e) => e.pointerType !== "touch" && setFull(true)}
+          onPointerLeave={(e) => e.pointerType !== "touch" && setFull(false)}
+        >
           <Show
             when={open()}
             fallback={
-              <button type="button" class="react-btn" title="React: pick one, then click a spot on the screen" onClick={() => (props.onButton ? props.onButton() : props.board.setOpen(props.sid))}>
+              <button type="button" class="react-btn" title="React: pick one, then click a spot on the screen" onClick={() => {
+                  if (props.onButton) return props.onButton();
+                  setFull(true);
+                  props.board.setOpen(props.sid);
+                }}
+              >
                 {face()}
               </button>
             }
           >
+            <Show
+              when={full()}
+              fallback={
+                <button type="button" class="react-pill" title="Change the reaction" aria-label="Change the reaction" onClick={() => setFull(true)}>
+                  <Show when={isWord(props.board.picked())} fallback={<img src={`${BASE}${props.board.picked()}.webp`} alt="" draggable={false} />}>
+                    {props.board.picked()}
+                  </Show>
+                </button>
+              }
+            >
             <div class="react-bar" role="toolbar" aria-label="Reactions">
               <div class="react-rows">
                 <div class="react-row">
                   <For each={REACT_EMOJI}>
                     {(code) => (
-                      <button type="button" aria-label={NAMES[code]} title={NAMES[code]} aria-pressed={props.board.picked() === code} onClick={() => props.board.setPicked(code)}>
+                      <button type="button" aria-label={NAMES[code]} title={NAMES[code]} aria-pressed={props.board.picked() === code} onClick={() => pick(code)}>
                         <img src={`${BASE}${code}.webp`} alt="" draggable={false} />
                       </button>
                     )}
@@ -178,7 +204,7 @@ export function ReactionLayer(props: {
                 <div class="react-row">
                   <For each={REACT_WORDS}>
                     {(word) => (
-                      <button type="button" class="word" aria-pressed={props.board.picked() === word} onClick={() => props.board.setPicked(word)}>
+                      <button type="button" class="word" aria-pressed={props.board.picked() === word} onClick={() => pick(word)}>
                         {word}
                       </button>
                     )}
@@ -189,6 +215,7 @@ export function ReactionLayer(props: {
                 ×
               </button>
             </div>
+            </Show>
           </Show>
         </div>
       </Show>
