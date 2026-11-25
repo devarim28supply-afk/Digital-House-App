@@ -112,6 +112,24 @@ export function ReactionLayer(props: {
     last = e.timeStamp;
     props.onSend?.(props.board.picked(), x, y);
   }
+  // The bar keeps its two rows and shrinks to fit its screen (as the desktop app's does), and is never
+  // more than a third of the screen high.
+  let controls: HTMLDivElement | undefined;
+  const fit = () => {
+    const tile = controls?.parentElement;
+    if (!tile || !controls || !controls.offsetWidth || !controls.offsetHeight) return;
+    const s = Math.min(1, (tile.clientWidth - 16) / controls.offsetWidth, open() ? tile.clientHeight / 3 / controls.offsetHeight : 1);
+    controls.style.setProperty("--fit", String(Math.max(0.2, s)));
+  };
+  function watchFit(el: HTMLDivElement) {
+    controls = el;
+    const watch = new ResizeObserver(fit);
+    queueMicrotask(() => {
+      if (el.parentElement) watch.observe(el.parentElement);
+      watch.observe(el);
+    });
+    onCleanup(() => watch.disconnect());
+  }
   const face = () => (
     <>
       <img src={`${BASE}button.svg`} alt="" draggable={false} /> React
@@ -137,7 +155,7 @@ export function ReactionLayer(props: {
         <For each={props.board.live().filter((r) => r.sid === props.sid)}>{(r) => <Landed r={r} video={props.video} />}</For>
       </div>
       <Show when={props.onSend || props.onButton}>
-        <div class="react-controls" classList={{ small: Boolean(props.onButton) }} onClick={stop} onDblClick={stop} onPointerDown={stop} onPointerUp={stop}>
+        <div ref={watchFit} class="react-controls" classList={{ small: Boolean(props.onButton) }} onClick={stop} onDblClick={stop} onPointerDown={stop} onPointerUp={stop}>
           <Show
             when={open()}
             fallback={
