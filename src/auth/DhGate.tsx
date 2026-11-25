@@ -101,7 +101,7 @@ export function DhGate(props: { children: (member: DhMember) => JSX.Element }) {
                 <i />
               </span>
               <span class="prompt">
-                <b>~/darkwood-node</b> $ verify
+                <b>~/cozycave</b> $ verify
               </span>
               <span class="status" style={{ "--status-colour": "#FBBF24" }}>
                 waiting…
@@ -110,7 +110,7 @@ export function DhGate(props: { children: (member: DhMember) => JSX.Element }) {
             <div class="auth-body">
               <h1 class="auth-title">Check your email</h1>
               <p class="auth-note">
-                We sent a link to <b>{user()?.email}</b>. Open it to confirm this is you. This page opens Darkwood Node by itself
+                We sent a link to <b>{user()?.email}</b>. Open it to confirm this is you. This page opens Cozycave by itself
                 a few seconds after you do.
               </p>
               <Show when={message()}>
@@ -141,7 +141,7 @@ export function DhGate(props: { children: (member: DhMember) => JSX.Element }) {
                 <i />
               </span>
               <span class="prompt">
-                <b>~/darkwood-node</b> $ profile
+                <b>~/cozycave</b> $ profile
               </span>
               <span class="status" style={{ "--status-colour": "#4ADE80" }}>
                 verified

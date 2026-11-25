@@ -1302,7 +1302,12 @@ export function VoiceRoom(props: {
   const reactBoard = createReactBoard();
   function landReaction(identity: string, data: Uint8Array) {
     const r = unpackReaction(data, personName(identity), streamHex(props.profiles.get(identity)?.color) ?? "#4ADE80");
-    if (r) reactBoard.add(r);
+    if (!r) return;
+    reactBoard.add(r);
+    // someone else reacted to your stream: you see it flash (nobody else does)
+    const me = room()?.localParticipant;
+    if (!me || props.viewOnly || identity === me.identity) return;
+    for (const pub of me.trackPublications.values()) if (pub.trackSid === r.sid) reactBoard.flash(r.sid, streamGlow().get(me.identity) ?? STREAM_PALETTE[0]);
   }
   function sendReaction(sid: string, what: string, x: number, y: number) {
     const me = room()?.localParticipant;

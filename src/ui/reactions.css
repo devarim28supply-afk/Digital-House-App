@@ -7,6 +7,26 @@
   overflow: hidden;
   pointer-events: none;
 }
+/* someone reacted to your stream: three pulses of its border (two a second, the picture stays clear) */
+.react-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 6px solid var(--flash);
+  border-radius: inherit;
+  box-shadow: inset 0 0 26px 4px var(--flash);
+  pointer-events: none;
+  animation: react-flash 0.5s ease-in-out 3 both;
+}
+@keyframes react-flash {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+}
 /* over the tile's move corners, under the buttons */
 .react-catch {
   position: absolute;
@@ -237,7 +257,8 @@
   .react-ring {
     display: none;
   }
-  .react-pop {
+  .react-pop,
+  .react-flash {
     animation: none;
   }
 }

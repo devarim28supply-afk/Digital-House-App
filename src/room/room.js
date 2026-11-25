@@ -65,7 +65,7 @@ function setStatus(text, problem = false, link) {
 // only has to pick the room's own rain (or none).
 const ROOM_THEME = new URLSearchParams(location.search).get("theme") || "matrix";
 document.documentElement.dataset.theme = ROOM_THEME;
-document.title = ROOM_THEME === "living" ? "Living Room" : "Darkwood Room";
+document.title = ROOM_THEME === "living" ? "Living Room" : "Cozycave Room";
 
 // ---- Matrix rain on every wall, made once; CSS animates it (room.html .drop)
 const GLYPHS = "ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789Z:.=*+-<>¦";
@@ -768,7 +768,7 @@ feedbackBtn.textContent = "Feedback";
 feedbackBtn.title = "Send feedback to the developers";
 feedbackBtn.addEventListener("click", () => {
   if (document.pointerLockElement) document.exitPointerLock();
-  if (parent !== window) tellCall({ type: "dh-feedback", where: "Darkwood Room" });
+  if (parent !== window) tellCall({ type: "dh-feedback", where: "Cozycave Room" });
   else location.href = `${import.meta.env.BASE_URL}?feedback`;
 });
 
@@ -1693,12 +1693,12 @@ if (testPass) {
   // ?calltoken=<pass> watches a test call the same way
   if (params.get("calltoken")) watchCall({ url: params.get("lk"), token: params.get("calltoken") }).catch((err) => console.warn("[room] call:", err));
 } else if (!serverId || !channelId) {
-  setStatus("Open this room from its tile in Darkwood Node.", true, { href: import.meta.env.BASE_URL, text: "Go to Darkwood Node" });
+  setStatus("Open this room from its tile in Cozycave.", true, { href: import.meta.env.BASE_URL, text: "Go to Cozycave" });
 } else {
   let started = false;
   onAuthStateChanged(auth, (user) => {
     if (!user) {
-      if (!started) setStatus("Log in to Darkwood Node first.", true, { href: `${import.meta.env.BASE_URL}?login`, text: "Log in" });
+      if (!started) setStatus("Log in to Cozycave first.", true, { href: `${import.meta.env.BASE_URL}?login`, text: "Log in" });
       return;
     }
     if (started) return;

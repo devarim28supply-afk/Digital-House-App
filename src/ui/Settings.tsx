@@ -500,7 +500,7 @@ export function Settings(props: {
               <Show when={desktopSupported()} fallback={<p class="set-note">This browser has no desktop notifications.</p>}>
                 <Toggle
                   label="Desktop notifications"
-                  hint="When Darkwood Node is not the tab you are looking at, an incoming call or a message for you shows as a notification from the browser. The browser asks you to allow it the first time."
+                  hint="When Cozycave is not the tab you are looking at, an incoming call or a message for you shows as a notification from the browser. The browser asks you to allow it the first time."
                   value={alertPrefs().desktop}
                   onChange={(on) => {
                     if (!on) return setAlertPrefs({ desktop: false });
