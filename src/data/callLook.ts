@@ -12,6 +12,8 @@ export type CallLook = {
   color: string;
   /** your picture, made smaller and kept as a data: address ("" for none) */
   picture: string;
+  /** Node Lounge's featured background (GTA6), in its videochat only: "" = not answered yet */
+  featured: "on" | "off" | "";
   /** the buttons' colors, "" for the usual one: the button, its icon, the glow of a button that is on, Disconnect */
   button: string;
   icon: string;
@@ -22,16 +24,21 @@ export type CallLook = {
 const BG = "dh_call_bg";
 const PICTURE = "dh_call_bg_picture";
 const DOCK = "dh_call_dock";
+const FEATURED = "dh_featured_bg";
+/** Node Lounge's featured background picture */
+export const FEATURED_PICTURE = `${import.meta.env.BASE_URL}featured/gta6.jpg`;
 const hex = (v: unknown) => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : "");
 
 function read(): CallLook {
   let bg: Record<string, unknown> = {};
   let dock: Record<string, unknown> = {};
   let picture = "";
+  let featured: string | null = "";
   try {
     bg = JSON.parse(localStorage.getItem(BG) || "{}") ?? {};
     dock = JSON.parse(localStorage.getItem(DOCK) || "{}") ?? {};
     picture = localStorage.getItem(PICTURE) || "";
+    featured = localStorage.getItem(FEATURED);
   } catch {
     /* nothing kept */
   }
@@ -40,6 +47,7 @@ function read(): CallLook {
     kind: bg.kind === "color" || bg.kind === "picture" ? bg.kind : "grid",
     color: hex(bg.color) || "#101418",
     picture,
+    featured: featured === "on" || featured === "off" ? featured : "",
     button: hex(dock.button),
     icon: hex(dock.icon),
     glow: hex(dock.glow),
@@ -57,6 +65,7 @@ export function setCallLook(patch: Partial<CallLook>) {
   const next = { ...callLook(), ...patch };
   setNow(next);
   try {
+    if (patch.featured !== undefined) localStorage.setItem(FEATURED, next.featured);
     localStorage.setItem(BG, JSON.stringify({ kind: next.kind, color: next.color }));
     localStorage.setItem(DOCK, JSON.stringify({ button: next.button, icon: next.icon, glow: next.glow, leave: next.leave }));
     if (patch.picture !== undefined) {
@@ -104,5 +113,5 @@ createRoot(() => {
 });
 
 window.addEventListener("storage", (event) => {
-  if (event.key === BG || event.key === DOCK || event.key === PICTURE) setNow(read());
+  if (event.key === BG || event.key === DOCK || event.key === PICTURE || event.key === FEATURED) setNow(read());
 });

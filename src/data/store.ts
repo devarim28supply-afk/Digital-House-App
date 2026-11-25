@@ -339,6 +339,9 @@ const HOME_TILES: { tile: Omit<Channel, "id" | "position">; chat: string }[] = [
   { tile: LIVING_ROOM_TILE, chat: tileChatName(LIVING_ROOM_TILE.name) }, // #livingroom-chat
 ];
 
+/** Every server's Node Lounge (the home server's has the older key). */
+export const isNodeLounge = (c: Channel) => c.roomKey === "gestr-living" || c.roomKey === "darkwood-node-lounge";
+
 /** Every other server starts with these two (Kaalob): Node Lounge and Living Room. */
 const DEFAULT_TILES: typeof HOME_TILES = [
   { tile: NODE_LOUNGE_TILE, chat: tileChatName(NODE_LOUNGE_TILE.name) }, // #nodelounge-chat

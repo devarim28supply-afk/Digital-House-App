@@ -1,5 +1,5 @@
 
-import { ownCallBackground } from "../data/callLook";
+import { FEATURED_PICTURE, callLook, ownCallBackground } from "../data/callLook";
 import { inviteCodeIn, inviteDoor, inviteFieldFor, inviteLink, setJoinedServerIds, type InviteInfo } from "../data/invites";
 import { InviteCard } from "./InviteCard";
 import { sidebarsLocked } from "../data/sidebarLock";
@@ -56,6 +56,7 @@ import {
   startPresence,
   watchChannels,
   displayName,
+  isNodeLounge,
   watchEmojis,
   watchPresence,
   watchProfiles,
@@ -574,6 +575,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     const ch = channels().find((c) => c.id === id);
     if (sid && ch && (ch.kind === "room" || ch.kind === "voice") && !UNDER_CONSTRUCTION.has(ch.roomKey ?? "")) joinCall(sid, ch);
   }
+  const featuredCallBg = () => { const c = call()?.channel; return Boolean(c && isNodeLounge(c) && callLook().featured === "on"); };
   const inThisCall = () => Boolean(channel() && call()?.serverId === serverId() && call()?.channel.id === channel()!.id);
 
   // The right sidebar slides out of the way. A new chat message slides it in
@@ -1240,7 +1242,8 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       {/* ---- the channel ---- */}
       <main
         class="main"
-        classList={{ "own-call-bg": inThisCall() && ownCallBackground() }}
+        classList={{ "own-call-bg": inThisCall() && (ownCallBackground() || featuredCallBg()), "featured-call-bg": inThisCall() && featuredCallBg() }}
+        style={{ "--featured-bg": `url("${FEATURED_PICTURE}")` }}
         onTouchStart={startCallSwipe}
         on:touchmove={moveCallSwipe}
         onTouchEnd={endCallSwipe}

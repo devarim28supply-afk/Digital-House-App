@@ -2,7 +2,7 @@ import { For, type JSX, Match, Show, Switch, createEffect, createSignal } from "
 
 import { FaceUnlockSetting } from "../auth/FaceOffer";
 import { desktopSupported, enableDesktopAlerts, prefs as alertPrefs, setPrefs as setAlertPrefs } from "../data/alerts";
-import { callLook, pictureForCall, setCallLook } from "../data/callLook";
+import { FEATURED_PICTURE, callLook, pictureForCall, setCallLook } from "../data/callLook";
 import { ACCENTS, accent, mode, saveAccent, saveMode } from "../data/layoutTheme";
 import { forgetDeviceSettings, setUserPrefs, userPrefs } from "../data/prefs";
 import { AVAILABILITY_OPTIONS, type Availability, availabilityStatus } from "../data/status";
@@ -407,6 +407,19 @@ export function Settings(props: {
                   </div>
                 </Show>
                 <Show when={lookError()}><p class="look-error" role="alert">{lookError()}</p></Show>
+              </Row>
+              <Row label="Node Lounge background" hint="The featured background, in Node Lounge's videochat only. Off: your videochat background above shows there too. Only you see it, in this browser.">
+                <Pick
+                  value={callLook().featured === "on" ? "on" : "off"}
+                  options={[
+                    { value: "on", label: "GTA6" },
+                    { value: "off", label: "Off" },
+                  ]}
+                  onPick={(featured) => setCallLook({ featured: featured as "on" | "off" })}
+                />
+                <div class="look-picture">
+                  <i style={{ "background-image": `url("${FEATURED_PICTURE}")` }} aria-hidden="true" />
+                </div>
               </Row>
               <Row label="Videochat buttons" hint="Your own colors for the buttons under a videochat. Only you see them, in this browser.">
                 <div class="look-preview voice" aria-hidden="true">
