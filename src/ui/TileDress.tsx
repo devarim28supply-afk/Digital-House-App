@@ -1,6 +1,7 @@
 import { For, type JSX, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 
+import { STREAM_COLOR_ATTR, STREAM_PALETTE, hueHex, hueOf } from "../data/streamColors";
 import "./tile-dress.css";
 
 /**
@@ -25,7 +26,7 @@ export const NEIGHBOR_ATTR = "dh-neighbor";
 export const LIFT_ATTR = "dh-neighbor-lift";
 export const TILT_ATTR = "dh-neighbor-tilt";
 /** What a person sets on their own tile: these change many times a second while curtains or blinds are dragged. */
-export const DRESS_ATTRS = new Set([CURTAIN_ATTR, CURTAIN_COLOR_ATTR, NEIGHBOR_ATTR, LIFT_ATTR, TILT_ATTR]);
+export const DRESS_ATTRS = new Set([CURTAIN_ATTR, CURTAIN_COLOR_ATTR, NEIGHBOR_ATTR, LIFT_ATTR, TILT_ATTR, STREAM_COLOR_ATTR]);
 /** kept in this browser for your next call (the neighbor window is not kept: Kaalob's rule) */
 export const CURTAIN_COLOR_KEY = "dh_curtain_color";
 
@@ -379,8 +380,12 @@ export function NeighborFront(props: { look: NeighborLook; lift?: number; tilt?:
   );
 }
 
-/** Your own tile's settings: the curtain color, neighbor mode, the blinds' slats. */
+/** Your own tile's settings: the streaming color, the curtain color, neighbor mode, the blinds' slats. */
 export type TileDress = {
+  /** your streaming color: picked ("" = auto), and the one showing */
+  streamColor: string;
+  streamShown: string;
+  onStreamColor: (hex: string, done: boolean) => void;
   curtainColor: string;
   onCurtainColor: (color: string) => void;
   neighbor: number;
@@ -404,7 +409,7 @@ export function TileDressGear(props: { dress: TileDress }) {
     // beside the gear, toward the side with more room, and always on the page
     const wide = 232;
     const left = box.right + 8 + wide < window.innerWidth ? box.right + 8 : Math.max(8, box.left - 8 - wide);
-    setAt({ top: Math.max(8, Math.min(box.top, window.innerHeight - 300)), left });
+    setAt({ top: Math.max(8, Math.min(box.top, window.innerHeight - 400)), left });
   }
   createEffect(() => {
     if (!at()) return;
@@ -425,7 +430,7 @@ export function TileDressGear(props: { dress: TileDress }) {
   const stop = (e: Event) => e.stopPropagation();
   return (
     <div class="dress-gear" classList={{ open: Boolean(at()) }} onClick={stop} onDblClick={stop} onPointerDown={stop} onPointerUp={stop}>
-      <button ref={button} type="button" title="My tile: curtains and neighbor mode" aria-label="My tile: curtains and neighbor mode" aria-haspopup="dialog" aria-expanded={Boolean(at())} onClick={toggle}>
+      <button ref={button} type="button" title="My tile: streaming color, curtains and neighbor mode" aria-label="My tile: streaming color, curtains and neighbor mode" aria-haspopup="dialog" aria-expanded={Boolean(at())} onClick={toggle}>
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3.2" />
           <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
@@ -435,6 +440,27 @@ export function TileDressGear(props: { dress: TileDress }) {
         {(where) => (
           <Portal>
             <div ref={panel} class="dress-panel" role="dialog" aria-label="My tile" style={{ top: `${where().top}px`, left: `${where().left}px` }}>
+              <span class="dress-label">Streaming color</span>
+              <div class="dress-row stream-row">
+                <button type="button" class="dress-look auto" title="A color nobody else streaming has" aria-pressed={!props.dress.streamColor} onClick={() => props.dress.onStreamColor("", true)}>
+                  Auto
+                </button>
+                <For each={STREAM_PALETTE}>
+                  {(hex) => <button type="button" class="dress-dot" aria-label={`Streaming color ${hex}`} aria-pressed={props.dress.streamColor === hex} style={{ background: hex }} onClick={() => props.dress.onStreamColor(hex, true)} />}
+                </For>
+              </div>
+              {/* any other color */}
+              <input
+                class="stream-hue"
+                type="range"
+                min="0"
+                max="360"
+                aria-label="Any streaming color"
+                style={{ "--stream": props.dress.streamShown }}
+                value={hueOf(props.dress.streamShown)}
+                onInput={(e) => props.dress.onStreamColor(hueHex(Number(e.currentTarget.value)), false)}
+                onChange={(e) => props.dress.onStreamColor(hueHex(Number(e.currentTarget.value)), true)}
+              />
               <span class="dress-label">Curtain color</span>
               <div class="dress-row">
                 <For each={Object.entries(CURTAIN_COLORS)}>
