@@ -19,7 +19,8 @@ import {
 } from "livekit-client";
 
 import { type SeatControl, startSeats } from "../data/seats";
-import { displayName, type Channel, type Profile } from "../data/store";
+import { displayName, isNodeLounge, type Channel, type Profile } from "../data/store";
+import { FEATURED_PICTURE, callLook, setCallLook } from "../data/callLook";
 import { setCallFaces } from "../data/callFaces";
 import { userPrefs } from "../data/prefs";
 import { setTvObs, setTvObsBusy, setTvObsCall, setTvShared, tvObsAsk, tvSharedAsk } from "../data/tvObs";
@@ -825,6 +826,8 @@ export function VoiceRoom(props: {
       setConn("");
       const back = resume;
       resume = undefined;
+      // Node Lounge's featured background: offered until you answer (not when a dropped call comes back)
+      if (!props.viewOnly && !back && isNodeLounge(props.channel) && !callLook().featured) setOfferFeatured(true);
       // iPhone Safari holds sound back until it has been asked inside the page
       void next.startAudio().catch(() => {});
       setAudioBlocked(!next.canPlaybackAudio);
@@ -2964,8 +2967,23 @@ export function VoiceRoom(props: {
     );
   }
 
+  const [offerFeatured, setOfferFeatured] = createSignal(false);
+  const answerFeatured = (featured: "on" | "off") => {
+    setCallLook({ featured });
+    setOfferFeatured(false);
+  };
+
   return (
     <div class="voice" classList={{ phone: Boolean(room()) && layout().phone }}>
+      <Modal title="GTA6 background" open={offerFeatured() && !callLook().featured} onClose={() => setOfferFeatured(false)}>
+        <img class="featured-offer-picture" src={FEATURED_PICTURE} alt="Palm trees at sunset in pink, purple and blue" />
+        <p class="modal-text">Node Lounge has a featured videochat background. Turn it on? Only you see it.</p>
+        <p class="modal-text">You can turn it off any time in Settings › Appearance › Node Lounge background.</p>
+        <div class="featured-offer-actions">
+          <button class="btn" type="button" onClick={() => answerFeatured("off")}>No thanks</button>
+          <button class="btn primary" type="button" onClick={() => answerFeatured("on")}>Enable GTA6 background</button>
+        </div>
+      </Modal>
       <Show
         when={room()}
         fallback={

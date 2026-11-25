@@ -9,6 +9,33 @@
   background: rgba(0, 0, 0, 0.55) !important;
 }
 
+/* Node Lounge's featured background, when on: it goes before your own */
+:root .shell .main.own-call-bg.featured-call-bg {
+  background: var(--featured-bg) center / cover no-repeat !important;
+}
+/* words straight on it (the Join screen) get a dark box behind them */
+:root .shell .main.featured-call-bg .voice-lobby {
+  flex: none;
+  margin: auto;
+  padding: 24px 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+}
+.featured-offer-picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.featured-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* your own colors for the buttons under the videochat: they win over every theme */
 :root[data-dock-button] .voice .dock .dock-btn:not(.leave) {
   background: var(--dock-button) !important;
