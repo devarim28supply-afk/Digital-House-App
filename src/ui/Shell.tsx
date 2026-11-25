@@ -285,7 +285,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
     setFeedbackOpen(true);
   }
   const onRoomMessage = (e: MessageEvent) => {
-    if (e.origin === location.origin && e.data?.type === "dh-feedback") openFeedback(String(e.data.where ?? "Cozycave Room"));
+    if (e.origin === location.origin && e.data?.type === "dh-feedback") openFeedback(String(e.data.where ?? "cozycave Room"));
   };
   window.addEventListener("message", onRoomMessage);
   onCleanup(() => window.removeEventListener("message", onRoomMessage));
@@ -997,7 +997,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
           {(banner) => <img class="side-banner" src={banner()} alt="" draggable={false} />}
         </Show>
         <header class="side-head">
-          <span class="side-title">{dmMode() ? "Direct messages" : server()?.name ?? "Cozycave"}</span>
+          <span class="side-title">{dmMode() ? "Direct messages" : server()?.name ?? "cozycave"}</span>
           <Show when={dmMode()}>
             <button class="icon-btn" type="button" title="New message" aria-label="New message" onClick={() => setNewDm(true)}>
               +
@@ -1459,7 +1459,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
               </div>
             </div>
             {/* the TV screen, above the people and the chat (Kaalob): a click lists
-                the channels; with none chosen it follows this tile's Cozycave Room TV.
+                the channels; with none chosen it follows this tile's cozycave Room TV.
                 Not on a Television channel: that one already has the big screen. */}
             <Show when={channel() && !isTvChannel(channel()!) ? channel()!.id : undefined}>
               {(tileId) => <SideTv serverId={server()!.id} channelId={tileId()} profiles={profiles()} room={hasDarkwoodRoom(channel()!)} />}
@@ -1655,7 +1655,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
         where={
           feedbackWhere() ||
           [server()?.name, channel() ? `${channel()!.kind === "room" ? "tile" : "#"} ${channel()!.name}` : ""].filter(Boolean).join(" · ") ||
-          "Cozycave"
+          "cozycave"
         }
       />
       <Show when={customizeOpen()}><Customize uid={props.uid} profile={profiles().get(props.uid)} name={nameOf(props.uid)} onClose={() => setCustomizeOpen(false)} /></Show>

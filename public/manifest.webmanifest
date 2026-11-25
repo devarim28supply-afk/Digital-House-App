@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Cozycave",
-  "short_name": "Cozycave",
+  "name": "cozycave",
+  "short_name": "cozycave",
   "start_url": "./",
   "scope": "/",
   "display": "standalone",

@@ -170,7 +170,7 @@ export function RoomPane(props: {
           />
         </Show>
         {/* the tile's videochat as small screens over the bottom of the page
-            (the Cozycave Room shows its own, inside room.html) */}
+            (the cozycave Room shows its own, inside room.html) */}
         <Show when={pane() === "room" && url() && !blocked() && !hasDarkwoodRoom(props.channel)}>
           <CallStrip serverId={props.serverId} channelId={props.channel.id} profiles={props.profiles} />
         </Show>
@@ -178,7 +178,7 @@ export function RoomPane(props: {
           <div class="room-blocked">
             <img src={imageSrc(props.channel.image)} alt="" />
             <p>
-              <b>{props.channel.name}</b> can't open inside Cozycave (its site does not allow it).
+              <b>{props.channel.name}</b> can't open inside cozycave (its site does not allow it).
             </p>
             <button class="btn primary" type="button" onClick={() => window.open(url()!, "_blank", "noopener")}>
               Open {props.channel.name} ↗

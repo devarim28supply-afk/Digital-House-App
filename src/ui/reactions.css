@@ -7,24 +7,37 @@
   overflow: hidden;
   pointer-events: none;
 }
-/* someone reacted to your stream: three pulses of its border (two a second, the picture stays clear) */
+/* someone reacted to your stream: the same strobe as Attention (5 flashes a second, a thick ring, a
+   wide glow around the screen, the picture washed), in your streaming color */
+.react-strobe.react-strobe {
+  animation: react-strobe 0.2s steps(1, end) infinite;
+}
 .react-flash {
   position: absolute;
   inset: 0;
   z-index: 4;
-  border: 6px solid var(--flash);
-  border-radius: inherit;
-  box-shadow: inset 0 0 26px 4px var(--flash);
   pointer-events: none;
-  animation: react-flash 0.5s ease-in-out 3 both;
+  animation: react-wash 0.2s steps(1, end) infinite;
 }
-@keyframes react-flash {
-  0%,
-  100% {
-    opacity: 0;
+@keyframes react-strobe {
+  0% {
+    border-color: var(--flash);
+    box-shadow:
+      0 0 0 6px var(--flash),
+      0 0 40px 16px var(--flash),
+      0 0 90px 30px color-mix(in srgb, var(--flash) 85%, transparent);
   }
-  45% {
-    opacity: 1;
+  50% {
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+@keyframes react-wash {
+  0% {
+    background: color-mix(in srgb, var(--flash) 45%, transparent);
+  }
+  50% {
+    background: transparent;
   }
 }
 /* over the tile's move corners, under the buttons */
@@ -259,6 +272,12 @@
   }
   .react-pop,
   .react-flash {
+    animation: none;
+  }
+  /* no strobe: a steady ring and glow */
+  .react-strobe.react-strobe {
+    border-color: var(--flash);
+    box-shadow: 0 0 0 6px var(--flash), 0 0 40px 16px var(--flash);
     animation: none;
   }
 }

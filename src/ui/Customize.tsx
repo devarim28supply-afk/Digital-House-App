@@ -204,10 +204,10 @@ export function Customize(props: { uid: string; profile?: Profile; name: string;
           <button class="btn" type="button" disabled={saving()} onClick={() => { patch({ cameraOffColor: "" }); clearCamOff(); }}>Back to default gray</button>
           <p>Your changes apply after saving.</p>
         </section></Show>
-        <Show when={category() === "Layout Themes"}><section><h3>Layout Themes</h3><p>Choose how Cozycave feels. Preview a theme now; save to keep it in this browser.</p>
+        <Show when={category() === "Layout Themes"}><section><h3>Layout Themes</h3><p>Choose how cozycave feels. Preview a theme now; save to keep it in this browser.</p>
           <div class="layout-theme-choices">
             <button class="layout-theme-choice" type="button" aria-pressed={themeDraft() === "smoky"} disabled={saving()} onClick={() => chooseTheme("smoky")}><span class="layout-theme-sample" aria-hidden="true"><i /><i /><i /></span><strong>Smoky Glass <Show when={themeDraft() === "smoky"}><span aria-hidden="true">✓</span></Show></strong><small>Medium-gray gradient, smoky glass panels and a calm, open feel.</small></button>
-            <button class="layout-theme-choice" type="button" aria-pressed={themeDraft() === "classic"} disabled={saving()} onClick={() => chooseTheme("classic")}><span class="layout-theme-sample classic" aria-hidden="true"><i /><i /><i /></span><strong>Classic Dark <Show when={themeDraft() === "classic"}><span aria-hidden="true">✓</span></Show></strong><small>The original black-and-gray Cozycave layout with green accents.</small></button>
+            <button class="layout-theme-choice" type="button" aria-pressed={themeDraft() === "classic"} disabled={saving()} onClick={() => chooseTheme("classic")}><span class="layout-theme-sample classic" aria-hidden="true"><i /><i /><i /></span><strong>Classic Dark <Show when={themeDraft() === "classic"}><span aria-hidden="true">✓</span></Show></strong><small>The original black-and-gray cozycave layout with green accents.</small></button>
           </div>
         </section></Show>
         <Show when={category() === "Profile Effect & Frame"}><section><h3>Profile Effect &amp; Frame</h3><p>Finishing touches for your full profile card.</p><div class="cosmetic-grid"><For each={["none", "starlight", "neon"] as const}>{id => choice(id === "none" ? "No effect" : id === "starlight" ? "Starlight" : "Neon frame", () => draft().effect === id, () => patch({ effect: id }), `profile-effect-${id}`)}</For></div></section></Show>
