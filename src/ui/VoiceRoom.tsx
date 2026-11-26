@@ -430,9 +430,13 @@ export function VoiceRoom(props: {
   const [box, setBox] = createSignal({ w: 0, h: 0 });
   const coarsePhone = () =>
     COARSE_POINTER && Math.min(window.innerWidth, window.innerHeight) < PHONE_SHORT;
+  // Phone or not is read off the browser window, never off the call's own box: the phone
+  // layout drops the call's padding, which made the box taller than PHONE_SHORT, which
+  // switched back to the desktop layout, which made it shorter again. A tablet in landscape
+  // (call box just under 540 tall) flipped a few times a second: the page blinked and the
+  // videos, rebuilt each time, stayed black. box() is still read so this re-checks on resize.
   const phoneNow = () => {
-    const { w, h } = box();
-    if (w > 0 && h > 0) return COARSE_POINTER && Math.min(w, h) < PHONE_SHORT;
+    box();
     return coarsePhone();
   };
   const showingRoomView = () =>
