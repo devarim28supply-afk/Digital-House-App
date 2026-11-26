@@ -2,16 +2,40 @@
 
 /* behind the tiles, and behind the channel's name above them (darker there) */
 /* (it wins over every theme's own background for this part, the grid among them) */
+/* The picture sits on its own layer under everything in .main (which is already
+   position: relative + isolation: isolate), not as .main's own background. As a
+   background it was drawn again with every video frame, and a tablet's browser in
+   landscape ran out of room: the page blinked and the tiles stayed black. Its own
+   layer (translateZ) is drawn once and kept. */
 :root .shell .main.own-call-bg {
-  background: var(--call-bg-color, transparent) var(--call-bg-image, none) center / cover no-repeat !important;
+  background: transparent !important;
+}
+:root .shell .main.own-call-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--call-bg-color, transparent) var(--call-bg-image, none) center / cover no-repeat;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 :root .shell .main.own-call-bg > .main-head {
   background: rgba(0, 0, 0, 0.55) !important;
 }
 
 /* Node Lounge's featured background, when on: it goes before your own */
-:root .shell .main.own-call-bg.featured-call-bg {
-  background: var(--featured-bg) center / cover no-repeat !important;
+:root .shell .main.own-call-bg.featured-call-bg::before {
+  background: #000 var(--featured-bg) center / cover no-repeat;
+}
+
+/* The phone layout (also a tablet whose call is short) paints its stage black and its
+   dock nearly black: with a picture on, they let it show, so it never turns black. */
+:root .shell .main.own-call-bg .tiles.phone {
+  background: transparent;
+}
+:root .shell .main.own-call-bg .voice.phone .dock {
+  background: rgba(0, 0, 0, 0.55);
 }
 /* words straight on it (the Join screen) get a dark box behind them */
 :root .shell .main.featured-call-bg .voice-lobby {

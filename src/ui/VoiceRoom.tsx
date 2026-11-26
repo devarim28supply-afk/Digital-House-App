@@ -2973,8 +2973,44 @@ export function VoiceRoom(props: {
     setOfferFeatured(false);
   };
 
+  // A tablet's videochat stays sideways (Kaalob): held upright, a card asks to turn it.
+  // A tablet = a touch screen whose short side is not a phone's (the screen, not the
+  // window, so a split-screen window still counts). Browsers only lock the turn in
+  // full screen or an installed app; elsewhere the lock fails quietly and the card does it.
+  const tabletScreen = COARSE_POINTER && Math.min(screen.width, screen.height) >= PHONE_SHORT;
+  const portraitQuery = typeof window !== "undefined" ? window.matchMedia("(orientation: portrait)") : undefined;
+  const [upright, setUpright] = createSignal(Boolean(portraitQuery?.matches));
+  if (portraitQuery) {
+    const onTurn = () => setUpright(portraitQuery.matches);
+    portraitQuery.addEventListener("change", onTurn);
+    onCleanup(() => portraitQuery.removeEventListener("change", onTurn));
+  }
+  createEffect(() => {
+    if (!tabletScreen || !room() || props.viewOnly) return;
+    const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+    orientation.lock?.("landscape").catch(() => {});
+    onCleanup(() => {
+      try {
+        screen.orientation.unlock();
+      } catch {
+        /* nothing was locked */
+      }
+    });
+  });
+  const askSideways = () => tabletScreen && Boolean(room()) && !props.viewOnly && upright();
+
   return (
     <div class="voice" classList={{ phone: Boolean(room()) && layout().phone }}>
+      <Show when={askSideways()}>
+        <div class="turn-sideways" role="alertdialog" aria-label="Turn your tablet sideways">
+          <div class="turn-sideways-tablet" aria-hidden="true" />
+          <p class="turn-sideways-title">Turn your tablet sideways</p>
+          <p class="turn-sideways-text">The videochat works sideways (landscape).</p>
+          <button type="button" class="btn turn-sideways-leave" onClick={() => (props.onLeave ? props.onLeave() : leave())}>
+            Leave the call
+          </button>
+        </div>
+      </Show>
       <Modal title="GTA6 background" open={offerFeatured() && !callLook().featured} onClose={() => setOfferFeatured(false)}>
         <img class="featured-offer-picture" src={FEATURED_PICTURE} alt="Palm trees at sunset in pink, purple and blue" />
         <p class="modal-text">Node Lounge has a featured videochat background. Turn it on? Only you see it.</p>

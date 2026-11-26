@@ -4799,3 +4799,50 @@ body.side-tv-window {
   filter: brightness(0);
   transition: filter 140ms ease;
 }
+
+/* ---- a tablet held upright in a videochat: a card asks to turn it sideways ---- */
+.turn-sideways {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.92);
+  color: #fff;
+  text-align: center;
+}
+/* a tablet outline that turns from upright to sideways, over and over */
+.turn-sideways-tablet {
+  width: 84px;
+  height: 120px;
+  border: 4px solid #fff;
+  border-radius: 12px;
+  animation: turn-sideways 2.4s ease-in-out infinite;
+}
+@keyframes turn-sideways {
+  0%, 25% { transform: rotate(0deg); }
+  55%, 85% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-sideways-tablet { animation: none; transform: rotate(-90deg); }
+}
+.turn-sideways-title {
+  margin: 18px 0 0;
+  font-size: 26px;
+  font-weight: 700;
+}
+.turn-sideways-text {
+  margin: 0;
+  font-size: 17px;
+  opacity: 0.8;
+}
+.turn-sideways-leave {
+  margin-top: 18px;
+  min-height: 48px;
+  padding: 0 22px;
+}

@@ -1,5 +1,5 @@
 
-import { FEATURED_PICTURE, callLook, ownCallBackground } from "../data/callLook";
+import { callLook, featuredCallPicture, ownCallBackground } from "../data/callLook";
 import { inviteCodeIn, inviteDoor, inviteFieldFor, inviteLink, setJoinedServerIds, type InviteInfo } from "../data/invites";
 import { InviteCard } from "./InviteCard";
 import { sidebarsLocked } from "../data/sidebarLock";
@@ -1243,7 +1243,7 @@ export function Shell(props: { uid: string; admin: boolean; staff?: boolean; dev
       <main
         class="main"
         classList={{ "own-call-bg": inThisCall() && (ownCallBackground() || featuredCallBg()), "featured-call-bg": inThisCall() && featuredCallBg() }}
-        style={{ "--featured-bg": `url("${FEATURED_PICTURE}")` }}
+        style={{ "--featured-bg": `url("${featuredCallPicture()}")` }}
         onTouchStart={startCallSwipe}
         on:touchmove={moveCallSwipe}
         onTouchEnd={endCallSwipe}
