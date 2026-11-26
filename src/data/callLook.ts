@@ -27,6 +27,12 @@ const DOCK = "dh_call_dock";
 const FEATURED = "dh_featured_bg";
 /** Node Lounge's featured background picture */
 export const FEATURED_PICTURE = `${import.meta.env.BASE_URL}featured/gta6.jpg`;
+/** the same picture made smaller (1280x800) for touch screens: a tablet's browser ran out of
+    room drawing the big one behind five videos and blinked, with black tiles, in landscape */
+export const FEATURED_PICTURE_SMALL = `${import.meta.env.BASE_URL}featured/gta6-1280.jpg`;
+/** the picture behind the videochat: the small one on touch screens */
+export const featuredCallPicture = () =>
+  typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches ? FEATURED_PICTURE_SMALL : FEATURED_PICTURE;
 const hex = (v: unknown) => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : "");
 
 function read(): CallLook {
