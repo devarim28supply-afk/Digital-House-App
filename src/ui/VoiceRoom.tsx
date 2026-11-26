@@ -1396,22 +1396,7 @@ export function VoiceRoom(props: {
    * Ask for attention: your tile strobes on everyone's screen, or (to) only on
    * that one person's screen. Yours flashes too, so you know it went out.
    */
-  const [attentionMenu, setAttentionMenu] = createSignal(false);
-  createEffect(() => {
-    if (!attentionMenu()) return;
-    const close = (e: PointerEvent) => {
-      if (!(e.target as Element | null)?.closest?.(".attention-wrap")) setAttentionMenu(false);
-    };
-    window.addEventListener("pointerdown", close);
-    onCleanup(() => window.removeEventListener("pointerdown", close));
-  });
-  // the people you can call: everyone else in the call (not the hidden watchers)
-  const others = () => {
-    void version();
-    return [...(room()?.remoteParticipants.values() ?? [])];
-  };
   async function callAttention(to?: string) {
-    setAttentionMenu(false);
     const me = room()?.localParticipant;
     if (!me) return;
     flashTile(me.identity);
@@ -2829,6 +2814,11 @@ export function VoiceRoom(props: {
                 profile={props.profiles.get(tile.participant.identity)}
                 speaking={!tile.screen && speaking().has(tile.participant.identity)}
                 flashing={!tile.screen && flashing().has(tile.participant.identity)}
+                onAttention={
+                  props.viewOnly || tile.screen
+                    ? undefined
+                    : () => void callAttention(tile.participant.isLocal ? undefined : tile.participant.identity)
+                }
                 held={!tile.screen && held().has(tile.participant.identity)}
                 roomFace={tile.screen ? undefined : roomFaceOf(tile.participant.identity)}
                 canZoom={Boolean(spot()) && tile.screen && focus() === tile.key}
@@ -3255,42 +3245,6 @@ export function VoiceRoom(props: {
             </Show>
           </div>
           </Show>
-          {/* Attention: flash your tile for everyone, or for one person only */}
-          <div
-            class="share-wrap attention-wrap"
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && attentionMenu()) {
-                setAttentionMenu(false);
-                e.preventDefault();
-              }
-            }}
-          >
-            <button
-              type="button"
-              class="dock-btn icon-only attention-btn"
-              title="Attention: make your tile flash white (3 s)"
-              aria-label="Attention"
-              aria-haspopup="menu"
-              aria-expanded={attentionMenu()}
-              onClick={() => setAttentionMenu(!attentionMenu())}
-            >
-              <DockFace kind="look" word="Attention" full="✦ Attention ▴" />
-            </button>
-            <Show when={attentionMenu()}>
-              <div class="dock-menu" role="menu" aria-label="Attention">
-                <button type="button" role="menuitem" onClick={() => void callAttention()}>
-                  <span>Everyone</span>
-                </button>
-                <For each={others()}>
-                  {(p) => (
-                    <button type="button" role="menuitem" onClick={() => void callAttention(p.identity)}>
-                      <span>Only {nameOf(p)}</span>
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
           <Show when={roomCamTrack() && roomViewHidden() && !props.noRoomViewTile && !layout().phone}>
             <button type="button" class="dock-btn" onClick={() => hideRoomView(false)}>
               Room view
@@ -3377,6 +3331,17 @@ function doubleTap(handler: () => void) {
 // reason - it is desktop rig gear, gated on coarsePhone() below, not this.
 const CAN_SHARE = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
+/** Attention's symbol: a screen that is flashing, which is what it does to your tile */
+function AttentionIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="6.5" y="8" width="11" height="8" rx="1.5" />
+      <path d="M12 2.8v2.4M12 18.8v2.4M2.6 12h1.9M19.5 12h1.9" />
+      <path d="M4.6 5.2l1.7 1.5M19.4 5.2l-1.7 1.5M4.6 18.8l1.7-1.5M19.4 18.8l-1.7-1.5" />
+    </svg>
+  );
+}
+
 function DockFace(props: { kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "share" | "look" | "remove" | "leave"; word: string; full: string }) {
   return (
     <>
@@ -3438,11 +3403,7 @@ function dockIcon(kind: "mic" | "mic-off" | "cam" | "cam-off" | "stream" | "shar
   if (kind === "look") {
     return (
       // Attention (Kaalob): a screen that is flashing, which is what it does to your tile
-      <svg {...pen}>
-        <rect x="6.5" y="8" width="11" height="8" rx="1.5" />
-        <path d="M12 2.8v2.4M12 18.8v2.4M2.6 12h1.9M19.5 12h1.9" />
-        <path d="M4.6 5.2l1.7 1.5M19.4 5.2l-1.7 1.5M4.6 18.8l1.7-1.5M19.4 18.8l-1.7-1.5" />
-      </svg>
+      <AttentionIcon />
     );
   }
   if (kind === "remove") {
@@ -3680,6 +3641,9 @@ function Tile(props: {
   onTalk?: () => void;
   /** they asked for attention: a white strobe around the tile */
   flashing?: boolean;
+  /** the attention icon in the bottom right corner: on someone else, your tile flashes on their
+      screen; on your own, it flashes for everyone */
+  onAttention?: () => void;
   /** their phone is turning: keep the last good frame on screen for a moment */
   held?: boolean;
   /** their stream (stream mode): a small picture on their tile */
@@ -4130,6 +4094,33 @@ function Tile(props: {
       {/* reactions on their shared screen, or on their Stream while it is the big picture */}
       <Show when={bigSid()} keyed>
         {(sid) => <ReactionLayer board={props.reactBoard} sid={sid} video={() => video} onSend={props.onReact && !props.pip ? (what, x, y) => props.onReact!(sid, what, x, y) : undefined} />}
+      </Show>
+      {/* Attention (Kaalob): the icon in the bottom right corner. On someone else's tile your tile
+          flashes on their screen; on your own it flashes for everyone. Yours flashes too, so you see it went. */}
+      <Show when={props.onAttention}>
+        {(send) => {
+          const words = () =>
+            props.tile.participant.isLocal
+              ? "Attention: flash your tile for everyone (3 s)"
+              : `Attention: flash your tile on ${props.name}'s screen (3 s)`;
+          return (
+            <button
+              type="button"
+              class="tile-attention"
+              title={words()}
+              aria-label={words()}
+              onClick={(e) => {
+                e.stopPropagation();
+                send()();
+              }}
+              onDblClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <AttentionIcon />
+            </button>
+          );
+        }}
       </Show>
       {/* your own tile: a gear for your curtain color and neighbor mode */}
       <Show when={props.dress}>{(d) => <TileDressGear dress={d()} />}</Show>
