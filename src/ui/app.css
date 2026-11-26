@@ -4704,6 +4704,52 @@ body.side-tv-window {
   }
 }
 
+/* ---- Attention on a person's tile: bottom right, shows on hover (a tap on touch screens) ----
+   On someone else's tile your tile flashes on their screen; on yours, for everyone. */
+.tile-attention {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #e8eee9;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tile:hover .tile-attention,
+.tile-attention:focus-visible,
+.tile.touched .tile-attention {
+  opacity: 1;
+}
+.tile-attention:hover {
+  border-color: #6b7280;
+}
+.tile-attention:active {
+  border-color: #fff;
+  color: #fff;
+}
+@media (hover: none) {
+  .tile-attention {
+    width: 44px;
+    height: 38px;
+  }
+  .tile-attention svg {
+    width: 22px;
+    height: 22px;
+  }
+  .tile:not(.touched) .tile-attention {
+    pointer-events: none;
+  }
+}
+
 /* a muted person's name on their tile ends with a crossed-out microphone */
 .tile-muted {
   display: inline-grid;
