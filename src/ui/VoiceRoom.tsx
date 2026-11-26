@@ -4123,11 +4123,9 @@ function Tile(props: {
       <Show when={!props.tile.screen && ((props.curtain ?? 0) > 0 || props.onCurtain)}>
         <Curtains closed={props.curtain ?? 0} color={props.curtainColor ?? "black"} onDrag={props.onCurtain} />
       </Show>
-      {/* the corners the tile is moved by (not the one the small stream picture is in: that is dragged itself) */}
+      {/* the one handle the tile is moved by: at the top center edge (Kaalob), not the four corners */}
       <Show when={props.swap && !props.pip}>
-        <For each={["tl", "tr", "bl", "br"].filter((c) => !(props.stream && (props.corner ?? "tl") === c))}>
-          {(c) => <span class={`tile-corner ${c}`} title="Drag a corner onto another tile to switch places" onPointerDown={() => setCornerHeld(true)} />}
-        </For>
+        <span class="tile-grip" title="Drag onto another tile to switch places" onPointerDown={() => setCornerHeld(true)} />
       </Show>
       {/* reactions on their shared screen, or on their Stream while it is the big picture */}
       <Show when={bigSid()} keyed>
