@@ -31,7 +31,8 @@
   transform: translateX(-50%);
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
 }
-.tile:hover > .tile-grip {
+.tile:hover > .tile-grip,
+.tile.touched > .tile-grip {
   opacity: 1;
 }
 
