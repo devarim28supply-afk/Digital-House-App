@@ -65,15 +65,25 @@
 .react-controls.small {
   bottom: 4px;
 }
-/* the mouse is not on the streaming screen: nothing of it shows (a touch screen has no mouse: it stays) */
+/* the mouse is not on the streaming screen: nothing of it shows. A click or tap on the tile shows it
+   for 5 seconds (.touched, VoiceRoom), the same on a touch screen (Kaalob). */
+.react-controls {
+  opacity: 0;
+}
+.tile.touched .react-controls,
+.react-controls:has(:focus-visible) {
+  opacity: 1;
+}
 @media (hover: hover) {
-  .react-controls {
-    opacity: 0;
-  }
   .tile:hover > .react-controls,
-  .tile-inset:hover > .react-controls,
-  .react-controls:has(:focus-visible) {
+  .tile-inset:hover > .react-controls {
     opacity: 1;
+  }
+}
+/* hidden on a touch screen: a tap must not press an emoji nobody can see */
+@media (hover: none) {
+  .tile:not(.touched) .react-controls {
+    pointer-events: none;
   }
 }
 .react-btn {
@@ -119,6 +129,7 @@
   height: 18px;
 }
 .tile:hover .react-btn,
+.tile.touched .react-btn,
 .react-btn:focus-visible {
   opacity: 1;
 }

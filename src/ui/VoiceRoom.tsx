@@ -3968,7 +3968,12 @@ function Tile(props: {
       }}
       onDragEnd={() => props.swap?.end()}
       onDblClick={props.onDblClick}
-      onClick={() => (props.onRemove || props.dress) && touchTile()}
+      // A click or tap anywhere on the tile but its buttons shows all its controls (and the emoji bar
+      // on a shared screen) for 5 seconds, even without the mouse on it (Kaalob: good for tablets).
+      onClick={(e) => {
+        if ((e.target as Element | null)?.closest?.("button, a, input, select, textarea, [role=\"button\"], [role=\"menu\"]")) return;
+        touchTile();
+      }}
       onPointerDown={pipDown}
       onPointerUp={(e) => {
         if (pipFrom || pipDrag()) {
